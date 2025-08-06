@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from datetime import date
+from datetime import date, datetime
 from typing import List, Dict, Optional
 import numpy as np
 
@@ -8,16 +8,19 @@ class StockBar(BaseModel):
     """Single stock price bar"""
     symbol: str
     date: date
+    timestamp: Optional[datetime] = None  # For minute bars
     open: float
     high: float
     low: float
     close: float
     volume: int
     vwap: Optional[float] = None
+    transactions: Optional[int] = None  # Number of transactions for minute bars
     
     class Config:
         json_encoders = {
-            date: lambda v: v.isoformat()
+            date: lambda v: v.isoformat(),
+            datetime: lambda v: v.isoformat() if v else None
         }
 
 

@@ -86,14 +86,16 @@ class MarketCapFilterParams(BaseModel):
         return v
 
 
-class PreMarketVolumeFilterParams(BaseModel):
-    min_volume: int = Field(100_000, ge=0, description="Minimum pre-market volume")
-    cutoff_time: str = Field("09:00", description="Time cutoff for pre-market volume (EST)")
+# NOTE: PreMarketVolumeFilterParams is commented out as it requires intraday data
+# class PreMarketVolumeFilterParams(BaseModel):
+#     min_volume: int = Field(100_000, ge=0, description="Minimum pre-market volume")
+#     cutoff_time: str = Field("09:00", description="Time cutoff for pre-market volume (EST)")
 
 
-class NewsCatalystFilterParams(BaseModel):
-    hours_lookback: int = Field(24, ge=1, le=72, description="Hours to look back for news")
-    require_news: bool = Field(True, description="Require news catalyst for qualification")
+# NOTE: NewsCatalystFilterParams is commented out as it requires news data integration
+# class NewsCatalystFilterParams(BaseModel):
+#     hours_lookback: int = Field(24, ge=1, le=72, description="Hours to look back for news")
+#     require_news: bool = Field(True, description="Require news catalyst for qualification")
 
 
 class Filters(BaseModel):
@@ -105,8 +107,9 @@ class Filters(BaseModel):
     float: Optional[FloatFilterParams] = None
     relative_volume: Optional[RelativeVolumeFilterParams] = None
     market_cap: Optional[MarketCapFilterParams] = None
-    premarket_volume: Optional[PreMarketVolumeFilterParams] = None
-    news_catalyst: Optional[NewsCatalystFilterParams] = None
+    # NOTE: These filters are commented out as they require data not currently available
+    # premarket_volume: Optional[PreMarketVolumeFilterParams] = None
+    # news_catalyst: Optional[NewsCatalystFilterParams] = None
 
 
 class ScreenRequest(BaseModel):

@@ -1,0 +1,14 @@
+[Unit]
+Description=Run Stock Universe Data Loader daily after market close
+Requires=universe_loader.service
+
+[Timer]
+# Run at 5:00 PM ET (10:00 PM UTC) on weekdays
+OnCalendar=Mon..Fri 22:00:00 UTC
+Persistent=true
+
+# Randomized delay to avoid API spikes
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

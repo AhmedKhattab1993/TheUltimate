@@ -36,19 +36,74 @@ class TickerDiscoveryService:
         Raises:
             PolygonAPIError: On API errors
         """
+        # Fetch common stocks only (for backward compatibility)
+        return await self.fetch_us_equities(include_types=['CS'])
+    
+    async def fetch_us_equities(self, include_types: List[str] = None) -> List[str]:
+        """
+        Fetch active US equity tickers from Polygon API.
+        
+        Args:
+            include_types: List of ticker types to include. 
+                          Defaults to ['CS', 'ETF'] if not specified.
+                          Valid types: 'CS' (Common Stock), 'ETF' (Exchange Traded Fund),
+                          'ADRC' (ADR Common Stock), 'ADRP' (ADR Preferred), etc.
+        
+        Returns:
+            List of ticker symbols for specified equity types
+            
+        Raises:
+            PolygonAPIError: On API errors
+        """
+        if include_types is None:
+            include_types = ['CS', 'ETF']
+        
+        all_tickers = []
+        
+        logger.info(f"Starting to fetch US equity tickers for types: {include_types}")
+        
+        try:
+            # Fetch tickers for each type separately (API limitation)
+            for ticker_type in include_types:
+                logger.info(f"Fetching {ticker_type} tickers...")
+                type_tickers = await self._fetch_tickers_by_type(ticker_type)
+                all_tickers.extend(type_tickers)
+                logger.info(f"Found {len(type_tickers)} {ticker_type} tickers")
+            
+            # Remove duplicates and sort
+            unique_tickers = sorted(list(set(all_tickers)))
+            
+            logger.info(f"Successfully fetched {len(unique_tickers)} unique US equity tickers")
+            return unique_tickers
+            
+        except PolygonAPIError as e:
+            logger.error(f"Polygon API error while fetching tickers: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error while fetching tickers: {e}")
+            raise PolygonAPIError(f"Error fetching tickers: {str(e)}")
+    
+    async def _fetch_tickers_by_type(self, ticker_type: str) -> List[str]:
+        """
+        Fetch all tickers for a specific type.
+        
+        Args:
+            ticker_type: Type of ticker to fetch (e.g., 'CS', 'ETF')
+            
+        Returns:
+            List of ticker symbols
+        """
         all_tickers = []
         cursor = None
         page_count = 0
         
-        logger.info("Starting to fetch US common stock tickers from Polygon API")
-        
         try:
             while True:
                 page_count += 1
-                logger.debug(f"Fetching page {page_count} of tickers")
+                logger.debug(f"Fetching page {page_count} of {ticker_type} tickers")
                 
                 # Fetch a page of tickers
-                tickers_data = await self._fetch_tickers_page(cursor)
+                tickers_data = await self._fetch_tickers_page(cursor, ticker_type)
                 
                 # Extract ticker symbols from results
                 if "results" in tickers_data and tickers_data["results"]:
@@ -67,25 +122,19 @@ class TickerDiscoveryService:
                     # No more pages
                     break
             
-            # Remove duplicates and sort
-            unique_tickers = sorted(list(set(all_tickers)))
+            return all_tickers
             
-            logger.info(f"Successfully fetched {len(unique_tickers)} unique US common stock tickers")
-            return unique_tickers
-            
-        except PolygonAPIError as e:
-            logger.error(f"Polygon API error while fetching tickers: {e}")
-            raise
         except Exception as e:
-            logger.error(f"Unexpected error while fetching tickers: {e}")
-            raise PolygonAPIError(f"Error fetching tickers: {str(e)}")
+            logger.error(f"Error fetching {ticker_type} tickers: {e}")
+            raise
     
-    async def _fetch_tickers_page(self, cursor: Optional[str] = None) -> dict:
+    async def _fetch_tickers_page(self, cursor: Optional[str] = None, ticker_type: str = "CS") -> dict:
         """
         Fetch a single page of tickers from Polygon API.
         
         Args:
             cursor: Pagination cursor for next page
+            ticker_type: Type of ticker to fetch (default: "CS")
             
         Returns:
             API response data
@@ -101,7 +150,7 @@ class TickerDiscoveryService:
             
             return await self.polygon_client.fetch_tickers(
                 market="stocks",
-                ticker_type="CS",
+                ticker_type=ticker_type,
                 active=True,
                 limit=1000,
                 cursor=cursor_value
@@ -110,7 +159,7 @@ class TickerDiscoveryService:
             # First page
             return await self.polygon_client.fetch_tickers(
                 market="stocks",
-                ticker_type="CS",
+                ticker_type=ticker_type,
                 active=True,
                 limit=1000
             )

@@ -28,4 +28,9 @@ export const stockScreenerApi = {
     const response = await api.post<ScreenerResponse>('/api/v1/screen', request)
     return response.data
   },
+  
+  screenDatabase: async (request: ScreenerRequest): Promise<ScreenerResponse> => {
+    const response = await api.post<ScreenerResponse>('/api/v1/screen/database', request)
+    return response.data
+  },
 }

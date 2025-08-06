@@ -218,7 +218,7 @@ class PolygonClient:
             high=bar_data["h"],
             low=bar_data["l"],
             close=bar_data["c"],
-            volume=bar_data["v"],
+            volume=round(bar_data["v"]),  # Round fractional volumes to nearest integer
             vwap=bar_data.get("vw")  # VWAP might not always be present
         )
     
@@ -509,7 +509,7 @@ class PolygonClient:
                             high=stock_bar["h"],
                             low=stock_bar["l"],
                             close=stock_bar["c"],
-                            volume=stock_bar["v"],
+                            volume=round(stock_bar["v"]),  # Round fractional volumes to nearest integer
                             vwap=stock_bar.get("vw")  # VWAP might not always be present
                         )
                         

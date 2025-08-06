@@ -51,6 +51,18 @@ class Settings(BaseSettings):
         "VZ", "ADBE", "CMCSA"
     ]  # Top 30 S&P 500 stocks as default
     
+    # Database settings
+    database_url: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/stock_screener")
+    database_pool_min_size: int = int(os.getenv("DATABASE_POOL_MIN_SIZE", "10"))
+    database_pool_max_size: int = int(os.getenv("DATABASE_POOL_MAX_SIZE", "20"))
+    database_command_timeout: float = float(os.getenv("DATABASE_COMMAND_TIMEOUT", "60.0"))
+    
+    # Data collection settings
+    data_collection_batch_size: int = int(os.getenv("DATA_COLLECTION_BATCH_SIZE", "1000"))
+    data_collection_max_concurrent: int = int(os.getenv("DATA_COLLECTION_MAX_CONCURRENT", "50"))
+    data_collection_retry_attempts: int = int(os.getenv("DATA_COLLECTION_RETRY_ATTEMPTS", "3"))
+    data_collection_retry_delay: float = float(os.getenv("DATA_COLLECTION_RETRY_DELAY", "1.0"))
+    
     class Config:
         case_sensitive = False
 

@@ -14,8 +14,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.api import screener
+from app.api import screener, data_management
 from app.services.polygon_client import PolygonAPIError
+from app.services.database import db_pool
 
 # Configure logging
 logging.basicConfig(
@@ -37,6 +38,14 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting Stock Screener API...")
     
+    # Initialize database pool
+    try:
+        await db_pool.initialize()
+        logger.info("Database pool initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize database pool: {e}")
+        # Continue without database - API endpoints will still work
+    
     # Initialize Polygon client
     from app.services.polygon_client import PolygonClient
     global polygon_client
@@ -49,6 +58,11 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("Shutting down Stock Screener API...")
+    
+    # Close database pool
+    await db_pool.close()
+    
+    # Close Polygon client
     if polygon_client:
         await polygon_client.close()
 
@@ -169,6 +183,12 @@ app.include_router(
     tags=["screener"]
 )
 
+app.include_router(
+    data_management.router,
+    prefix=settings.api_v1_str,
+    tags=["data_management"]
+)
+
 
 # Root endpoint
 @app.get("/", tags=["root"])
@@ -181,7 +201,11 @@ async def root():
         "endpoints": {
             "health": f"{settings.api_v1_str}/health",
             "screen": f"{settings.api_v1_str}/screen",
+            "screen_database": f"{settings.api_v1_str}/screen/database",
             "symbols": f"{settings.api_v1_str}/symbols",
-            "filters": f"{settings.api_v1_str}/filters"
+            "filters": f"{settings.api_v1_str}/filters",
+            "data_status": f"{settings.api_v1_str}/data/status",
+            "data_coverage": f"{settings.api_v1_str}/data/coverage",
+            "data_collect": f"{settings.api_v1_str}/data/collect/daily"
         }
     }

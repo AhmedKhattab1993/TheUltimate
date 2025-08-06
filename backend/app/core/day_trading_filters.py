@@ -325,60 +325,61 @@ class FloatFilter(BaseFilter):
         )
 
 
-class PreMarketVolumeFilter(BaseFilter):
-    """
-    Filter stocks based on pre-market trading volume.
-    
-    High pre-market volume indicates early interest and potential
-    momentum for the trading day.
-    """
-    
-    def __init__(self, min_volume: int, cutoff_time: str = "09:00",
-                 name: str = "PreMarketVolumeFilter"):
-        """
-        Initialize pre-market volume filter.
-        
-        Args:
-            min_volume: Minimum pre-market volume
-            cutoff_time: Time cutoff for pre-market volume (HH:MM format)
-            name: Optional name for the filter
-        """
-        super().__init__(name)
-        if min_volume < 0:
-            raise ValueError(f"min_volume must be >= 0, got {min_volume}")
-        
-        self.min_volume = min_volume
-        self.cutoff_time = cutoff_time
-    
-    def apply(self, data: np.ndarray, symbol: str) -> FilterResult:
-        """
-        Apply pre-market volume filter.
-        
-        Note: This filter requires intraday data to properly calculate
-        pre-market volume. Current implementation is a placeholder.
-        """
-        self._validate_data(data)
-        
-        dates = data['date']
-        
-        # TODO: Implement actual pre-market volume filtering when intraday data is available
-        # For now, return all True to not filter anything
-        qualifying_mask = np.ones(len(dates), dtype=bool)
-        
-        logger.warning(f"PreMarketVolumeFilter not fully implemented for {symbol} - intraday data not available")
-        
-        metrics = {
-            'premarket_filter_applied': False,
-            'min_volume_threshold': self.min_volume,
-            'cutoff_time': self.cutoff_time,
-        }
-        
-        return FilterResult(
-            symbol=symbol,
-            qualifying_mask=qualifying_mask,
-            dates=dates,
-            metrics=metrics
-        )
+# NOTE: PreMarketVolumeFilter is commented out as it requires intraday data which is not currently available
+# class PreMarketVolumeFilter(BaseFilter):
+#     """
+#     Filter stocks based on pre-market trading volume.
+#     
+#     High pre-market volume indicates early interest and potential
+#     momentum for the trading day.
+#     """
+#     
+#     def __init__(self, min_volume: int, cutoff_time: str = "09:00",
+#                  name: str = "PreMarketVolumeFilter"):
+#         """
+#         Initialize pre-market volume filter.
+#         
+#         Args:
+#             min_volume: Minimum pre-market volume
+#             cutoff_time: Time cutoff for pre-market volume (HH:MM format)
+#             name: Optional name for the filter
+#         """
+#         super().__init__(name)
+#         if min_volume < 0:
+#             raise ValueError(f"min_volume must be >= 0, got {min_volume}")
+#         
+#         self.min_volume = min_volume
+#         self.cutoff_time = cutoff_time
+#     
+#     def apply(self, data: np.ndarray, symbol: str) -> FilterResult:
+#         """
+#         Apply pre-market volume filter.
+#         
+#         Note: This filter requires intraday data to properly calculate
+#         pre-market volume. Current implementation is a placeholder.
+#         """
+#         self._validate_data(data)
+#         
+#         dates = data['date']
+#         
+#         # TODO: Implement actual pre-market volume filtering when intraday data is available
+#         # For now, return all True to not filter anything
+#         qualifying_mask = np.ones(len(dates), dtype=bool)
+#         
+#         logger.warning(f"PreMarketVolumeFilter not fully implemented for {symbol} - intraday data not available")
+#         
+#         metrics = {
+#             'premarket_filter_applied': False,
+#             'min_volume_threshold': self.min_volume,
+#             'cutoff_time': self.cutoff_time,
+#         }
+#         
+#         return FilterResult(
+#             symbol=symbol,
+#             qualifying_mask=qualifying_mask,
+#             dates=dates,
+#             metrics=metrics
+#         )
 
 
 class MarketCapFilter(BaseFilter):
@@ -442,62 +443,63 @@ class MarketCapFilter(BaseFilter):
         )
 
 
-class NewsCatalystFilter(BaseFilter):
-    """
-    Filter stocks based on recent news catalyst.
-    
-    Fresh news can drive significant price movements and volume,
-    making stocks ideal for day trading.
-    """
-    
-    def __init__(self, hours_lookback: int = 24, require_news: bool = True,
-                 name: str = "NewsCatalystFilter"):
-        """
-        Initialize news catalyst filter.
-        
-        Args:
-            hours_lookback: Hours to look back for news
-            require_news: Whether to require news for qualification
-            name: Optional name for the filter
-        """
-        super().__init__(name)
-        if hours_lookback < 1:
-            raise ValueError(f"hours_lookback must be >= 1, got {hours_lookback}")
-        
-        self.hours_lookback = hours_lookback
-        self.require_news = require_news
-    
-    def apply(self, data: np.ndarray, symbol: str) -> FilterResult:
-        """
-        Apply news catalyst filter.
-        
-        Note: This filter requires news data integration. Current implementation
-        is a placeholder.
-        """
-        self._validate_data(data)
-        
-        dates = data['date']
-        
-        # TODO: Implement actual news filtering when news data is available
-        # For now, return all True if not requiring news, all False if requiring
-        if self.require_news:
-            qualifying_mask = np.zeros(len(dates), dtype=bool)
-            logger.warning(f"NewsCatalystFilter blocking all dates for {symbol} - news data not available")
-        else:
-            qualifying_mask = np.ones(len(dates), dtype=bool)
-        
-        metrics = {
-            'news_filter_applied': False,
-            'hours_lookback': self.hours_lookback,
-            'require_news': self.require_news,
-        }
-        
-        return FilterResult(
-            symbol=symbol,
-            qualifying_mask=qualifying_mask,
-            dates=dates,
-            metrics=metrics
-        )
+# NOTE: NewsCatalystFilter is commented out as it requires news data integration which is not currently available
+# class NewsCatalystFilter(BaseFilter):
+#     """
+#     Filter stocks based on recent news catalyst.
+#     
+#     Fresh news can drive significant price movements and volume,
+#     making stocks ideal for day trading.
+#     """
+#     
+#     def __init__(self, hours_lookback: int = 24, require_news: bool = True,
+#                  name: str = "NewsCatalystFilter"):
+#         """
+#         Initialize news catalyst filter.
+#         
+#         Args:
+#             hours_lookback: Hours to look back for news
+#             require_news: Whether to require news for qualification
+#             name: Optional name for the filter
+#         """
+#         super().__init__(name)
+#         if hours_lookback < 1:
+#             raise ValueError(f"hours_lookback must be >= 1, got {hours_lookback}")
+#         
+#         self.hours_lookback = hours_lookback
+#         self.require_news = require_news
+#     
+#     def apply(self, data: np.ndarray, symbol: str) -> FilterResult:
+#         """
+#         Apply news catalyst filter.
+#         
+#         Note: This filter requires news data integration. Current implementation
+#         is a placeholder.
+#         """
+#         self._validate_data(data)
+#         
+#         dates = data['date']
+#         
+#         # TODO: Implement actual news filtering when news data is available
+#         # For now, return all True if not requiring news, all False if requiring
+#         if self.require_news:
+#             qualifying_mask = np.zeros(len(dates), dtype=bool)
+#             logger.warning(f"NewsCatalystFilter blocking all dates for {symbol} - news data not available")
+#         else:
+#             qualifying_mask = np.ones(len(dates), dtype=bool)
+#         
+#         metrics = {
+#             'news_filter_applied': False,
+#             'hours_lookback': self.hours_lookback,
+#             'require_news': self.require_news,
+#         }
+#         
+#         return FilterResult(
+#             symbol=symbol,
+#             qualifying_mask=qualifying_mask,
+#             dates=dates,
+#             metrics=metrics
+#         )
 
 
 class DayTradingCompositeFilter(BaseFilter):
