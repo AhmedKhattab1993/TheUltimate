@@ -1,0 +1,1 @@
+"""Examples package for the stock screener application."""
