@@ -1,5 +1,6 @@
 import axios from 'axios'
 import type { ScreenerRequest, ScreenerResponse } from '@/types/api'
+import type { EnhancedScreenerRequest, EnhancedScreenerResponse } from '@/types/screener'
 
 // Determine API URL based on where the frontend is accessed from
 const getApiUrl = () => {
@@ -10,7 +11,7 @@ const getApiUrl = () => {
     return 'http://localhost:8000'
   }
   
-  // If accessing from public IP, use the same IP for API
+  // If accessing from public IP, use the same IP for API with port 8000
   return `http://${hostname}:8000`
 }
 
@@ -23,6 +24,53 @@ const api = axios.create({
   },
 })
 
+// Simple Screener API Interface
+interface SimpleScreenerRequest {
+  start_date: string
+  end_date: string
+  use_all_us_stocks?: boolean
+  enable_db_prefiltering?: boolean
+  filters: {
+    price_range?: {
+      min_price: number
+      max_price: number
+    }
+    price_vs_ma?: {
+      ma_period: 20 | 50 | 200
+      condition: 'above' | 'below'
+    }
+    rsi?: {
+      rsi_period: number
+      condition: 'above' | 'below'
+      threshold: number
+    }
+  }
+}
+
+interface SimpleScreenerResponse {
+  request: SimpleScreenerRequest
+  execution_time_ms: number
+  total_symbols_screened: number
+  total_qualifying_stocks: number
+  db_prefiltering_used: boolean
+  symbols_filtered_by_db?: number
+  results: Array<{
+    symbol: string
+    qualifying_dates: string[]
+    total_days_analyzed: number
+    qualifying_days_count: number
+    qualifying_percentage: number
+    metrics: {
+      avg_open_price?: number
+      ma_20_mean?: number
+      ma_50_mean?: number
+      ma_200_mean?: number
+      rsi_mean?: number
+      days_meeting_condition?: number
+    }
+  }>
+}
+
 export const stockScreenerApi = {
   screen: async (request: ScreenerRequest): Promise<ScreenerResponse> => {
     const response = await api.post<ScreenerResponse>('/api/v1/screen', request)
@@ -33,4 +81,71 @@ export const stockScreenerApi = {
     const response = await api.post<ScreenerResponse>('/api/v1/screen/database', request)
     return response.data
   },
+  
+  screenEnhanced: async (request: EnhancedScreenerRequest): Promise<EnhancedScreenerResponse> => {
+    // Transform the request to match the simple screener API format
+    const simpleRequest: SimpleScreenerRequest = {
+      start_date: request.start_date,
+      end_date: request.end_date,
+      use_all_us_stocks: request.use_all_us_stocks,
+      enable_db_prefiltering: true,
+      filters: {
+        price_range: request.filters.simple_price_range && {
+          min_price: request.filters.simple_price_range.min_price,
+          max_price: request.filters.simple_price_range.max_price
+        },
+        price_vs_ma: request.filters.price_vs_ma && {
+          ma_period: request.filters.price_vs_ma.period,
+          condition: request.filters.price_vs_ma.condition
+        },
+        rsi: request.filters.rsi && {
+          rsi_period: request.filters.rsi.period,
+          condition: request.filters.rsi.condition,
+          threshold: request.filters.rsi.threshold
+        }
+      }
+    }
+    
+    const response = await api.post<SimpleScreenerResponse>('/api/v2/simple-screener/screen', simpleRequest)
+    
+    // Transform the response to match the expected format
+    const enhancedResponse: EnhancedScreenerResponse = {
+      request_date: new Date().toISOString(),
+      total_symbols_screened: response.data.total_symbols_screened,
+      total_qualifying_stocks: response.data.total_qualifying_stocks,
+      execution_time_ms: response.data.execution_time_ms,
+      results: response.data.results.map(result => ({
+        symbol: result.symbol,
+        qualifying_dates: result.qualifying_dates,
+        metrics: {
+          latest_price: result.metrics.avg_open_price,
+          latest_volume: 0, // Not provided by simple screener
+          simple_price_range: true, // Simplified
+          price_vs_ma: result.metrics.ma_20_mean || result.metrics.ma_50_mean || result.metrics.ma_200_mean,
+          rsi: result.metrics.rsi_mean
+        }
+      })),
+      performance_metrics: {
+        data_fetch_time_ms: 0,
+        screening_time_ms: response.data.execution_time_ms,
+        total_execution_time_ms: response.data.execution_time_ms,
+        used_bulk_endpoint: false,
+        symbols_fetched: response.data.total_symbols_screened,
+        symbols_failed: 0
+      }
+    }
+    
+    return enhancedResponse
+  },
+  
+  // Additional simple screener specific methods
+  getFilterInfo: async () => {
+    const response = await api.get('/api/v2/simple-screener/filters/info')
+    return response.data
+  },
+  
+  getExamples: async () => {
+    const response = await api.get('/api/v2/simple-screener/examples')
+    return response.data
+  }
 }

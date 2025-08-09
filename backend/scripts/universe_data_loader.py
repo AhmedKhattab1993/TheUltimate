@@ -1027,6 +1027,11 @@ Examples:
             print(f"\nDiscovered {len(universe)} US equities (common stocks + ETFs)")
             print(f"First 10 symbols: {universe[:10]}")
             
+            # Update symbols table
+            logger.info("Updating symbols table with discovered universe...")
+            symbols_updated = await loader.data_collector.update_symbols_table()
+            print(f"Updated {symbols_updated} symbols in database")
+            
         elif args.historical:
             start_date = datetime.strptime(args.start, "%Y-%m-%d").date()
             end_date = datetime.strptime(args.end, "%Y-%m-%d").date()
@@ -1060,6 +1065,11 @@ Examples:
                 if not symbols:
                     universe = await loader.discover_universe()
                     logger.info(f"Loading daily data for {len(universe)} symbols")
+                    
+                    # Update symbols table before loading data
+                    logger.info("Updating symbols table...")
+                    symbols_updated = await loader.data_collector.update_symbols_table()
+                    logger.info(f"Updated {symbols_updated} symbols in database")
                     
                 stats = await loader.load_historical_data_by_date(
                     start_date=start_date,

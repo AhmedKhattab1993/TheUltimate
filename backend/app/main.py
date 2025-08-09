@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.api import screener, data_management
+from app.api import simple_screener
 from app.services.polygon_client import PolygonAPIError
 from app.services.database import db_pool
 
@@ -50,6 +50,9 @@ async def lifespan(app: FastAPI):
     from app.services.polygon_client import PolygonClient
     global polygon_client
     polygon_client = PolygonClient()
+    
+    # Attach database pool to polygon client
+    polygon_client.db_pool = db_pool._pool
     
     # Make client available to endpoints
     app.state.polygon_client = polygon_client
@@ -176,17 +179,11 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 
-# Include routers
+# Include simple screener router (v2)
 app.include_router(
-    screener.router,
-    prefix=settings.api_v1_str,
-    tags=["screener"]
-)
-
-app.include_router(
-    data_management.router,
-    prefix=settings.api_v1_str,
-    tags=["data_management"]
+    simple_screener.router,
+    # No prefix needed - router already has /api/v2/simple-screener
+    tags=["simple-screener"]
 )
 
 
@@ -199,13 +196,9 @@ async def root():
         "version": "1.0.0",
         "status": "healthy",
         "endpoints": {
-            "health": f"{settings.api_v1_str}/health",
-            "screen": f"{settings.api_v1_str}/screen",
-            "screen_database": f"{settings.api_v1_str}/screen/database",
-            "symbols": f"{settings.api_v1_str}/symbols",
-            "filters": f"{settings.api_v1_str}/filters",
-            "data_status": f"{settings.api_v1_str}/data/status",
-            "data_coverage": f"{settings.api_v1_str}/data/coverage",
-            "data_collect": f"{settings.api_v1_str}/data/collect/daily"
+            # Simple screener endpoints (v2)
+            "simple_screen": "/api/v2/simple-screener/screen",
+            "simple_filters_info": "/api/v2/simple-screener/filters/info",
+            "simple_examples": "/api/v2/simple-screener/examples"
         }
     }

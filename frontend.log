@@ -1,0 +1,25 @@
+
+> frontend@0.0.0 dev
+> vite
+
+
+  VITE v7.0.6  ready in 161 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://10.182.0.2:5173/
+  ➜  Network: http://172.17.0.1:5173/
+2:27:50 PM [vite] (client) hmr update /src/components/SimpleStockScreener.tsx, /src/index.css
+2:34:15 PM [vite] (client) hmr update /src/components/SimpleStockScreener.tsx, /src/index.css
+2:34:21 PM [vite] (client) hmr update /src/components/SimpleStockScreener.tsx, /src/index.css
+2:35:10 PM [vite] (client) hmr update /src/components/SimpleStockScreener.tsx, /src/index.css
+2:35:23 PM [vite] (client) hmr update /src/components/SimpleStockScreener.tsx, /src/index.css
+2:35:29 PM [vite] (client) hmr update /src/components/SimpleStockScreener.tsx, /src/index.css
+2:36:03 PM [vite] (client) hmr update /src/components/SimpleStockScreener.tsx, /src/index.css
+2:36:34 PM [vite] (client) hmr update /src/components/SimpleStockScreener.tsx, /src/index.css
+2:36:40 PM [vite] (client) hmr update /src/components/SimpleStockScreener.tsx, /src/index.css
+2:36:47 PM [vite] (client) hmr update /src/components/SimpleStockScreener.tsx, /src/index.css
+2:37:07 PM [vite] (client) hmr update /src/components/SimpleStockScreener.tsx, /src/index.css
+2:37:20 PM [vite] (client) hmr update /src/components/SimpleStockScreener.tsx, /src/index.css
+2:37:30 PM [vite] (client) hmr update /src/components/SimpleStockScreener.tsx, /src/index.css
+2:37:36 PM [vite] (client) hmr update /src/components/SimpleStockScreener.tsx, /src/index.css
+2:37:48 PM [vite] (client) hmr update /src/components/SimpleStockScreener.tsx, /src/index.css

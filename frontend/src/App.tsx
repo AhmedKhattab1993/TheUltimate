@@ -1,7 +1,15 @@
-import { StockScreenerEnhanced } from './components/StockScreenerEnhanced'
+import { SimpleStockScreener } from './components/SimpleStockScreener'
+import { ScreenerProvider } from './contexts/ScreenerContext'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
 function App() {
-  return <StockScreenerEnhanced />
+  return (
+    <ErrorBoundary>
+      <ScreenerProvider>
+        <SimpleStockScreener />
+      </ScreenerProvider>
+    </ErrorBoundary>
+  )
 }
 
 export default App
