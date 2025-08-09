@@ -16,10 +16,16 @@ export interface RSIFilter {
   condition: 'above' | 'below'
 }
 
+export interface GapFilter {
+  gap_threshold: number
+  direction: 'up' | 'down' | 'both'
+}
+
 export interface SimpleFilters {
   simple_price_range?: SimplePriceRangeFilter
   price_vs_ma?: PriceVsMAFilter
   rsi?: RSIFilter
+  gap?: GapFilter
 }
 
 export interface EnhancedScreenerRequest {

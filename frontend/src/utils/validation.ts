@@ -51,6 +51,18 @@ export function validateFilters(state: ScreenerState): ValidationResult {
     }
   }
 
+  // Validate Gap Filter
+  if (state.filters.gap.enabled) {
+    const threshold = parseFloat(state.filters.gap.threshold)
+
+    if (isNaN(threshold) || threshold < 0) {
+      errors.push({
+        field: 'gap.threshold',
+        message: 'Gap threshold must be a positive number'
+      })
+    }
+  }
+
   // Date validation
   if (state.dateRange.startDate && state.dateRange.endDate) {
     if (state.dateRange.startDate > state.dateRange.endDate) {

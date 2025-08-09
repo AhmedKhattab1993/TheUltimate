@@ -23,3 +23,160 @@
 2:37:30 PM [vite] (client) hmr update /src/components/SimpleStockScreener.tsx, /src/index.css
 2:37:36 PM [vite] (client) hmr update /src/components/SimpleStockScreener.tsx, /src/index.css
 2:37:48 PM [vite] (client) hmr update /src/components/SimpleStockScreener.tsx, /src/index.css
+2:59:12 PM [vite] (client) hmr update /src/contexts/ScreenerContext.tsx, /src/index.css
+2:59:12 PM [vite] (client) hmr invalidate /src/contexts/ScreenerContext.tsx Could not Fast Refresh ("useScreenerContext" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+2:59:12 PM [vite] (client) hmr update /src/App.tsx, /src/index.css, /src/components/SimpleStockScreener.tsx, /src/components/filters/RSIFilter.tsx, /src/components/filters/PriceVsMAFilter.tsx, /src/components/results/ScreenerResults.tsx, /src/components/filters/SimplePriceRangeFilter.tsx, /src/components/results/ResultsTable.tsx
+2:59:26 PM [vite] (client) hmr update /src/contexts/ScreenerContext.tsx, /src/index.css
+2:59:26 PM [vite] (client) hmr invalidate /src/contexts/ScreenerContext.tsx Could not Fast Refresh ("useScreenerContext" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+2:59:26 PM [vite] (client) hmr update /src/App.tsx, /src/index.css, /src/components/SimpleStockScreener.tsx, /src/components/filters/RSIFilter.tsx, /src/components/filters/PriceVsMAFilter.tsx, /src/components/results/ScreenerResults.tsx, /src/components/filters/SimplePriceRangeFilter.tsx, /src/components/results/ResultsTable.tsx
+2:59:37 PM [vite] (client) page reload src/types/screener.ts
+2:59:59 PM [vite] (client) hmr update /src/components/SimpleStockScreener.tsx, /src/index.css
+3:00:59 PM [vite] (client) hmr update /src/components/SimpleStockScreener.tsx, /src/index.css
+3:01:59 PM [vite] (client) hmr update /src/components/SimpleStockScreener.tsx, /src/index.css
+3:01:59 PM [vite] Internal server error: Failed to resolve import "@/components/ui/radio-group" from "src/components/filters/GapFilter.tsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: /home/ahmed/TheUltimate/frontend/src/components/filters/GapFilter.tsx:6:43
+  21 |  import { Input } from "@/components/ui/input";
+  22 |  import { Switch } from "@/components/ui/switch";
+  23 |  import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+     |                                              ^
+  24 |  import { TrendingUp, AlertCircle } from "lucide-react";
+  25 |  import { HelpTooltip } from "@/components/HelpTooltip";
+      at TransformPluginContext._formatLog (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:31460:43)
+      at TransformPluginContext.error (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:31457:14)
+      at normalizeUrl (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:29999:18)
+      at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+      at async file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:30057:32
+      at async Promise.all (index 8)
+      at async TransformPluginContext.transform (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:30025:4)
+      at async EnvironmentPluginContainer.transform (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:31274:14)
+      at async loadAndTransform (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:26451:26)
+3:01:59 PM [vite] (client) Pre-transform error: Failed to resolve import "@/components/ui/radio-group" from "src/components/filters/GapFilter.tsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: /home/ahmed/TheUltimate/frontend/src/components/filters/GapFilter.tsx:6:43
+  21 |  import { Input } from "@/components/ui/input";
+  22 |  import { Switch } from "@/components/ui/switch";
+  23 |  import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+     |                                              ^
+  24 |  import { TrendingUp, AlertCircle } from "lucide-react";
+  25 |  import { HelpTooltip } from "@/components/HelpTooltip";
+3:02:00 PM [vite] Internal server error: Failed to resolve import "@/components/ui/radio-group" from "src/components/filters/GapFilter.tsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: /home/ahmed/TheUltimate/frontend/src/components/filters/GapFilter.tsx:6:43
+  21 |  import { Input } from "@/components/ui/input";
+  22 |  import { Switch } from "@/components/ui/switch";
+  23 |  import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+     |                                              ^
+  24 |  import { TrendingUp, AlertCircle } from "lucide-react";
+  25 |  import { HelpTooltip } from "@/components/HelpTooltip";
+      at TransformPluginContext._formatLog (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:31460:43)
+      at TransformPluginContext.error (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:31457:14)
+      at normalizeUrl (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:29999:18)
+      at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+      at async file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:30057:32
+      at async Promise.all (index 8)
+      at async TransformPluginContext.transform (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:30025:4)
+      at async EnvironmentPluginContainer.transform (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:31274:14)
+      at async loadAndTransform (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:26451:26)
+      at async viteTransformMiddleware (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:27536:20)
+3:03:59 PM [vite] (client) hmr update /src/index.css, /src/components/SimpleStockScreener.tsx
+3:03:59 PM [vite] (client) hmr update /src/components/SimpleStockScreener.tsx, /src/index.css
+3:03:59 PM [vite] (client) Pre-transform error: Failed to resolve import "@/components/ui/radio-group" from "src/components/filters/GapFilter.tsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: /home/ahmed/TheUltimate/frontend/src/components/filters/GapFilter.tsx:6:43
+  21 |  import { Input } from "@/components/ui/input";
+  22 |  import { Switch } from "@/components/ui/switch";
+  23 |  import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+     |                                              ^
+  24 |  import { TrendingUp, AlertCircle } from "lucide-react";
+  25 |  import { HelpTooltip } from "@/components/HelpTooltip";
+3:03:59 PM [vite] Internal server error: Failed to resolve import "@/components/ui/radio-group" from "src/components/filters/GapFilter.tsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: /home/ahmed/TheUltimate/frontend/src/components/filters/GapFilter.tsx:6:43
+  21 |  import { Input } from "@/components/ui/input";
+  22 |  import { Switch } from "@/components/ui/switch";
+  23 |  import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+     |                                              ^
+  24 |  import { TrendingUp, AlertCircle } from "lucide-react";
+  25 |  import { HelpTooltip } from "@/components/HelpTooltip";
+      at TransformPluginContext._formatLog (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:31460:43)
+      at TransformPluginContext.error (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:31457:14)
+      at normalizeUrl (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:29999:18)
+      at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+      at async file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:30057:32
+      at async Promise.all (index 8)
+      at async TransformPluginContext.transform (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:30025:4)
+      at async EnvironmentPluginContainer.transform (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:31274:14)
+      at async loadAndTransform (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:26451:26)
+      at async viteTransformMiddleware (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:27536:20)
+3:04:00 PM [vite] Internal server error: Failed to resolve import "@/components/ui/radio-group" from "src/components/filters/GapFilter.tsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: /home/ahmed/TheUltimate/frontend/src/components/filters/GapFilter.tsx:6:43
+  21 |  import { Input } from "@/components/ui/input";
+  22 |  import { Switch } from "@/components/ui/switch";
+  23 |  import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+     |                                              ^
+  24 |  import { TrendingUp, AlertCircle } from "lucide-react";
+  25 |  import { HelpTooltip } from "@/components/HelpTooltip";
+      at TransformPluginContext._formatLog (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:31460:43)
+      at TransformPluginContext.error (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:31457:14)
+      at normalizeUrl (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:29999:18)
+      at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+      at async file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:30057:32
+      at async Promise.all (index 8)
+      at async TransformPluginContext.transform (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:30025:4)
+      at async EnvironmentPluginContainer.transform (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:31274:14)
+      at async loadAndTransform (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:26451:26)
+      at async viteTransformMiddleware (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:27536:20)
+3:06:59 PM [vite] (client) hmr update /src/index.css, /src/components/SimpleStockScreener.tsx
+3:06:59 PM [vite] Internal server error: Failed to resolve import "@radix-ui/react-radio-group" from "src/components/ui/radio-group.tsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: /home/ahmed/TheUltimate/frontend/src/components/ui/radio-group.tsx:2:37
+  16 |  }
+  17 |  import * as React from "react";
+  18 |  import * as RadioGroupPrimitive from "@radix-ui/react-radio-group";
+     |                                        ^
+  19 |  import { Circle } from "lucide-react";
+  20 |  import { cn } from "@/lib/utils";
+      at TransformPluginContext._formatLog (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:31460:43)
+      at TransformPluginContext.error (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:31457:14)
+      at normalizeUrl (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:29999:18)
+      at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+      at async file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:30057:32
+      at async Promise.all (index 4)
+      at async TransformPluginContext.transform (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:30025:4)
+      at async EnvironmentPluginContainer.transform (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:31274:14)
+      at async loadAndTransform (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:26451:26)
+3:06:59 PM [vite] (client) Pre-transform error: Failed to resolve import "@radix-ui/react-radio-group" from "src/components/ui/radio-group.tsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: /home/ahmed/TheUltimate/frontend/src/components/ui/radio-group.tsx:2:37
+  16 |  }
+  17 |  import * as React from "react";
+  18 |  import * as RadioGroupPrimitive from "@radix-ui/react-radio-group";
+     |                                        ^
+  19 |  import { Circle } from "lucide-react";
+  20 |  import { cn } from "@/lib/utils";
+3:07:00 PM [vite] Internal server error: Failed to resolve import "@radix-ui/react-radio-group" from "src/components/ui/radio-group.tsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: /home/ahmed/TheUltimate/frontend/src/components/ui/radio-group.tsx:2:37
+  16 |  }
+  17 |  import * as React from "react";
+  18 |  import * as RadioGroupPrimitive from "@radix-ui/react-radio-group";
+     |                                        ^
+  19 |  import { Circle } from "lucide-react";
+  20 |  import { cn } from "@/lib/utils";
+      at TransformPluginContext._formatLog (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:31460:43)
+      at TransformPluginContext.error (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:31457:14)
+      at normalizeUrl (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:29999:18)
+      at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+      at async file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:30057:32
+      at async Promise.all (index 4)
+      at async TransformPluginContext.transform (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:30025:4)
+      at async EnvironmentPluginContainer.transform (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:31274:14)
+      at async loadAndTransform (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:26451:26)
+      at async viteTransformMiddleware (file:///home/ahmed/TheUltimate/frontend/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:27536:20)
+3:11:59 PM [vite] (client) hmr update /src/components/filters/GapFilter.tsx, /src/index.css
+3:11:59 PM [vite] (client) hmr update /src/index.css, /src/components/SimpleStockScreener.tsx
+3:12:00 PM [vite] (client) ✨ new dependencies optimized: @radix-ui/react-radio-group
+3:12:00 PM [vite] (client) ✨ optimized dependencies changed. reloading
+3:12:59 PM [vite] (client) hmr update /src/index.css, /src/components/SimpleStockScreener.tsx

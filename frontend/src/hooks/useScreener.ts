@@ -44,6 +44,17 @@ export function useScreener() {
       }
     }
 
+    if (state.filters.gap.enabled) {
+      const threshold = parseFloat(state.filters.gap.threshold)
+      
+      if (!isNaN(threshold)) {
+        filters.gap = {
+          gap_threshold: threshold,
+          direction: state.filters.gap.direction
+        }
+      }
+    }
+
     return {
       start_date: format(state.dateRange.startDate!, 'yyyy-MM-dd'),
       end_date: format(state.dateRange.endDate!, 'yyyy-MM-dd'),

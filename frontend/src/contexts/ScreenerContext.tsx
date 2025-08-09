@@ -19,6 +19,11 @@ export interface ScreenerState {
       threshold: string
       condition: 'above' | 'below'
     }
+    gap: {
+      enabled: boolean
+      threshold: string
+      direction: 'up' | 'down' | 'both'
+    }
   }
   dateRange: {
     startDate: Date | null
@@ -69,6 +74,11 @@ const initialState: ScreenerState = {
       period: '14',
       threshold: '30',
       condition: 'below'
+    },
+    gap: {
+      enabled: false,
+      threshold: '2.0',
+      direction: 'both'
     }
   },
   dateRange: {

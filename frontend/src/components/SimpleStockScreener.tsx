@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { SimplePriceRangeFilter } from '@/components/filters/SimplePriceRangeFilter'
 import { PriceVsMAFilter } from '@/components/filters/PriceVsMAFilter'
 import { RSIFilter } from '@/components/filters/RSIFilter'
+import { GapFilter } from '@/components/filters/GapFilter'
 import { ScreenerResults } from '@/components/results/ScreenerResults'
 import { useScreenerContext } from '@/contexts/ScreenerContext'
 import { useScreener } from '@/hooks/useScreener'
@@ -150,6 +151,7 @@ export function SimpleStockScreener() {
           <SimplePriceRangeFilter />
           <PriceVsMAFilter />
           <RSIFilter />
+          <GapFilter />
         </div>
       </div>
 

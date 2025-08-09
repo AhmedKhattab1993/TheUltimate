@@ -44,6 +44,10 @@ interface SimpleScreenerRequest {
       condition: 'above' | 'below'
       threshold: number
     }
+    gap?: {
+      gap_threshold: number
+      direction: 'up' | 'down' | 'both'
+    }
   }
 }
 
@@ -102,6 +106,10 @@ export const stockScreenerApi = {
           rsi_period: request.filters.rsi.period,
           condition: request.filters.rsi.condition,
           threshold: request.filters.rsi.threshold
+        },
+        gap: request.filters.gap && {
+          gap_threshold: request.filters.gap.gap_threshold,
+          direction: request.filters.gap.direction
         }
       }
     }
