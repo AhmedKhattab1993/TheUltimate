@@ -1,0 +1,75 @@
+# Test Pipeline Configuration - Small test run
+# This configuration runs a minimal test to verify pipeline functionality
+
+screening:
+  # Stock screening filters
+  filters:
+    price_range:
+      min_price: 50
+      max_price: 200
+    gap:
+      gap_threshold: 3.0
+      direction: "up"
+    prev_day_dollar_volume:
+      min_dollar_volume: 50000000
+    relative_volume:
+      recent_days: 2
+      lookback_days: 20
+      min_ratio: 2.0
+  
+  # Date range for screening
+  date_range:
+    start: "2025-08-04"
+    end: "2025-08-04" 
+  
+  # Use all US stocks or specific list
+  use_all_us_stocks: true
+
+backtesting:
+  # Strategy to use
+  strategy: "MarketStructure"
+  
+  # Backtest date range
+  date_range:
+    start: "2025-08-04"
+    end: "2025-08-04"
+  
+  # Starting capital
+  initial_cash: 100000
+  
+  # Strategy-specific parameters
+  parameters:
+    pivot_bars: 2
+    lower_timeframe: "5min"
+  
+  # Data resolution for backtesting
+  resolution: "Daily"
+
+execution:
+  # Number of backtests to run in parallel
+  parallel_backtests: 3
+  
+  # Timeout for each backtest in seconds
+  timeout_per_backtest: 120
+  
+  # Number of retry attempts for failed backtests
+  retry_attempts: 1
+  
+  # Whether to continue on failures
+  continue_on_error: true
+
+output:
+  # Directory to save results
+  directory: "./pipeline_results"
+  
+  # Output formats for statistics
+  formats: 
+    - "json"
+    - "csv"
+  
+  # Whether to print statistics to console
+  print_to_console: true
+  
+  # Cleanup settings
+  cleanup_logs: false
+  archive_before_cleanup: false

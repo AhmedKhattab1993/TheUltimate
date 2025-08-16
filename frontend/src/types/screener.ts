@@ -21,11 +21,23 @@ export interface GapFilter {
   direction: 'up' | 'down' | 'both'
 }
 
+export interface PreviousDayDollarVolumeFilter {
+  min_dollar_volume: number
+}
+
+export interface RelativeVolumeFilter {
+  recent_days: number
+  lookback_days: number
+  min_ratio: number
+}
+
 export interface SimpleFilters {
   simple_price_range?: SimplePriceRangeFilter
   price_vs_ma?: PriceVsMAFilter
   rsi?: RSIFilter
   gap?: GapFilter
+  prev_day_dollar_volume?: PreviousDayDollarVolumeFilter
+  relative_volume?: RelativeVolumeFilter
 }
 
 export interface EnhancedScreenerRequest {

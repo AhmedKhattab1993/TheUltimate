@@ -3,7 +3,7 @@ import type { ScreenerRequest, ScreenerResponse } from '@/types/api'
 import type { EnhancedScreenerRequest, EnhancedScreenerResponse } from '@/types/screener'
 
 // Determine API URL based on where the frontend is accessed from
-const getApiUrl = () => {
+export const getApiUrl = () => {
   const hostname = window.location.hostname
   
   // If accessing from localhost, use localhost API
@@ -22,6 +22,17 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+})
+
+// Add version query parameter to all requests to help with caching
+api.interceptors.request.use((config) => {
+  const version = new Date().getTime()
+  if (config.params) {
+    config.params._v = version
+  } else {
+    config.params = { _v: version }
+  }
+  return config
 })
 
 // Simple Screener API Interface
@@ -110,6 +121,14 @@ export const stockScreenerApi = {
         gap: request.filters.gap && {
           gap_threshold: request.filters.gap.gap_threshold,
           direction: request.filters.gap.direction
+        },
+        prev_day_dollar_volume: request.filters.prev_day_dollar_volume && {
+          min_dollar_volume: request.filters.prev_day_dollar_volume.min_dollar_volume
+        },
+        relative_volume: request.filters.relative_volume && {
+          recent_days: request.filters.relative_volume.recent_days,
+          lookback_days: request.filters.relative_volume.lookback_days,
+          min_ratio: request.filters.relative_volume.min_ratio
         }
       }
     }

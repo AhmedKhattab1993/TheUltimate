@@ -1,12 +1,17 @@
 """
 Simple and efficient filters for stock screening.
 
-This module provides three basic filters that replace the complex filter system:
+This module provides filters that replace the complex filter system:
 1. SimplePriceRangeFilter - Filter by OPEN price range
 2. PriceVsMAFilter - Compare OPEN price to moving average
 3. RSIFilter - Standard RSI calculation with threshold
+4. MinAverageVolumeFilter - Filter by minimum average volume
+5. MinAverageDollarVolumeFilter - Filter by minimum average dollar volume
+6. GapFilter - Filter by gap between open and previous close
+7. PreviousDayDollarVolumeFilter - Filter by previous day's dollar volume
+8. RelativeVolumeFilter - Filter by relative volume ratio
 
-All filters are fully vectorized using NumPy and support database pre-filtering.
+All filters are fully vectorized using NumPy and support database pre-filtering where applicable.
 """
 
 from typing import Optional, Dict, Any, List
@@ -649,3 +654,222 @@ class GapFilter(EnhancedBaseFilter):
         """Return number of historical days needed for gap calculation."""
         # Need previous day's close to calculate today's gap
         return 1
+
+
+class PreviousDayDollarVolumeFilter(EnhancedBaseFilter):
+    """
+    Filter stocks based on the dollar volume of the PREVIOUS trading day.
+    
+    This filter checks if yesterday's dollar volume (price * volume) meets
+    the specified minimum threshold. Each day qualifies if the PREVIOUS day's
+    dollar volume was above the threshold.
+    
+    Note: The first day in the dataset cannot qualify since it has no previous day.
+    """
+    
+    def __init__(self, min_dollar_volume: float = 10000000, 
+                 name: str = "PreviousDayDollarVolumeFilter"):
+        """
+        Initialize previous day dollar volume filter.
+        
+        Args:
+            min_dollar_volume: Minimum dollar volume for previous day (default: $10M)
+            name: Optional name for the filter
+        """
+        self.name = name
+        if min_dollar_volume < 0:
+            raise ValueError(f"min_dollar_volume must be >= 0, got {min_dollar_volume}")
+        
+        self.min_dollar_volume = min_dollar_volume
+    
+    def apply(self, data: np.ndarray, symbol: str) -> FilterResult:
+        """Apply previous day dollar volume filter."""
+        self._validate_data(data, min_length=2)  # Need at least 2 days
+        
+        volumes = data['volume'].astype(np.float64)
+        dates = data['date']
+        
+        # Use VWAP if available, otherwise use close price
+        if 'vwap' in data.dtype.names:
+            prices = data['vwap'].astype(np.float64)
+            # Handle cases where VWAP might be 0 or NaN
+            close_prices = data['close'].astype(np.float64)
+            prices = np.where((prices > 0) & ~np.isnan(prices), prices, close_prices)
+        else:
+            prices = data['close'].astype(np.float64)
+        
+        # Calculate dollar volume for each day
+        dollar_volumes = volumes * prices
+        
+        # Create qualifying mask using vectorized operations
+        # Day i qualifies if day i-1 (yesterday) had sufficient dollar volume
+        qualifying_mask = np.zeros(len(dollar_volumes), dtype=bool)
+        
+        # Use vectorized comparison for all days except the first
+        if len(dollar_volumes) > 1:
+            # Check if previous day's dollar volume meets threshold
+            qualifying_mask[1:] = dollar_volumes[:-1] >= self.min_dollar_volume
+        
+        # Calculate metrics
+        # Get dollar volumes for days that had a previous day
+        prev_day_dollar_volumes = dollar_volumes[:-1]  # All but last day
+        
+        if len(prev_day_dollar_volumes) > 0:
+            days_above_threshold = np.sum(prev_day_dollar_volumes >= self.min_dollar_volume)
+            
+            metrics = {
+                'avg_dollar_volume': float(np.mean(dollar_volumes)),
+                'prev_day_avg_dollar_volume': float(np.mean(prev_day_dollar_volumes)),
+                'prev_day_min_dollar_volume': float(np.min(prev_day_dollar_volumes)),
+                'prev_day_max_dollar_volume': float(np.max(prev_day_dollar_volumes)),
+                'days_qualifying': int(np.sum(qualifying_mask)),
+                'prev_days_above_threshold': int(days_above_threshold),
+                'percent_days_qualifying': float((np.sum(qualifying_mask) / len(dollar_volumes)) * 100)
+            }
+        else:
+            metrics = {
+                'avg_dollar_volume': 0.0,
+                'prev_day_avg_dollar_volume': 0.0,
+                'prev_day_min_dollar_volume': 0.0,
+                'prev_day_max_dollar_volume': 0.0,
+                'days_qualifying': 0,
+                'prev_days_above_threshold': 0,
+                'percent_days_qualifying': 0.0
+            }
+        
+        return FilterResult(
+            symbol=symbol,
+            qualifying_mask=qualifying_mask,
+            dates=dates,
+            metrics=metrics
+        )
+    
+    def get_required_lookback_days(self) -> int:
+        """Return number of historical days needed."""
+        # Need at least 1 previous day
+        return 1
+
+
+class RelativeVolumeFilter(EnhancedBaseFilter):
+    """
+    Filter stocks based on relative volume ratio.
+    
+    Calculates the ratio of recent average volume to historical average volume,
+    excluding the current day from both calculations. This helps identify stocks
+    with unusually high recent volume compared to their historical average.
+    
+    Formula: avg(last N days excluding today) / avg(last M days excluding today)
+    where N < M
+    
+    Example: With recent_days=2 and lookback_days=20:
+    - Recent avg: average of yesterday and day before yesterday
+    - Historical avg: average of last 20 days excluding today
+    - Ratio: recent_avg / historical_avg
+    """
+    
+    def __init__(self, recent_days: int = 2, lookback_days: int = 20, 
+                 min_ratio: float = 1.5, name: str = "RelativeVolumeFilter"):
+        """
+        Initialize relative volume filter.
+        
+        Args:
+            recent_days: Number of recent days for numerator (default: 2)
+            lookback_days: Number of days for denominator (default: 20)
+            min_ratio: Minimum ratio to qualify (default: 1.5)
+            name: Optional name for the filter
+        """
+        self.name = name
+        
+        # Validate parameters
+        if recent_days < 1:
+            raise ValueError(f"recent_days must be >= 1, got {recent_days}")
+        if lookback_days < recent_days:
+            raise ValueError(f"lookback_days must be >= recent_days, got {lookback_days} < {recent_days}")
+        if min_ratio <= 0:
+            raise ValueError(f"min_ratio must be > 0, got {min_ratio}")
+        
+        self.recent_days = recent_days
+        self.lookback_days = lookback_days
+        self.min_ratio = min_ratio
+    
+    def apply(self, data: np.ndarray, symbol: str) -> FilterResult:
+        """Apply relative volume filter."""
+        # Need at least lookback_days + 1 to exclude current day
+        required_days = self.lookback_days + 1
+        if len(data) < required_days:
+            logger.debug(f"RelativeVolumeFilter for {symbol}: Have {len(data)} days, need {required_days}")
+        self._validate_data(data, min_length=required_days)
+        
+        volumes = data['volume'].astype(np.float64)
+        dates = data['date']
+        
+        # Initialize arrays for ratios
+        relative_volume_ratios = np.full(len(volumes), np.nan)
+        
+        # Vectorized calculation of relative volume ratios
+        # We can calculate for all valid days at once
+        if len(volumes) >= self.lookback_days + 1:
+            # Create arrays to hold recent and historical averages
+            recent_avgs = np.zeros(len(volumes) - self.lookback_days)
+            historical_avgs = np.zeros(len(volumes) - self.lookback_days)
+            
+            # Calculate moving averages using vectorized operations
+            for idx, i in enumerate(range(self.lookback_days, len(volumes))):
+                # Recent average: last N days EXCLUDING current day
+                recent_avgs[idx] = np.mean(volumes[i-self.recent_days:i])
+                
+                # Historical average: last M days EXCLUDING current day
+                historical_avgs[idx] = np.mean(volumes[i-self.lookback_days:i])
+            
+            # Calculate ratios with division by zero handling
+            # Where historical_avg is 0, set ratio to 0
+            valid_mask = historical_avgs > 0
+            ratios = np.zeros_like(recent_avgs)
+            ratios[valid_mask] = recent_avgs[valid_mask] / historical_avgs[valid_mask]
+            
+            # Assign to the appropriate positions in the result array
+            relative_volume_ratios[self.lookback_days:] = ratios
+        
+        # Create qualifying mask
+        qualifying_mask = ~np.isnan(relative_volume_ratios) & (relative_volume_ratios >= self.min_ratio)
+        
+        # Calculate metrics
+        valid_ratios = relative_volume_ratios[~np.isnan(relative_volume_ratios)]
+        
+        if len(valid_ratios) > 0:
+            high_ratio_days = np.sum(valid_ratios >= self.min_ratio)
+            very_high_ratio_days = np.sum(valid_ratios >= 2.0)  # Days with 2x or more volume
+            
+            metrics = {
+                'avg_relative_volume_ratio': float(np.mean(valid_ratios)),
+                'max_relative_volume_ratio': float(np.max(valid_ratios)),
+                'min_relative_volume_ratio': float(np.min(valid_ratios)),
+                'std_relative_volume_ratio': float(np.std(valid_ratios)),
+                'days_qualifying': int(np.sum(qualifying_mask)),
+                'days_above_threshold': int(high_ratio_days),
+                'days_above_2x': int(very_high_ratio_days),
+                'percent_days_qualifying': float((np.sum(qualifying_mask) / len(volumes)) * 100)
+            }
+        else:
+            metrics = {
+                'avg_relative_volume_ratio': 0.0,
+                'max_relative_volume_ratio': 0.0,
+                'min_relative_volume_ratio': 0.0,
+                'std_relative_volume_ratio': 0.0,
+                'days_qualifying': 0,
+                'days_above_threshold': 0,
+                'days_above_2x': 0,
+                'percent_days_qualifying': 0.0
+            }
+        
+        return FilterResult(
+            symbol=symbol,
+            qualifying_mask=qualifying_mask,
+            dates=dates,
+            metrics=metrics
+        )
+    
+    def get_required_lookback_days(self) -> int:
+        """Return number of historical days needed."""
+        # Need lookback_days + 1 because we exclude the current day
+        return self.lookback_days + 1

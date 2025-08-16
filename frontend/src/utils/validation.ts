@@ -63,6 +63,53 @@ export function validateFilters(state: ScreenerState): ValidationResult {
     }
   }
 
+  // Validate Previous Day Dollar Volume
+  if (state.filters.prevDayDollarVolume.enabled) {
+    const minVolume = parseFloat(state.filters.prevDayDollarVolume.minDollarVolume)
+
+    if (isNaN(minVolume) || minVolume < 0) {
+      errors.push({
+        field: 'prevDayDollarVolume.minDollarVolume',
+        message: 'Minimum dollar volume must be a positive number'
+      })
+    }
+  }
+
+  // Validate Relative Volume
+  if (state.filters.relativeVolume.enabled) {
+    const recentDays = parseInt(state.filters.relativeVolume.recentDays)
+    const lookbackDays = parseInt(state.filters.relativeVolume.lookbackDays)
+    const minRatio = parseFloat(state.filters.relativeVolume.minRatio)
+
+    if (isNaN(recentDays) || recentDays < 1 || recentDays > 10) {
+      errors.push({
+        field: 'relativeVolume.recentDays',
+        message: 'Recent days must be between 1 and 10'
+      })
+    }
+
+    if (isNaN(lookbackDays) || lookbackDays < 5 || lookbackDays > 200) {
+      errors.push({
+        field: 'relativeVolume.lookbackDays',
+        message: 'Lookback days must be between 5 and 200'
+      })
+    }
+
+    if (!isNaN(recentDays) && !isNaN(lookbackDays) && recentDays >= lookbackDays) {
+      errors.push({
+        field: 'relativeVolume',
+        message: 'Lookback days must be greater than recent days'
+      })
+    }
+
+    if (isNaN(minRatio) || minRatio <= 0 || minRatio > 10) {
+      errors.push({
+        field: 'relativeVolume.minRatio',
+        message: 'Minimum ratio must be between 0.1 and 10'
+      })
+    }
+  }
+
   // Date validation
   if (state.dateRange.startDate && state.dateRange.endDate) {
     if (state.dateRange.startDate > state.dateRange.endDate) {

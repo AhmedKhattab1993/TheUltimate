@@ -77,18 +77,38 @@ class GapParams(BaseModel):
     direction: GapDirection = Field(GapDirection.BOTH, description="Gap direction - up, down, or both")
 
 
+class PreviousDayDollarVolumeParams(BaseModel):
+    """Parameters for previous day dollar volume filter."""
+    min_dollar_volume: float = Field(10000000, ge=0, description="Minimum dollar volume for previous day")
+
+
+class RelativeVolumeParams(BaseModel):
+    """Parameters for relative volume filter."""
+    recent_days: int = Field(2, ge=1, le=10, description="Number of recent days for average")
+    lookback_days: int = Field(20, ge=5, le=200, description="Number of historical days for average")
+    min_ratio: float = Field(1.5, ge=0.1, le=10, description="Minimum ratio of recent/historical volume")
+    
+    @validator('lookback_days')
+    def validate_lookback_greater_than_recent(cls, v, values):
+        if 'recent_days' in values and v <= values['recent_days']:
+            raise ValueError('lookback_days must be greater than recent_days')
+        return v
+
+
 class SimpleFilters(BaseModel):
-    """Container for the 6 simple filters."""
+    """Container for the 8 simple filters."""
     price_range: Optional[SimplePriceRangeParams] = Field(None, description="Filter by OPEN price range")
     price_vs_ma: Optional[PriceVsMAParams] = Field(None, description="Filter by price vs moving average")
     rsi: Optional[RSIParams] = Field(None, description="Filter by RSI conditions")
     min_avg_volume: Optional[MinAverageVolumeParams] = Field(None, description="Filter by minimum average volume")
     min_avg_dollar_volume: Optional[MinAverageDollarVolumeParams] = Field(None, description="Filter by minimum average dollar volume")
     gap: Optional[GapParams] = Field(None, description="Filter by gap between open and previous close")
+    prev_day_dollar_volume: Optional[PreviousDayDollarVolumeParams] = Field(None, description="Filter by previous day's dollar volume")
+    relative_volume: Optional[RelativeVolumeParams] = Field(None, description="Filter by relative volume ratio")
 
 
 class SimpleScreenRequest(BaseModel):
-    """Simplified screening request with 6 basic filters."""
+    """Simplified screening request with 8 basic filters."""
     start_date: date = Field(..., description="Start date for screening")
     end_date: date = Field(..., description="End date for screening")
     use_all_us_stocks: bool = Field(True, description="Screen all US common stocks")
@@ -111,7 +131,7 @@ class SimpleScreenRequest(BaseModel):
     
     @validator('filters')
     def validate_at_least_one_filter(cls, v):
-        if not any([v.price_range, v.price_vs_ma, v.rsi, v.min_avg_volume, v.min_avg_dollar_volume, v.gap]):
+        if not any([v.price_range, v.price_vs_ma, v.rsi, v.min_avg_volume, v.min_avg_dollar_volume, v.gap, v.prev_day_dollar_volume, v.relative_volume]):
             raise ValueError('At least one filter must be specified')
         return v
 

@@ -63,6 +63,9 @@ class Settings(BaseSettings):
     data_collection_retry_attempts: int = int(os.getenv("DATA_COLLECTION_RETRY_ATTEMPTS", "3"))
     data_collection_retry_delay: float = float(os.getenv("DATA_COLLECTION_RETRY_DELAY", "1.0"))
     
+    # API settings for internal calls
+    api_base_url: str = os.getenv("API_BASE_URL", "http://localhost:8000")
+    
     class Config:
         case_sensitive = False
 

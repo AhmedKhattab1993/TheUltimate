@@ -55,6 +55,30 @@ export function useScreener() {
       }
     }
 
+    if (state.filters.prevDayDollarVolume.enabled) {
+      const minVolume = parseFloat(state.filters.prevDayDollarVolume.minDollarVolume)
+      
+      if (!isNaN(minVolume)) {
+        filters.prev_day_dollar_volume = {
+          min_dollar_volume: minVolume
+        }
+      }
+    }
+
+    if (state.filters.relativeVolume.enabled) {
+      const recentDays = parseInt(state.filters.relativeVolume.recentDays)
+      const lookbackDays = parseInt(state.filters.relativeVolume.lookbackDays)
+      const minRatio = parseFloat(state.filters.relativeVolume.minRatio)
+      
+      if (!isNaN(recentDays) && !isNaN(lookbackDays) && !isNaN(minRatio)) {
+        filters.relative_volume = {
+          recent_days: recentDays,
+          lookback_days: lookbackDays,
+          min_ratio: minRatio
+        }
+      }
+    }
+
     return {
       start_date: format(state.dateRange.startDate!, 'yyyy-MM-dd'),
       end_date: format(state.dateRange.endDate!, 'yyyy-MM-dd'),

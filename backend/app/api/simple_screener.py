@@ -26,12 +26,15 @@ from ..core.simple_filters import (
     RSIFilter,
     MinAverageVolumeFilter,
     MinAverageDollarVolumeFilter,
-    GapFilter
+    GapFilter,
+    PreviousDayDollarVolumeFilter,
+    RelativeVolumeFilter
 )
 from ..services.polygon_client import PolygonClient
 from ..services.db_prefilter import OptimizedDataLoader
 from ..models.stock import StockData
 from ..config import settings
+from ..services.screener_results import screener_results_manager
 
 
 router = APIRouter(prefix="/api/v2/simple-screener", tags=["simple-screener"])
@@ -67,13 +70,15 @@ async def simple_screen_stocks(
     """
     Screen stocks using simplified filters.
     
-    This endpoint uses 6 basic, efficient filters:
+    This endpoint uses 8 basic, efficient filters:
     1. **Price Range**: Filter by OPEN price within min/max range
     2. **Price vs MA**: Filter by OPEN price above/below moving average
     3. **RSI**: Filter by RSI above/below threshold
     4. **Min Average Volume**: Filter by minimum average trading volume in shares
     5. **Min Average Dollar Volume**: Filter by minimum average dollar volume (price * volume)
     6. **Gap**: Filter by gap between today's open and yesterday's close
+    7. **Previous Day Dollar Volume**: Filter by yesterday's dollar volume only
+    8. **Relative Volume**: Filter by ratio of recent to historical volume
     
     All filters use vectorized NumPy operations for maximum performance.
     Database pre-filtering is applied where possible.
@@ -149,6 +154,18 @@ async def simple_screen_stocks(
             direction=request.filters.gap.direction
         ))
     
+    if request.filters.prev_day_dollar_volume:
+        filters.append(PreviousDayDollarVolumeFilter(
+            min_dollar_volume=request.filters.prev_day_dollar_volume.min_dollar_volume
+        ))
+    
+    if request.filters.relative_volume:
+        filters.append(RelativeVolumeFilter(
+            recent_days=request.filters.relative_volume.recent_days,
+            lookback_days=request.filters.relative_volume.lookback_days,
+            min_ratio=request.filters.relative_volume.min_ratio
+        ))
+    
     if not filters:
         raise HTTPException(
             status_code=400,
@@ -218,12 +235,18 @@ async def simple_screen_stocks(
         passes_all = True
         
         for filter_obj in filters:
-            filter_result = filter_obj.apply(np_data, symbol)
-            # Check if any days qualify - if not, filter failed
-            if filter_result.num_qualifying_days == 0:
+            try:
+                filter_result = filter_obj.apply(np_data, symbol)
+                # Check if any days qualify - if not, filter failed
+                if filter_result.num_qualifying_days == 0:
+                    passes_all = False
+                    break
+                filter_results.append(filter_result)
+            except ValueError as e:
+                # Skip stocks that don't have enough data
+                logger.debug(f"Skipping {symbol}: {str(e)}")
                 passes_all = False
                 break
-            filter_results.append(filter_result)
         
         # Only include in results if all filters pass
         if passes_all and filter_results:
@@ -275,6 +298,28 @@ async def simple_screen_stocks(
     results.sort(key=lambda r: r.qualifying_days_count, reverse=True)
     
     execution_time_ms = (time.time() - start_time) * 1000
+    
+    # Save screener results to file for backtest access
+    if results:
+        try:
+            symbols = [r.symbol for r in results]
+            filters_dict = request.dict()
+            metadata = {
+                "total_symbols_screened": len(data_by_symbol),
+                "total_qualifying_stocks": total_qualifying,
+                "execution_time_ms": execution_time_ms,
+                "db_prefiltering_used": db_prefiltered_count > 0
+            }
+            
+            results_file = screener_results_manager.save_results(
+                symbols=symbols,
+                filters=filters_dict,
+                metadata=metadata
+            )
+            logger.info(f"Saved screener results to {results_file}")
+        except Exception as e:
+            logger.error(f"Failed to save screener results: {e}")
+            # Don't fail the request if saving fails
     
     return SimpleScreenResponse(
         request=request,
@@ -462,6 +507,57 @@ async def get_filter_info():
                     "gap_down": {"gap_threshold": 2.0, "direction": "down"},
                     "large_gaps": {"gap_threshold": 5.0, "direction": "both"}
                 }
+            },
+            "prev_day_dollar_volume": {
+                "description": "Filter stocks by previous day's dollar volume only",
+                "parameters": {
+                    "min_dollar_volume": {
+                        "type": "float",
+                        "min": 0,
+                        "default": 10000000,
+                        "description": "Minimum dollar volume for previous trading day"
+                    }
+                },
+                "efficiency": "High - Simple calculation on previous day data",
+                "db_prefilter": False,
+                "common_usage": {
+                    "liquid_yesterday": {"min_dollar_volume": 10000000},
+                    "very_liquid_yesterday": {"min_dollar_volume": 50000000},
+                    "institutional_yesterday": {"min_dollar_volume": 100000000}
+                }
+            },
+            "relative_volume": {
+                "description": "Filter stocks by relative volume ratio (recent avg / historical avg)",
+                "parameters": {
+                    "recent_days": {
+                        "type": "int",
+                        "min": 1,
+                        "max": 10,
+                        "default": 2,
+                        "description": "Number of recent days for volume average"
+                    },
+                    "lookback_days": {
+                        "type": "int",
+                        "min": 5,
+                        "max": 200,
+                        "default": 20,
+                        "description": "Number of historical days for volume average"
+                    },
+                    "min_ratio": {
+                        "type": "float",
+                        "min": 0.1,
+                        "max": 10,
+                        "default": 1.5,
+                        "description": "Minimum ratio to qualify (1.5 = 50% higher)"
+                    }
+                },
+                "efficiency": "Medium - Requires moving average calculations",
+                "db_prefilter": False,
+                "common_usage": {
+                    "high_rel_volume": {"recent_days": 2, "lookback_days": 20, "min_ratio": 1.5},
+                    "very_high_rel_volume": {"recent_days": 2, "lookback_days": 20, "min_ratio": 2.0},
+                    "extreme_rel_volume": {"recent_days": 3, "lookback_days": 30, "min_ratio": 3.0}
+                }
             }
         },
         "performance_tips": [
@@ -525,6 +621,18 @@ async def get_example_requests():
                 "filters": {
                     "gap": {"gap_threshold": 3.0, "direction": "both"},
                     "min_avg_dollar_volume": {"lookback_days": 20, "min_avg_dollar_volume": 20000000}
+                }
+            }
+        },
+        {
+            "name": "High Relative Volume",
+            "description": "Stocks with unusual volume activity",
+            "request": {
+                "start_date": "2024-01-01",
+                "end_date": "2024-01-31",
+                "filters": {
+                    "relative_volume": {"recent_days": 2, "lookback_days": 20, "min_ratio": 2.0},
+                    "prev_day_dollar_volume": {"min_dollar_volume": 50000000}
                 }
             }
         }

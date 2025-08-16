@@ -24,6 +24,16 @@ export interface ScreenerState {
       threshold: string
       direction: 'up' | 'down' | 'both'
     }
+    prevDayDollarVolume: {
+      enabled: boolean
+      minDollarVolume: string
+    }
+    relativeVolume: {
+      enabled: boolean
+      recentDays: string
+      lookbackDays: string
+      minRatio: string
+    }
   }
   dateRange: {
     startDate: Date | null
@@ -79,6 +89,16 @@ const initialState: ScreenerState = {
       enabled: false,
       threshold: '2.0',
       direction: 'both'
+    },
+    prevDayDollarVolume: {
+      enabled: false,
+      minDollarVolume: '10000000'
+    },
+    relativeVolume: {
+      enabled: false,
+      recentDays: '2',
+      lookbackDays: '20',
+      minRatio: '1.5'
     }
   },
   dateRange: {
