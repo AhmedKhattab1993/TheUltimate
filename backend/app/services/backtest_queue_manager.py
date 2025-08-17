@@ -524,11 +524,8 @@ class BacktestQueueManager:
                 else:
                     logger.warning(f"Failed to store backtest result for {task.symbol} in file storage")
             
-            # Also save to database table
-            if self.enable_storage:
-                db_success = await self._save_to_database(task, statistics)
-                if not db_success:
-                    logger.warning(f"Failed to save backtest result for {task.symbol} to database table")
+            # Database save is already handled by cache_service.save_backtest_results() above
+            # Removed duplicate database save operation to prevent duplicate entries
             
             # Add statistics to task result for immediate use
             task.result['statistics'] = statistics
@@ -777,113 +774,3 @@ class BacktestQueueManager:
             logger.error(f"Error cleaning up backtest files at {result_path}: {e}")
             # Don't raise - cleanup failures shouldn't affect the pipeline
     
-    async def _save_to_database(self, task: BacktestTask, statistics: Dict[str, Any]) -> bool:
-        """
-        Save backtest results directly to market_structure_results table.
-        
-        Args:
-            task: Completed backtest task
-            statistics: Extracted statistics from LEAN results
-            
-        Returns:
-            True if saved successfully, False otherwise
-        """
-        try:
-            conn = await asyncpg.connect(settings.database_url)
-            
-            # Extract parameters
-            parameters = task.request_data.get('parameters', {})
-            
-            # Insert into market_structure_results table (using only necessary columns)
-            query = """
-                INSERT INTO market_structure_results (
-                    id, backtest_id, symbol, strategy_name,
-                    initial_cash, pivot_bars, lower_timeframe,
-                    start_date, end_date,
-                    total_return, net_profit, net_profit_currency,
-                    compounding_annual_return, final_value, start_equity, end_equity,
-                    sharpe_ratio, sortino_ratio, max_drawdown,
-                    probabilistic_sharpe_ratio, annual_standard_deviation, annual_variance,
-                    beta, alpha,
-                    total_trades, winning_trades, losing_trades, win_rate, loss_rate,
-                    average_win, average_loss, profit_factor,
-                    profit_loss_ratio, expectancy, total_orders,
-                    information_ratio, tracking_error, treynor_ratio,
-                    total_fees, estimated_strategy_capacity, lowest_capacity_asset,
-                    portfolio_turnover,
-                    pivot_highs_detected, pivot_lows_detected, bos_signals_generated,
-                    position_flips, liquidation_events,
-                    execution_time_ms, result_path, status, error_message,
-                    cache_hit, created_at, resolution
-                ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-                    $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
-                    $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44,
-                    $45, $46, $47, $48, $49, $50, $51, $52, NOW(), $53
-                )
-            """
-            
-            await conn.execute(
-                query,
-                uuid.uuid4(),  # id
-                uuid.UUID(task.result.get('backtest_id', task.id)),  # backtest_id
-                task.symbol,  # symbol
-                statistics.get('strategy_name', task.request_data.get('strategy', 'MarketStructure')),  # strategy_name
-                Decimal(str(statistics.get('initial_cash', task.request_data.get('initial_cash', 100000)))),  # initial_cash
-                statistics.get('pivot_bars', parameters.get('pivot_bars', 20)),  # pivot_bars
-                statistics.get('lower_timeframe', parameters.get('lower_timeframe', '5min')),  # lower_timeframe
-                datetime.strptime(task.request_data['start_date'], '%Y-%m-%d').date(),  # start_date
-                datetime.strptime(task.request_data['end_date'], '%Y-%m-%d').date(),  # end_date
-                Decimal(str(statistics.get('total_return', 0))),  # total_return
-                Decimal(str(statistics.get('net_profit', 0))),  # net_profit
-                Decimal(str(statistics.get('net_profit_currency', 0))),  # net_profit_currency
-                Decimal(str(statistics.get('compounding_annual_return', 0))),  # compounding_annual_return
-                Decimal(str(statistics.get('final_value', statistics.get('end_equity', 0)))),  # final_value
-                Decimal(str(statistics.get('start_equity', statistics.get('initial_cash', 100000)))),  # start_equity
-                Decimal(str(statistics.get('end_equity', 0))),  # end_equity
-                Decimal(str(statistics.get('sharpe_ratio', 0))),  # sharpe_ratio
-                Decimal(str(statistics.get('sortino_ratio', 0))),  # sortino_ratio
-                Decimal(str(statistics.get('max_drawdown', 0))),  # max_drawdown
-                Decimal(str(statistics.get('probabilistic_sharpe_ratio', 0))),  # probabilistic_sharpe_ratio
-                Decimal(str(statistics.get('annual_standard_deviation', 0))),  # annual_standard_deviation
-                Decimal(str(statistics.get('annual_variance', 0))),  # annual_variance
-                Decimal(str(statistics.get('beta', 0))),  # beta
-                Decimal(str(statistics.get('alpha', 0))),  # alpha
-                statistics.get('total_trades', 0),  # total_trades
-                statistics.get('winning_trades', 0),  # winning_trades
-                statistics.get('losing_trades', 0),  # losing_trades
-                Decimal(str(statistics.get('win_rate', 0))),  # win_rate
-                Decimal(str(statistics.get('loss_rate', 0))),  # loss_rate
-                Decimal(str(statistics.get('average_win', 0))),  # average_win
-                Decimal(str(statistics.get('average_loss', 0))),  # average_loss
-                Decimal(str(statistics.get('profit_factor', 0))),  # profit_factor
-                Decimal(str(statistics.get('profit_loss_ratio', 0))),  # profit_loss_ratio
-                Decimal(str(statistics.get('expectancy', 0))),  # expectancy
-                statistics.get('total_orders', 0),  # total_orders
-                Decimal(str(statistics.get('information_ratio', 0))),  # information_ratio
-                Decimal(str(statistics.get('tracking_error', 0))),  # tracking_error
-                Decimal(str(statistics.get('treynor_ratio', 0))),  # treynor_ratio
-                Decimal(str(statistics.get('total_fees', 0))),  # total_fees
-                Decimal(str(statistics.get('estimated_strategy_capacity', 0))),  # estimated_strategy_capacity
-                statistics.get('lowest_capacity_asset', ''),  # lowest_capacity_asset
-                Decimal(str(statistics.get('portfolio_turnover', 0))),  # portfolio_turnover
-                statistics.get('pivot_highs_detected', 0),  # pivot_highs_detected
-                statistics.get('pivot_lows_detected', 0),  # pivot_lows_detected
-                statistics.get('bos_signals_generated', 0),  # bos_signals_generated
-                statistics.get('position_flips', 0),  # position_flips
-                statistics.get('liquidation_events', 0),  # liquidation_events
-                int((task.completed_at - task.started_at).total_seconds() * 1000) if task.started_at and task.completed_at else None,  # execution_time_ms
-                task.result.get('result_path'),  # result_path
-                'completed',  # status
-                None,  # error_message
-                False,  # cache_hit
-                statistics.get('resolution', task.request_data.get('resolution', 'Daily'))  # resolution
-            )
-            
-            await conn.close()
-            logger.info(f"Saved backtest result for {task.symbol} to market_structure_results table")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error saving backtest result to database: {e}")
-            return False
