@@ -11,12 +11,20 @@ This service:
 import asyncio
 import logging
 from datetime import datetime
+from decimal import Decimal
 from typing import Dict, Any, List, Optional, Callable
 from concurrent.futures import ThreadPoolExecutor
 import uuid
+import json
+from pathlib import Path
+import asyncpg
 
 from ..models.backtest import BacktestRequest, BacktestStatus
+from ..models.cache_models import CachedBacktestResult
 from .backtest_manager import backtest_manager
+from .cache_service import CacheService
+from .backtest_storage import BacktestStorage
+from ..config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -40,13 +48,19 @@ class BacktestTask:
 class BacktestQueueManager:
     """Manages parallel execution of backtests with concurrency control."""
     
-    def __init__(self, max_parallel: int = 5, startup_delay: float = 15.0):
+    def __init__(self, max_parallel: int = 5, startup_delay: float = 15.0, 
+                 cache_service: Optional[CacheService] = None,
+                 enable_storage: bool = True,
+                 enable_cleanup: bool = True):
         """
         Initialize the queue manager.
         
         Args:
             max_parallel: Maximum number of concurrent backtests
             startup_delay: Delay in seconds between starting different backtests (default 15s)
+            cache_service: Optional cache service for checking/storing results
+            enable_storage: Whether to store results to database
+            enable_cleanup: Whether to cleanup files after storage
         """
         self.max_parallel = max_parallel
         self.startup_delay = startup_delay
@@ -56,6 +70,10 @@ class BacktestQueueManager:
         self.progress_callback: Optional[Callable] = None
         self._last_backtest_start_time: Optional[datetime] = None
         self._startup_lock = asyncio.Lock()
+        self.cache_service = cache_service
+        self.enable_storage = enable_storage
+        self.enable_cleanup = enable_cleanup
+        self.backtest_storage = BacktestStorage() if enable_storage else None
         
     def set_progress_callback(self, callback: Callable):
         """Set a callback function for progress updates."""
@@ -130,6 +148,10 @@ class BacktestQueueManager:
                 task.completed_at = datetime.now()
                 logger.info(f"Completed backtest for {task.symbol}")
                 
+                # Parse and store results if enabled
+                if self.enable_storage and task.result.get('result_path'):
+                    await self._parse_and_store_results(task)
+                
                 return task.result
                 
             except asyncio.TimeoutError:
@@ -165,10 +187,105 @@ class BacktestQueueManager:
         Returns:
             Dictionary mapping symbols to results
         """
-        # Create tasks
+        # Create tasks and check cache
         tasks = []
+        cached_results = {}
+        
         for request_data in backtest_requests:
             symbol = request_data['symbol']
+            
+            # Check cache if enabled
+            if self.cache_service:
+                from ..models.cache_models import CachedBacktestRequest
+                
+                # Extract parameters from request data
+                parameters = request_data.get('parameters', {})
+                
+                # Create cache request model using new cache key parameters
+                cache_request = CachedBacktestRequest(
+                    symbol=symbol,
+                    strategy_name=request_data.get('strategy', 'MarketStructure'),
+                    start_date=datetime.strptime(request_data['start_date'], '%Y-%m-%d').date(),
+                    end_date=datetime.strptime(request_data['end_date'], '%Y-%m-%d').date(),
+                    initial_cash=request_data.get('initial_cash', 100000),
+                    pivot_bars=parameters.get('pivot_bars', 20),
+                    lower_timeframe=parameters.get('lower_timeframe', '5min'),
+                    # Legacy parameters for backward compatibility
+                    holding_period=parameters.get('holding_period', 10),
+                    gap_threshold=parameters.get('gap_threshold', 2.0),
+                    stop_loss=parameters.get('stop_loss'),
+                    take_profit=parameters.get('take_profit')
+                )
+                
+                cached_result = await self.cache_service.get_backtest_results(cache_request)
+                
+                if cached_result is not None:
+                    logger.info(f"Cache hit for {symbol} - skipping backtest")
+                    # Convert cached result to expected format with comprehensive metrics
+                    cached_results[symbol] = {
+                        'status': 'completed',
+                        'symbol': symbol,
+                        'statistics': {
+                            # Core performance metrics
+                            'total_return': float(cached_result.total_return),
+                            'net_profit': float(cached_result.net_profit) if cached_result.net_profit else 0.0,
+                            'net_profit_currency': float(cached_result.net_profit_currency) if cached_result.net_profit_currency else 0.0,
+                            'compounding_annual_return': float(cached_result.compounding_annual_return) if cached_result.compounding_annual_return else 0.0,
+                            'final_value': float(cached_result.final_value) if cached_result.final_value else 0.0,
+                            'start_equity': float(cached_result.start_equity) if cached_result.start_equity else 0.0,
+                            'end_equity': float(cached_result.end_equity) if cached_result.end_equity else 0.0,
+                            
+                            # Enhanced risk metrics
+                            'sharpe_ratio': float(cached_result.sharpe_ratio) if cached_result.sharpe_ratio else 0.0,
+                            'sortino_ratio': float(cached_result.sortino_ratio) if cached_result.sortino_ratio else 0.0,
+                            'max_drawdown': float(cached_result.max_drawdown) if cached_result.max_drawdown else 0.0,
+                            'probabilistic_sharpe_ratio': float(cached_result.probabilistic_sharpe_ratio) if cached_result.probabilistic_sharpe_ratio else 0.0,
+                            'annual_standard_deviation': float(cached_result.annual_standard_deviation) if cached_result.annual_standard_deviation else 0.0,
+                            'annual_variance': float(cached_result.annual_variance) if cached_result.annual_variance else 0.0,
+                            'beta': float(cached_result.beta) if cached_result.beta else 0.0,
+                            'alpha': float(cached_result.alpha) if cached_result.alpha else 0.0,
+                            
+                            # Advanced trading statistics
+                            'total_trades': cached_result.total_trades,
+                            'winning_trades': cached_result.winning_trades,
+                            'losing_trades': cached_result.losing_trades,
+                            'win_rate': float(cached_result.win_rate),
+                            'loss_rate': float(cached_result.loss_rate) if cached_result.loss_rate else 0.0,
+                            'average_win': float(cached_result.average_win) if cached_result.average_win else 0.0,
+                            'average_loss': float(cached_result.average_loss) if cached_result.average_loss else 0.0,
+                            'profit_factor': float(cached_result.profit_factor) if cached_result.profit_factor else 0.0,
+                            'profit_loss_ratio': float(cached_result.profit_loss_ratio) if cached_result.profit_loss_ratio else 0.0,
+                            'expectancy': float(cached_result.expectancy) if cached_result.expectancy else 0.0,
+                            'total_orders': cached_result.total_orders if cached_result.total_orders else 0,
+                            
+                            # Advanced metrics
+                            'information_ratio': float(cached_result.information_ratio) if cached_result.information_ratio else 0.0,
+                            'tracking_error': float(cached_result.tracking_error) if cached_result.tracking_error else 0.0,
+                            'treynor_ratio': float(cached_result.treynor_ratio) if cached_result.treynor_ratio else 0.0,
+                            'total_fees': float(cached_result.total_fees) if cached_result.total_fees else 0.0,
+                            'estimated_strategy_capacity': float(cached_result.estimated_strategy_capacity) if cached_result.estimated_strategy_capacity else 0.0,
+                            'lowest_capacity_asset': cached_result.lowest_capacity_asset or "",
+                            'portfolio_turnover': float(cached_result.portfolio_turnover) if cached_result.portfolio_turnover else 0.0,
+                            
+                            # Strategy-specific metrics
+                            'pivot_highs_detected': cached_result.pivot_highs_detected if cached_result.pivot_highs_detected else 0,
+                            'pivot_lows_detected': cached_result.pivot_lows_detected if cached_result.pivot_lows_detected else 0,
+                            'bos_signals_generated': cached_result.bos_signals_generated if cached_result.bos_signals_generated else 0,
+                            'position_flips': cached_result.position_flips if cached_result.position_flips else 0,
+                            'liquidation_events': cached_result.liquidation_events if cached_result.liquidation_events else 0,
+                            
+                            # Algorithm parameters
+                            'initial_cash': float(cached_result.initial_cash),
+                            'pivot_bars': cached_result.pivot_bars,
+                            'lower_timeframe': cached_result.lower_timeframe,
+                            'strategy_name': cached_result.strategy_name
+                        },
+                        'from_cache': True,
+                        'cache_hit': True
+                    }
+                    continue
+            
+            # Not in cache, create task
             task = BacktestTask(symbol, request_data)
             self.active_tasks[task.id] = task
             tasks.append(task)
@@ -221,15 +338,20 @@ class BacktestQueueManager:
                 del self.active_tasks[task.id]
                 self.completed_tasks[task.id] = task
         
+        # Merge cached results with new results
+        all_results = {**cached_results, **results}
+        
         # Log summary
-        successful = sum(1 for r in results.values() if r.get('status') != 'failed')
-        logger.info(f"Batch completed: {successful}/{len(tasks)} successful backtests")
+        total_requests = len(backtest_requests)
+        cached_count = len(cached_results)
+        successful = sum(1 for r in all_results.values() if r.get('status') != 'failed')
+        logger.info(f"Batch completed: {successful}/{total_requests} successful backtests ({cached_count} from cache)")
         
         if failed_tasks:
             failed_symbols = [t.symbol for t in failed_tasks]
             logger.warning(f"Failed backtests: {', '.join(failed_symbols)}")
         
-        return results
+        return all_results
     
     def _update_progress(self):
         """Update progress and call callback if set."""
@@ -284,3 +406,484 @@ class BacktestQueueManager:
                 'error': str(e),
                 'symbol': symbol
             }
+    
+    async def _parse_and_store_results(self, task: BacktestTask) -> None:
+        """
+        Parse backtest results and store them to database and cache.
+        
+        Args:
+            task: Completed backtest task with result_path
+        """
+        try:
+            result_path = task.result.get('result_path')
+            if not result_path:
+                logger.warning(f"No result_path for {task.symbol}, skipping storage")
+                return
+            
+            # Parse statistics from result file
+            statistics = await self._extract_statistics_from_result(result_path)
+            if not statistics:
+                logger.warning(f"Could not extract statistics for {task.symbol}")
+                return
+            
+            # Store in cache if enabled
+            if self.cache_service:
+                # Extract parameters from request data
+                parameters = task.request_data.get('parameters', {})
+                
+                # Create comprehensive CachedBacktestResult model with all new fields
+                backtest_result = CachedBacktestResult(
+                    backtest_id=uuid.UUID(task.result.get('backtest_id', task.id)),
+                    symbol=task.symbol,
+                    strategy_name=statistics.get('strategy_name', task.request_data.get('strategy', 'MarketStructure')),
+                    
+                    # New cache key parameters
+                    initial_cash=statistics.get('initial_cash', task.request_data.get('initial_cash', 100000)),
+                    pivot_bars=statistics.get('pivot_bars', parameters.get('pivot_bars', 20)),
+                    lower_timeframe=statistics.get('lower_timeframe', parameters.get('lower_timeframe', '5min')),
+                    
+                    # Date range
+                    start_date=datetime.strptime(task.request_data['start_date'], '%Y-%m-%d').date(),
+                    end_date=datetime.strptime(task.request_data['end_date'], '%Y-%m-%d').date(),
+                    
+                    # Core performance metrics
+                    total_return=statistics.get('total_return', 0.0),
+                    net_profit=statistics.get('net_profit', 0.0),
+                    net_profit_currency=statistics.get('net_profit_currency', 0.0),
+                    compounding_annual_return=statistics.get('compounding_annual_return', 0.0),
+                    final_value=statistics.get('final_value', statistics.get('end_equity', 0.0)),
+                    start_equity=statistics.get('start_equity', statistics.get('initial_cash', 100000)),
+                    end_equity=statistics.get('end_equity', 0.0),
+                    
+                    # Enhanced risk metrics
+                    sharpe_ratio=statistics.get('sharpe_ratio', 0.0),
+                    sortino_ratio=statistics.get('sortino_ratio', 0.0),
+                    max_drawdown=statistics.get('max_drawdown', 0.0),
+                    probabilistic_sharpe_ratio=statistics.get('probabilistic_sharpe_ratio', 0.0),
+                    annual_standard_deviation=statistics.get('annual_standard_deviation', 0.0),
+                    annual_variance=statistics.get('annual_variance', 0.0),
+                    beta=statistics.get('beta', 0.0),
+                    alpha=statistics.get('alpha', 0.0),
+                    
+                    # Advanced trading statistics
+                    total_trades=statistics.get('total_trades', 0),
+                    winning_trades=statistics.get('winning_trades', 0),
+                    losing_trades=statistics.get('losing_trades', 0),
+                    win_rate=statistics.get('win_rate', 0.0),
+                    loss_rate=statistics.get('loss_rate', 0.0),
+                    average_win=statistics.get('average_win', 0.0),
+                    average_loss=statistics.get('average_loss', 0.0),
+                    profit_factor=statistics.get('profit_factor', 0.0),
+                    profit_loss_ratio=statistics.get('profit_loss_ratio', 0.0),
+                    expectancy=statistics.get('expectancy', 0.0),
+                    total_orders=statistics.get('total_orders', 0),
+                    
+                    # Advanced metrics
+                    information_ratio=statistics.get('information_ratio', 0.0),
+                    tracking_error=statistics.get('tracking_error', 0.0),
+                    treynor_ratio=statistics.get('treynor_ratio', 0.0),
+                    total_fees=statistics.get('total_fees', 0.0),
+                    estimated_strategy_capacity=statistics.get('estimated_strategy_capacity', 0.0),
+                    lowest_capacity_asset=statistics.get('lowest_capacity_asset', ""),
+                    portfolio_turnover=statistics.get('portfolio_turnover', 0.0),
+                    
+                    # Strategy-specific metrics
+                    pivot_highs_detected=statistics.get('pivot_highs_detected', 0),
+                    pivot_lows_detected=statistics.get('pivot_lows_detected', 0),
+                    bos_signals_generated=statistics.get('bos_signals_generated', 0),
+                    position_flips=statistics.get('position_flips', 0),
+                    liquidation_events=statistics.get('liquidation_events', 0),
+                    
+                    # Execution metadata
+                    execution_time_ms=int((task.completed_at - task.started_at).total_seconds() * 1000) if task.started_at and task.completed_at else None,
+                    result_path=result_path,
+                    status='completed',
+                    error_message=None,
+                    cache_hit=False
+                )
+                
+                success = await self.cache_service.save_backtest_results(backtest_result)
+                if success:
+                    logger.info(f"Stored backtest results for {task.symbol} in cache")
+                else:
+                    logger.warning(f"Failed to store backtest results for {task.symbol} in cache")
+            
+            # Store in database using BacktestStorage (file storage)
+            if self.backtest_storage:
+                backtest_result = await self.backtest_storage.save_result(
+                    backtest_id=task.result.get('backtest_id', task.id),
+                    symbol=task.symbol,
+                    strategy_name=task.request_data.get('strategy', 'MarketStructure'),
+                    start_date=datetime.strptime(task.request_data['start_date'], '%Y-%m-%d').date(),
+                    end_date=datetime.strptime(task.request_data['end_date'], '%Y-%m-%d').date(),
+                    initial_cash=task.request_data.get('initial_cash', 100000),
+                    result_path=result_path
+                )
+                if backtest_result:
+                    logger.info(f"Stored backtest result for {task.symbol} in file storage")
+                else:
+                    logger.warning(f"Failed to store backtest result for {task.symbol} in file storage")
+            
+            # Also save to database table
+            if self.enable_storage:
+                db_success = await self._save_to_database(task, statistics)
+                if not db_success:
+                    logger.warning(f"Failed to save backtest result for {task.symbol} to database table")
+            
+            # Add statistics to task result for immediate use
+            task.result['statistics'] = statistics
+            
+            # Cleanup files if enabled
+            if self.enable_cleanup and result_path:
+                await self._cleanup_backtest_files(result_path)
+                
+        except Exception as e:
+            logger.error(f"Error parsing and storing results for {task.symbol}: {e}")
+            # Don't raise - storage failures shouldn't fail the backtest
+    
+    async def _extract_statistics_from_result(self, result_path: str) -> Optional[Dict[str, Any]]:
+        """
+        Extract comprehensive statistics from LEAN result files according to schema alignment plan.
+        
+        Args:
+            result_path: Path to LEAN result directory
+            
+        Returns:
+            Dictionary of statistics or None if extraction fails
+        """
+        try:
+            result_dir = Path(result_path)
+            
+            # Find the summary file
+            summary_file = None
+            for f in result_dir.glob("*-summary.json"):
+                summary_file = f
+                break
+            
+            if not summary_file:
+                # Fallback to main result file
+                for f in result_dir.glob("*.json"):
+                    if f.stem.isdigit():
+                        summary_file = f
+                        break
+            
+            if not summary_file or not summary_file.exists():
+                logger.error(f"No result file found in {result_path}")
+                return None
+            
+            # Read and parse statistics
+            with open(summary_file, 'r') as f:
+                lean_result = json.load(f)
+                
+            logger.info(f"Extracting comprehensive metrics from LEAN result file: {summary_file.name}")
+            
+            # Extract different sections from LEAN output
+            stats_data = lean_result.get("statistics", {})
+            if not stats_data:
+                stats_data = lean_result.get("Statistics", {})
+            
+            runtime_stats = lean_result.get("runtimeStatistics", {})
+            trade_stats = lean_result.get("totalPerformance", {}).get("tradeStatistics", {})
+            portfolio_stats = lean_result.get("totalPerformance", {}).get("portfolioStatistics", {})
+            algorithm_config = lean_result.get("algorithmConfiguration", {})
+            algorithm_params = algorithm_config.get("parameters", {})
+            
+            # Helper functions for parsing different data types
+            def parse_percentage(value) -> float:
+                """Parse percentage values from LEAN output."""
+                if isinstance(value, (int, float)):
+                    return float(value)
+                if isinstance(value, str):
+                    # Handle percentage strings like "5.23%" or "0.0523"
+                    cleaned = value.strip().rstrip('%')
+                    try:
+                        return float(cleaned)
+                    except ValueError:
+                        logger.warning(f"Could not parse percentage value: {value}")
+                        return 0.0
+                return 0.0
+            
+            def parse_currency(value) -> float:
+                """Parse currency values from LEAN output."""
+                if isinstance(value, str):
+                    # Remove currency symbols and commas
+                    value = value.replace('$', '').replace(',', '').strip()
+                    if value.startswith('-') and not value[1:].replace('.', '').replace('-', '').isdigit():
+                        # Handle format like "$-23,603.13" 
+                        value = '-' + value[1:].replace('-', '')
+                    try:
+                        return float(value)
+                    except ValueError:
+                        logger.warning(f"Could not parse currency value: {value}")
+                        return 0.0
+                elif isinstance(value, (int, float)):
+                    return float(value)
+                return 0.0
+            
+            def parse_integer(value) -> int:
+                """Parse integer values from LEAN output."""
+                if isinstance(value, int):
+                    return value
+                if isinstance(value, (str, float)):
+                    try:
+                        return int(float(value))
+                    except ValueError:
+                        logger.warning(f"Could not parse integer value: {value}")
+                        return 0
+                return 0
+            
+            def parse_duration(value) -> float:
+                """Parse duration from various formats (seconds, HH:MM:SS, etc)."""
+                if isinstance(value, (int, float)):
+                    return float(value)
+                if isinstance(value, str):
+                    # Check if it's in HH:MM:SS format
+                    if ':' in value:
+                        parts = value.split(':')
+                        if len(parts) == 3:
+                            # Convert HH:MM:SS to total seconds
+                            try:
+                                hours, minutes, seconds = map(float, parts)
+                                return hours * 3600 + minutes * 60 + seconds
+                            except ValueError:
+                                pass
+                        elif len(parts) == 2:
+                            # Convert MM:SS to total seconds
+                            try:
+                                minutes, seconds = map(float, parts)
+                                return minutes * 60 + seconds
+                            except ValueError:
+                                pass
+                    # Try to parse as a number
+                    try:
+                        return float(value)
+                    except ValueError:
+                        logger.warning(f"Could not parse duration value: {value}")
+                        return 0.0
+                return 0.0
+            
+            # Build comprehensive statistics dictionary according to schema alignment plan
+            statistics = {
+                # Core Performance Results
+                'total_return': parse_percentage(runtime_stats.get("Return", stats_data.get("Total Return", "0%"))),
+                'net_profit': parse_percentage(stats_data.get("Net Profit", "0%")),
+                'net_profit_currency': parse_currency(runtime_stats.get("Net Profit", "$0")),
+                'compounding_annual_return': parse_percentage(stats_data.get("Compounding Annual Return", "0%")),
+                'final_value': parse_currency(runtime_stats.get("Equity", stats_data.get("End Equity", "$0"))),
+                'start_equity': parse_currency(stats_data.get("Start Equity", portfolio_stats.get("startEquity", "100000"))),
+                'end_equity': parse_currency(stats_data.get("End Equity", portfolio_stats.get("endEquity", "100000"))),
+                
+                # Enhanced Risk Metrics - Use trade statistics if portfolio statistics are zero
+                'sharpe_ratio': float(trade_stats.get("sharpeRatio", stats_data.get("Sharpe Ratio", portfolio_stats.get("sharpeRatio", 0)))) if float(stats_data.get("Sharpe Ratio", 0)) == 0 else float(stats_data.get("Sharpe Ratio", 0)),
+                'sortino_ratio': float(trade_stats.get("sortinoRatio", stats_data.get("Sortino Ratio", portfolio_stats.get("sortinoRatio", 0)))) if float(stats_data.get("Sortino Ratio", 0)) == 0 else float(stats_data.get("Sortino Ratio", 0)),
+                'max_drawdown': abs(float(trade_stats.get("maximumClosedTradeDrawdown", 0)) / parse_currency(algorithm_params.get("cash", "100000")) * 100) if trade_stats.get("maximumClosedTradeDrawdown") and parse_percentage(stats_data.get("Drawdown", "0%")) == 0 else abs(parse_percentage(stats_data.get("Drawdown", portfolio_stats.get("drawdown", "0%")))) * -1,
+                'probabilistic_sharpe_ratio': parse_percentage(stats_data.get("Probabilistic Sharpe Ratio", portfolio_stats.get("probabilisticSharpeRatio", "0%"))),
+                'annual_standard_deviation': parse_percentage(stats_data.get("Annual Standard Deviation", portfolio_stats.get("annualStandardDeviation", "0%"))),
+                'annual_variance': parse_percentage(stats_data.get("Annual Variance", portfolio_stats.get("annualVariance", "0%"))),
+                'beta': float(stats_data.get("Beta", portfolio_stats.get("beta", 0))),
+                'alpha': float(stats_data.get("Alpha", portfolio_stats.get("alpha", 0))),
+                
+                # Advanced Trading Statistics
+                'total_trades': parse_integer(trade_stats.get("totalNumberOfTrades", stats_data.get("Total Trades", 0))),
+                'winning_trades': parse_integer(trade_stats.get("numberOfWinningTrades", 0)),
+                'losing_trades': parse_integer(trade_stats.get("numberOfLosingTrades", 0)),
+                'win_rate': float(trade_stats.get("winRate", 0)) * 100 if trade_stats.get("winRate") and parse_percentage(stats_data.get("Win Rate", "0%")) == 0 else parse_percentage(stats_data.get("Win Rate", "0%")),
+                'loss_rate': float(trade_stats.get("lossRate", 0)) * 100 if trade_stats.get("lossRate") and parse_percentage(stats_data.get("Loss Rate", "0%")) == 0 else parse_percentage(stats_data.get("Loss Rate", "0%")),
+                'average_win': parse_percentage(stats_data.get("Average Win", trade_stats.get("averageProfit", "0%"))),
+                'average_loss': parse_percentage(stats_data.get("Average Loss", trade_stats.get("averageLoss", "0%"))),
+                'profit_factor': float(trade_stats.get("profitFactor", stats_data.get("Profit Factor", 0))) if float(stats_data.get("Profit Factor", 0)) == 0 else float(stats_data.get("Profit Factor", 0)),
+                'profit_loss_ratio': float(trade_stats.get("profitLossRatio", stats_data.get("Profit-Loss Ratio", 0))) if float(stats_data.get("Profit-Loss Ratio", 0)) == 0 else float(stats_data.get("Profit-Loss Ratio", 0)),
+                'expectancy': float(stats_data.get("Expectancy", portfolio_stats.get("expectancy", 0))),
+                'total_orders': parse_integer(stats_data.get("Total Orders", 0)),
+                
+                # Advanced Metrics
+                'information_ratio': float(stats_data.get("Information Ratio", portfolio_stats.get("informationRatio", 0))),
+                'tracking_error': float(stats_data.get("Tracking Error", portfolio_stats.get("trackingError", 0))),
+                'treynor_ratio': float(stats_data.get("Treynor Ratio", portfolio_stats.get("treynorRatio", 0))),
+                'total_fees': parse_currency(stats_data.get("Total Fees", trade_stats.get("totalFees", "$0"))),
+                'estimated_strategy_capacity': parse_currency(stats_data.get("Estimated Strategy Capacity", "$0")),
+                'lowest_capacity_asset': stats_data.get("Lowest Capacity Asset", ""),
+                'portfolio_turnover': parse_percentage(stats_data.get("Portfolio Turnover", portfolio_stats.get("portfolioTurnover", "0%"))),
+                
+                # Strategy-Specific Metrics (may not be available in all LEAN outputs)
+                'pivot_highs_detected': parse_integer(stats_data.get("Pivot Highs Detected", 0)),
+                'pivot_lows_detected': parse_integer(stats_data.get("Pivot Lows Detected", 0)),
+                'bos_signals_generated': parse_integer(stats_data.get("BOS Signals Generated", 0)),
+                'position_flips': parse_integer(stats_data.get("Position Flips", 0)),
+                'liquidation_events': parse_integer(stats_data.get("Liquidation Events", 0)),
+                
+                # Additional useful metrics for debugging and analysis
+                'largest_win': parse_currency(trade_stats.get("largestProfit", stats_data.get("Largest Win", "$0"))),
+                'largest_loss': parse_currency(trade_stats.get("largestLoss", stats_data.get("Largest Loss", "$0"))),
+                'average_trade_duration': parse_duration(trade_stats.get("averageTradeDuration", 0)),
+                'market_exposure': parse_percentage(stats_data.get("Market Exposure", "0%")),
+                
+                # Algorithm Parameters (extract from configuration section)
+                'initial_cash': parse_currency(algorithm_params.get("cash", "100000")),
+                'pivot_bars': parse_integer(algorithm_params.get("pivot_bars", 20)),
+                'lower_timeframe': algorithm_params.get("lower_timeframe", "5min"),
+                'strategy_name': "MarketStructure",  # Default strategy name
+                'resolution': "Daily"  # Default resolution
+            }
+            
+            # Log successful extraction
+            metrics_count = sum(1 for v in statistics.values() if v != 0 and v != "" and v is not None)
+            logger.info(f"Successfully extracted {metrics_count} non-zero metrics from LEAN result")
+            
+            return statistics
+            
+        except Exception as e:
+            logger.error(f"Error extracting statistics from {result_path}: {e}", exc_info=True)
+            return None
+    
+    async def _cleanup_backtest_files(self, result_path: str) -> None:
+        """
+        Clean up backtest result files after successful storage.
+        
+        Args:
+            result_path: Path to LEAN result directory
+        """
+        try:
+            result_dir = Path(result_path)
+            if not result_dir.exists():
+                return
+            
+            # Archive important files before deletion (optional)
+            important_files = []
+            for pattern in ["*-summary.json", "*.json", "*-order-events.json"]:
+                important_files.extend(result_dir.glob(pattern))
+            
+            if important_files:
+                # Create archive directory
+                archive_dir = result_dir.parent / "archived"
+                archive_dir.mkdir(exist_ok=True)
+                
+                # Move important files to archive
+                import shutil
+                archive_subdir = archive_dir / result_dir.name
+                archive_subdir.mkdir(exist_ok=True)
+                
+                for file in important_files:
+                    shutil.copy2(file, archive_subdir / file.name)
+                
+                logger.info(f"Archived {len(important_files)} files from {result_path}")
+            
+            # Remove the result directory
+            import shutil
+            shutil.rmtree(result_dir)
+            logger.info(f"Cleaned up backtest files at {result_path}")
+            
+        except Exception as e:
+            logger.error(f"Error cleaning up backtest files at {result_path}: {e}")
+            # Don't raise - cleanup failures shouldn't affect the pipeline
+    
+    async def _save_to_database(self, task: BacktestTask, statistics: Dict[str, Any]) -> bool:
+        """
+        Save backtest results directly to market_structure_results table.
+        
+        Args:
+            task: Completed backtest task
+            statistics: Extracted statistics from LEAN results
+            
+        Returns:
+            True if saved successfully, False otherwise
+        """
+        try:
+            conn = await asyncpg.connect(settings.database_url)
+            
+            # Extract parameters
+            parameters = task.request_data.get('parameters', {})
+            
+            # Insert into market_structure_results table (using only necessary columns)
+            query = """
+                INSERT INTO market_structure_results (
+                    id, backtest_id, symbol, strategy_name,
+                    initial_cash, pivot_bars, lower_timeframe,
+                    start_date, end_date,
+                    total_return, net_profit, net_profit_currency,
+                    compounding_annual_return, final_value, start_equity, end_equity,
+                    sharpe_ratio, sortino_ratio, max_drawdown,
+                    probabilistic_sharpe_ratio, annual_standard_deviation, annual_variance,
+                    beta, alpha,
+                    total_trades, winning_trades, losing_trades, win_rate, loss_rate,
+                    average_win, average_loss, profit_factor,
+                    profit_loss_ratio, expectancy, total_orders,
+                    information_ratio, tracking_error, treynor_ratio,
+                    total_fees, estimated_strategy_capacity, lowest_capacity_asset,
+                    portfolio_turnover,
+                    pivot_highs_detected, pivot_lows_detected, bos_signals_generated,
+                    position_flips, liquidation_events,
+                    execution_time_ms, result_path, status, error_message,
+                    cache_hit, created_at, resolution
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+                    $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
+                    $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44,
+                    $45, $46, $47, $48, $49, $50, $51, $52, NOW(), $53
+                )
+            """
+            
+            await conn.execute(
+                query,
+                uuid.uuid4(),  # id
+                uuid.UUID(task.result.get('backtest_id', task.id)),  # backtest_id
+                task.symbol,  # symbol
+                statistics.get('strategy_name', task.request_data.get('strategy', 'MarketStructure')),  # strategy_name
+                Decimal(str(statistics.get('initial_cash', task.request_data.get('initial_cash', 100000)))),  # initial_cash
+                statistics.get('pivot_bars', parameters.get('pivot_bars', 20)),  # pivot_bars
+                statistics.get('lower_timeframe', parameters.get('lower_timeframe', '5min')),  # lower_timeframe
+                datetime.strptime(task.request_data['start_date'], '%Y-%m-%d').date(),  # start_date
+                datetime.strptime(task.request_data['end_date'], '%Y-%m-%d').date(),  # end_date
+                Decimal(str(statistics.get('total_return', 0))),  # total_return
+                Decimal(str(statistics.get('net_profit', 0))),  # net_profit
+                Decimal(str(statistics.get('net_profit_currency', 0))),  # net_profit_currency
+                Decimal(str(statistics.get('compounding_annual_return', 0))),  # compounding_annual_return
+                Decimal(str(statistics.get('final_value', statistics.get('end_equity', 0)))),  # final_value
+                Decimal(str(statistics.get('start_equity', statistics.get('initial_cash', 100000)))),  # start_equity
+                Decimal(str(statistics.get('end_equity', 0))),  # end_equity
+                Decimal(str(statistics.get('sharpe_ratio', 0))),  # sharpe_ratio
+                Decimal(str(statistics.get('sortino_ratio', 0))),  # sortino_ratio
+                Decimal(str(statistics.get('max_drawdown', 0))),  # max_drawdown
+                Decimal(str(statistics.get('probabilistic_sharpe_ratio', 0))),  # probabilistic_sharpe_ratio
+                Decimal(str(statistics.get('annual_standard_deviation', 0))),  # annual_standard_deviation
+                Decimal(str(statistics.get('annual_variance', 0))),  # annual_variance
+                Decimal(str(statistics.get('beta', 0))),  # beta
+                Decimal(str(statistics.get('alpha', 0))),  # alpha
+                statistics.get('total_trades', 0),  # total_trades
+                statistics.get('winning_trades', 0),  # winning_trades
+                statistics.get('losing_trades', 0),  # losing_trades
+                Decimal(str(statistics.get('win_rate', 0))),  # win_rate
+                Decimal(str(statistics.get('loss_rate', 0))),  # loss_rate
+                Decimal(str(statistics.get('average_win', 0))),  # average_win
+                Decimal(str(statistics.get('average_loss', 0))),  # average_loss
+                Decimal(str(statistics.get('profit_factor', 0))),  # profit_factor
+                Decimal(str(statistics.get('profit_loss_ratio', 0))),  # profit_loss_ratio
+                Decimal(str(statistics.get('expectancy', 0))),  # expectancy
+                statistics.get('total_orders', 0),  # total_orders
+                Decimal(str(statistics.get('information_ratio', 0))),  # information_ratio
+                Decimal(str(statistics.get('tracking_error', 0))),  # tracking_error
+                Decimal(str(statistics.get('treynor_ratio', 0))),  # treynor_ratio
+                Decimal(str(statistics.get('total_fees', 0))),  # total_fees
+                Decimal(str(statistics.get('estimated_strategy_capacity', 0))),  # estimated_strategy_capacity
+                statistics.get('lowest_capacity_asset', ''),  # lowest_capacity_asset
+                Decimal(str(statistics.get('portfolio_turnover', 0))),  # portfolio_turnover
+                statistics.get('pivot_highs_detected', 0),  # pivot_highs_detected
+                statistics.get('pivot_lows_detected', 0),  # pivot_lows_detected
+                statistics.get('bos_signals_generated', 0),  # bos_signals_generated
+                statistics.get('position_flips', 0),  # position_flips
+                statistics.get('liquidation_events', 0),  # liquidation_events
+                int((task.completed_at - task.started_at).total_seconds() * 1000) if task.started_at and task.completed_at else None,  # execution_time_ms
+                task.result.get('result_path'),  # result_path
+                'completed',  # status
+                None,  # error_message
+                False,  # cache_hit
+                statistics.get('resolution', task.request_data.get('resolution', 'Daily'))  # resolution
+            )
+            
+            await conn.close()
+            logger.info(f"Saved backtest result for {task.symbol} to market_structure_results table")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error saving backtest result to database: {e}")
+            return False

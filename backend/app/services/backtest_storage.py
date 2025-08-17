@@ -32,6 +32,7 @@ class BacktestStorage:
         
     async def save_result(self, 
                          backtest_id: str,
+                         symbol: str,
                          strategy_name: str,
                          start_date: date,
                          end_date: date,
@@ -42,6 +43,7 @@ class BacktestStorage:
         
         Args:
             backtest_id: Unique identifier for the backtest
+            symbol: Symbol that was backtested
             strategy_name: Name of the strategy tested
             start_date: Backtest start date
             end_date: Backtest end date
@@ -107,39 +109,37 @@ class BacktestStorage:
                 net_profit=float(portfolio_stats.get("totalNetProfit", 0)) * 100 if portfolio_stats.get("totalNetProfit") else self._parse_percentage(stats_data.get("Net Profit", "0%")),
                 net_profit_currency=parse_currency(runtime_stats.get("Net Profit", "$0")),
                 compounding_annual_return=float(portfolio_stats.get("compoundingAnnualReturn", 0)) * 100 if portfolio_stats.get("compoundingAnnualReturn") else self._parse_percentage(stats_data.get("Compounding Annual Return", "0%")),
+                final_value=parse_currency(portfolio_stats.get("endEquity", stats_data.get("End Equity", runtime_stats.get("Equity", initial_cash)))),
+                start_equity=parse_currency(portfolio_stats.get("startEquity", stats_data.get("Start Equity", initial_cash))),
+                end_equity=parse_currency(portfolio_stats.get("endEquity", stats_data.get("End Equity", initial_cash))),
                 
-                # Risk Metrics
-                sharpe_ratio=float(stats_data.get("Sharpe Ratio", 0)),
-                sortino_ratio=float(stats_data.get("Sortino Ratio", 0)),
-                max_drawdown=abs(float(portfolio_stats.get("drawdown", 0))) * -100 if portfolio_stats.get("drawdown") else abs(self._parse_percentage(stats_data.get("Drawdown", "0%"))) * -1,
+                # Risk Metrics - Use trade statistics if portfolio statistics are zero
+                sharpe_ratio=float(trade_stats.get("sharpeRatio", stats_data.get("Sharpe Ratio", 0))) if self._parse_numeric(stats_data.get("Sharpe Ratio", 0)) == 0 else self._parse_numeric(stats_data.get("Sharpe Ratio", 0)),
+                sortino_ratio=float(trade_stats.get("sortinoRatio", stats_data.get("Sortino Ratio", 0))) if self._parse_numeric(stats_data.get("Sortino Ratio", 0)) == 0 else self._parse_numeric(stats_data.get("Sortino Ratio", 0)),
+                max_drawdown=abs(float(trade_stats.get("maximumClosedTradeDrawdown", 0)) / initial_cash * 100) if trade_stats.get("maximumClosedTradeDrawdown") and self._parse_numeric(stats_data.get("Drawdown", 0)) == 0 else (abs(float(portfolio_stats.get("drawdown", 0))) * -100 if portfolio_stats.get("drawdown") else abs(self._parse_percentage(stats_data.get("Drawdown", "0%"))) * -1),
                 probabilistic_sharpe_ratio=self._parse_percentage(stats_data.get("Probabilistic Sharpe Ratio", "0%")),
+                annual_standard_deviation=self._parse_numeric(stats_data.get("Annual Standard Deviation", 0)),
+                annual_variance=self._parse_numeric(stats_data.get("Annual Variance", 0)),
+                beta=self._parse_numeric(stats_data.get("Beta", 0)),
+                alpha=self._parse_numeric(stats_data.get("Alpha", 0)),
                 
                 # Trading Statistics
                 total_orders=int(stats_data.get("Total Orders", 0)),
                 total_trades=int(trade_stats.get("totalNumberOfTrades", stats_data.get("Total Trades", 0))),
-                win_rate=self._parse_percentage(stats_data.get("Win Rate", "0%")),
-                loss_rate=self._parse_percentage(stats_data.get("Loss Rate", "0%")),
+                winning_trades=int(trade_stats.get("numberOfWinningTrades", 0)),
+                losing_trades=int(trade_stats.get("numberOfLosingTrades", 0)),
+                win_rate=float(trade_stats.get("winRate", 0)) * 100 if trade_stats.get("winRate") else self._parse_percentage(stats_data.get("Win Rate", "0%")),
+                loss_rate=float(trade_stats.get("lossRate", 0)) * 100 if trade_stats.get("lossRate") else self._parse_percentage(stats_data.get("Loss Rate", "0%")),
                 average_win=self._parse_percentage(stats_data.get("Average Win", "0%")),
                 average_loss=self._parse_percentage(stats_data.get("Average Loss", "0%")),
-                # Note: Average Win/Loss in currency not available in LEAN output, using percentage * avg trade size
-                average_win_currency=0.0,  # Will be calculated from trades if needed
-                average_loss_currency=0.0,  # Will be calculated from trades if needed
+                profit_factor=float(trade_stats.get("profitFactor", stats_data.get("Profit Factor", 0))) if stats_data.get("Profit Factor", "0") == "0" else self._parse_numeric(stats_data.get("Profit Factor", 0)),
+                profit_loss_ratio=float(trade_stats.get("profitLossRatio", stats_data.get("Profit-Loss Ratio", 0))) if stats_data.get("Profit-Loss Ratio", "0") == "0" else self._parse_numeric(stats_data.get("Profit-Loss Ratio", 0)),
+                expectancy=self._parse_numeric(stats_data.get("Expectancy", 0)),
                 
                 # Advanced Metrics
-                profit_factor=float(stats_data.get("Profit Factor", 0)) or float(stats_data.get("Profit-Loss Ratio", 0)),
-                profit_loss_ratio=float(stats_data.get("Profit-Loss Ratio", 0)),
-                expectancy=float(stats_data.get("Expectancy", 0)),
-                alpha=float(stats_data.get("Alpha", 0)),
-                beta=float(stats_data.get("Beta", 0)),
-                annual_standard_deviation=float(stats_data.get("Annual Standard Deviation", 0)),
-                annual_variance=float(stats_data.get("Annual Variance", 0)),
-                information_ratio=float(stats_data.get("Information Ratio", 0)),
-                tracking_error=float(stats_data.get("Tracking Error", 0)),
-                treynor_ratio=float(stats_data.get("Treynor Ratio", 0)),
-                
-                # Portfolio Information
-                start_equity=parse_currency(portfolio_stats.get("startEquity", stats_data.get("Start Equity", initial_cash))),
-                end_equity=parse_currency(portfolio_stats.get("endEquity", stats_data.get("End Equity", initial_cash))),
+                information_ratio=self._parse_numeric(stats_data.get("Information Ratio", 0)),
+                tracking_error=self._parse_numeric(stats_data.get("Tracking Error", 0)),
+                treynor_ratio=self._parse_numeric(stats_data.get("Treynor Ratio", 0)),
                 total_fees=parse_currency(stats_data.get("Total Fees", "$0")),
                 estimated_strategy_capacity=parse_currency(stats_data.get("Estimated Strategy Capacity", "$0")),
                 lowest_capacity_asset=stats_data.get("Lowest Capacity Asset", ""),
@@ -193,10 +193,14 @@ class BacktestStorage:
             # Create result object
             result = BacktestResult(
                 backtest_id=backtest_id,
+                symbol=symbol,
                 strategy_name=strategy_name,
                 start_date=start_date,
                 end_date=end_date,
                 initial_cash=initial_cash,
+                resolution="Daily",  # Default resolution
+                pivot_bars=20,  # Default pivot bars
+                lower_timeframe="5min",  # Default lower timeframe
                 final_value=final_value,
                 statistics=statistics,
                 orders=orders,
@@ -208,7 +212,7 @@ class BacktestStorage:
             # Save metadata for quick retrieval
             metadata_file = result_dir / "backtest_metadata.json"
             with open(metadata_file, 'w') as f:
-                json.dump(result.dict(), f, indent=2, default=str)
+                json.dump(result.model_dump(), f, indent=2, default=str)
             
             logger.info(f"Saved backtest result {backtest_id} to {result_path}")
             return result
@@ -331,8 +335,34 @@ class BacktestStorage:
         if isinstance(value, (int, float)):
             return float(value)
         if isinstance(value, str):
-            return float(value.strip().rstrip('%'))
+            try:
+                # Remove percentage sign and whitespace
+                cleaned = value.strip().rstrip('%').strip()
+                # Handle empty string after cleaning
+                if not cleaned or cleaned == '':
+                    return 0.0
+                return float(cleaned)
+            except ValueError:
+                logger.warning(f"Could not parse percentage value: {value}")
+                return 0.0
         return 0.0
+    
+    def _parse_numeric(self, value: Any, default: float = 0.0) -> float:
+        """Parse a numeric value that might be a string with percentage sign."""
+        if value is None:
+            return default
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            # Check if it's a percentage string
+            if '%' in value:
+                return self._parse_percentage(value)
+            try:
+                return float(value)
+            except ValueError:
+                logger.warning(f"Could not parse numeric value: {value}")
+                return default
+        return default
     
     async def _reconstruct_result_from_lean(self, result_dir: Path) -> Optional[BacktestResult]:
         """Reconstruct a BacktestResult from LEAN output files."""
@@ -377,8 +407,12 @@ class BacktestStorage:
             # Use the save_result method to process LEAN output
             backtest_id = result_dir.name  # Use directory name as ID
             
+            # Extract symbol from config parameters
+            symbol = params.get("symbols", "UNKNOWN")
+            
             return await self.save_result(
                 backtest_id=backtest_id,
+                symbol=symbol,
                 strategy_name=strategy_name,
                 start_date=start_date,
                 end_date=end_date,
