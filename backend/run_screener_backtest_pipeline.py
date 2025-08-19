@@ -14,9 +14,9 @@ import asyncio
 import logging
 import sys
 import yaml
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 # Add backend to path for imports
 sys.path.append(str(Path(__file__).parent))
@@ -263,8 +263,13 @@ class ScreenerBacktestPipeline:
             logger.error(f"Screening failed: {e}")
             raise
     
-    async def run_backtests(self, symbols: List[str]) -> Dict[str, Any]:
-        """Run backtests for all symbols and collect results."""
+    async def run_backtests(self, symbols: List[str], date_range: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+        """Run backtests for all symbols and collect results.
+        
+        Args:
+            symbols: List of symbols to backtest
+            date_range: Optional date range override. If not provided, uses config.
+        """
         logger.info(f"Starting backtests for {len(symbols)} symbols...")
         
         backtest_config = self.config['backtesting']
@@ -273,11 +278,17 @@ class ScreenerBacktestPipeline:
         # Check if max_backtests limit is set
         max_backtests = execution_config.get('max_backtests', 0)
         
-        # Prepare date range and parameters for caching
-        date_range = {
-            'start': backtest_config['date_range']['start'],
-            'end': backtest_config['date_range']['end']
-        }
+        # Use provided date range or fall back to config (if it exists)
+        if date_range is None:
+            # Check if date_range exists in config (for backward compatibility)
+            if 'date_range' in backtest_config:
+                date_range = {
+                    'start': backtest_config['date_range']['start'],
+                    'end': backtest_config['date_range']['end']
+                }
+            else:
+                # This should not happen in normal flow as we'll always pass date_range
+                raise ValueError("No date range provided for backtests")
         
         # Track which backtests need to be run
         backtest_requests = []
@@ -295,8 +306,8 @@ class ScreenerBacktestPipeline:
                 cache_request = CachedBacktestRequest(
                     symbol=symbol,
                     strategy_name=backtest_config.get('strategy', 'MarketStructure'),
-                    start_date=datetime.strptime(backtest_config['date_range']['start'], '%Y-%m-%d').date(),
-                    end_date=datetime.strptime(backtest_config['date_range']['end'], '%Y-%m-%d').date(),
+                    start_date=datetime.strptime(date_range['start'], '%Y-%m-%d').date(),
+                    end_date=datetime.strptime(date_range['end'], '%Y-%m-%d').date(),
                     initial_cash=backtest_config.get('initial_cash', 100000),
                     pivot_bars=parameters.get('pivot_bars', 20),
                     lower_timeframe=parameters.get('lower_timeframe', '5min'),
@@ -376,8 +387,8 @@ class ScreenerBacktestPipeline:
             request = {
                 'symbol': symbol,
                 'strategy': backtest_config['strategy'],
-                'start_date': backtest_config['date_range']['start'],
-                'end_date': backtest_config['date_range']['end'],
+                'start_date': date_range['start'],
+                'end_date': date_range['end'],
                 'initial_cash': backtest_config['initial_cash'],
                 'resolution': backtest_config.get('resolution', 'Daily'),
                 'parameters': backtest_config['parameters']
@@ -477,15 +488,97 @@ class ScreenerBacktestPipeline:
             archive_format=output_config.get('archive_format', 'tar.gz')
         )
     
+    def _get_trading_days(self, start_date: str, end_date: str) -> List[date]:
+        """
+        Get all trading days between start and end dates (backward order).
+        Excludes weekends (Saturday=5, Sunday=6).
+        
+        Args:
+            start_date: Start date in YYYY-MM-DD format
+            end_date: End date in YYYY-MM-DD format
+            
+        Returns:
+            List of dates in backward order (end to start)
+        """
+        start = datetime.strptime(start_date, '%Y-%m-%d').date()
+        end = datetime.strptime(end_date, '%Y-%m-%d').date()
+        
+        trading_days = []
+        current = end
+        
+        while current >= start:
+            # Check if it's a weekday (Monday=0 to Friday=4)
+            if current.weekday() < 5:
+                trading_days.append(current)
+            current = current - timedelta(days=1)
+        
+        return trading_days
+    
+    async def run_single_day_pipeline(self, trading_date: date) -> Dict[str, Any]:
+        """
+        Run the pipeline for a single trading day.
+        
+        Args:
+            trading_date: The date to process
+            
+        Returns:
+            Dict containing symbols found and backtest results for this day
+        """
+        date_str = trading_date.strftime('%Y-%m-%d')
+        logger.info(f"\n{'='*60}")
+        logger.info(f"Processing date: {date_str}")
+        logger.info(f"{'='*60}")
+        
+        # Update screening config for this specific date
+        original_start = self.config['screening']['date_range']['start']
+        original_end = self.config['screening']['date_range']['end']
+        
+        # Temporarily set both start and end to the same date
+        self.config['screening']['date_range']['start'] = date_str
+        self.config['screening']['date_range']['end'] = date_str
+        
+        try:
+            # Step 1: Run screener for this day
+            logger.info(f"[{date_str}] Running screener...")
+            symbols = await self.run_screener()
+            
+            if not symbols:
+                logger.info(f"[{date_str}] No symbols found for this day.")
+                return {'date': date_str, 'symbols': [], 'backtest_results': {}}
+            
+            logger.info(f"[{date_str}] Found {len(symbols)} symbols: {', '.join(symbols[:10])}{'...' if len(symbols) > 10 else ''}")
+            
+            # Step 2: Run backtests for symbols found on this day
+            # Use the same date for both start and end of backtest
+            logger.info(f"[{date_str}] Running backtests for {len(symbols)} symbols with date range: {date_str} to {date_str}")
+            backtest_date_range = {
+                'start': date_str,
+                'end': date_str
+            }
+            backtest_results = await self.run_backtests(symbols, backtest_date_range)
+            
+            return {
+                'date': date_str,
+                'symbols': symbols,
+                'backtest_results': backtest_results
+            }
+            
+        finally:
+            # Restore original date range
+            self.config['screening']['date_range']['start'] = original_start
+            self.config['screening']['date_range']['end'] = original_end
+    
     async def run(self):
-        """Run the complete pipeline."""
+        """Run the complete pipeline for each trading day."""
         try:
             # Print pipeline configuration
             logger.info("=" * 80)
-            logger.info("SCREENER-BACKTEST PIPELINE")
+            logger.info("SCREENER-BACKTEST PIPELINE (DAY-BY-DAY MODE)")
             logger.info("=" * 80)
             logger.info(f"Configuration loaded from: {self.config_path}")
-            logger.info(f"Screening period: {self.config['screening']['date_range']['start']} to {self.config['screening']['date_range']['end']}")
+            start_date = self.config['screening']['date_range']['start']
+            end_date = self.config['screening']['date_range']['end']
+            logger.info(f"Screening period: {start_date} to {end_date}")
             logger.info(f"Backtest strategy: {self.config['backtesting']['strategy']}")
             logger.info(f"Parallel backtests: {self.config['execution']['parallel_backtests']}")
             max_backtests = self.config['execution'].get('max_backtests', 0)
@@ -500,25 +593,42 @@ class ScreenerBacktestPipeline:
                 screener_cleaned, backtest_cleaned = await self.cache_service.clean_expired_cache()
                 logger.info(f"Cleaned {screener_cleaned} screener and {backtest_cleaned} backtest cache entries")
             
-            # Step 1: Run screener
-            logger.info("\n[STEP 1/4] Running stock screener...")
-            symbols = await self.run_screener()
+            # Get all trading days to process (in backward order)
+            trading_days = self._get_trading_days(start_date, end_date)
+            logger.info(f"\nFound {len(trading_days)} trading days to process")
             
-            if not symbols:
-                logger.warning("No symbols found by screener. Exiting.")
-                return
+            # Collect all results
+            all_daily_results = []
+            all_symbols = set()
+            all_backtest_results = {}
             
-            # Step 2: Run backtests
-            logger.info(f"\n[STEP 2/4] Running backtests for {len(symbols)} symbols...")
-            backtest_results = await self.run_backtests(symbols)
+            # Process each trading day
+            for i, trading_date in enumerate(trading_days, 1):
+                logger.info(f"\n[DAY {i}/{len(trading_days)}] Processing {trading_date.strftime('%Y-%m-%d')}...")
+                
+                daily_result = await self.run_single_day_pipeline(trading_date)
+                all_daily_results.append(daily_result)
+                
+                # Aggregate results
+                all_symbols.update(daily_result['symbols'])
+                all_backtest_results.update(daily_result['backtest_results'])
             
-            # Step 3: Process results
-            logger.info("\n[STEP 3/4] Processing and saving results...")
-            await self.process_results(backtest_results)
+            # Summary
+            logger.info("\n" + "=" * 80)
+            logger.info("DAILY PROCESSING SUMMARY")
+            logger.info("=" * 80)
+            logger.info(f"Total trading days processed: {len(trading_days)}")
+            logger.info(f"Total unique symbols found: {len(all_symbols)}")
+            logger.info(f"Total backtests run: {len(all_backtest_results)}")
             
-            # Step 4: Cleanup
-            logger.info("\n[STEP 4/4] Cleaning up...")
-            await self.cleanup_logs(backtest_results)
+            # Process aggregate results
+            if all_backtest_results:
+                logger.info("\n[FINAL] Processing and saving aggregate results...")
+                await self.process_results(all_backtest_results)
+                
+                # Cleanup
+                logger.info("\n[FINAL] Cleaning up...")
+                await self.cleanup_logs(all_backtest_results)
             
             # Show cache statistics if enabled
             if self.cache_enabled and self.config.get('caching', {}).get('show_stats_on_completion', True):

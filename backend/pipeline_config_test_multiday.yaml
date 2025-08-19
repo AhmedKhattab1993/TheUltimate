@@ -1,5 +1,5 @@
-# Pipeline Configuration for Screener-Backtest Pipeline
-# This file configures all aspects of the end-to-end pipeline
+# Test Pipeline Configuration for Multi-Day Screener-Backtest Pipeline
+# This file tests the day-by-day processing with a multi-day range
 
 screening:
   # Stock screening filters - Each filter can be enabled/disabled independently
@@ -41,10 +41,10 @@ screening:
       lookback_days: 20   # Number of historical days for comparison
       min_ratio: 1.5      # Minimum ratio of recent/historical volume
   
-  # Date range for screening
+  # Date range for screening - Testing with a week of trading days
   date_range:
-    start: "2025-08-01"
-    end: "2025-08-05" 
+    start: "2025-08-01"  # Thursday
+    end: "2025-08-07"    # Wednesday (includes weekend which will be skipped)
   
   # Use all US stocks or specific list
   use_all_us_stocks: true
@@ -53,8 +53,10 @@ backtesting:
   # Strategy to use
   strategy: "MarketStructure"
   
-  # Note: Backtests will use the same date as the screening day
-  # No separate date_range needed - each day's symbols are backtested for that day
+  # Backtest date range (can be different from screening)
+  date_range:
+    start: "2025-08-01"
+    end: "2025-08-07"
   
   # Starting capital
   initial_cash: 100000
@@ -72,10 +74,9 @@ execution:
   # Number of backtests to run in parallel
   parallel_backtests: 5
   
-  # Maximum number of backtests to execute (not counting cache hits)
-  # Set to 0 or omit to run all backtests
-  # Set to 1 for testing single backtest execution
-  max_backtests: 100
+  # Maximum number of backtests to execute per day for testing
+  # Set to a low number for testing
+  max_backtests: 3
   
   # Delay between starting different backtests (in seconds)
   # This prevents LEAN CLI module installation conflicts
@@ -93,7 +94,7 @@ execution:
 
 output:
   # Directory to save results
-  directory: "./pipeline_results"
+  directory: "./pipeline_results_multiday_test"
   
   # Output formats for statistics
   formats: 
@@ -139,7 +140,7 @@ caching:
   cleanup_on_startup: false  # Clean expired entries when pipeline starts
   
   # Cache statistics
-  show_stats_on_completion: false  # Display cache hit/miss stats at end
+  show_stats_on_completion: true  # Display cache hit/miss stats at end
 
 # Advanced settings
 advanced:
@@ -149,7 +150,7 @@ advanced:
   
   # Logging
   log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
-  log_file: "./pipeline.log"
+  log_file: "./pipeline_multiday_test.log"
   
   # Database settings (if needed)
   save_to_database: true

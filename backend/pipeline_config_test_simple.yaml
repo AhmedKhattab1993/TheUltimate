@@ -1,5 +1,5 @@
-# Pipeline Configuration for Screener-Backtest Pipeline
-# This file configures all aspects of the end-to-end pipeline
+# Simple Test Pipeline Configuration for Multi-Day Screener-Backtest Pipeline
+# This file tests the day-by-day processing with a smaller set of data
 
 screening:
   # Stock screening filters - Each filter can be enabled/disabled independently
@@ -7,8 +7,8 @@ screening:
     # Price Range Filter: Filter stocks by opening price
     price_range:
       enabled: true
-      min_price: 5        # Minimum opening price
-      max_price: 1000     # Maximum opening price
+      min_price: 50        # Higher minimum to reduce results
+      max_price: 200       # Lower maximum to reduce results
     
     # Price vs Moving Average Filter: Compare opening price to moving average
     price_vs_ma:
@@ -26,25 +26,25 @@ screening:
     # Gap Filter: Filter by gap between today's open and yesterday's close
     gap:
       enabled: true
-      gap_threshold: 2.0  # Minimum gap percentage (e.g., 2 = 2%)
+      gap_threshold: 5.0  # Higher threshold to reduce results
       direction: "up"     # Gap direction: "up", "down", or "both"
     
     # Previous Day Dollar Volume Filter: Filter by yesterday's dollar volume
     prev_day_dollar_volume:
       enabled: true
-      min_dollar_volume: 10000000  # Minimum dollar volume ($10M default)
+      min_dollar_volume: 50000000  # Higher minimum ($50M) to reduce results
     
     # Relative Volume Filter: Compare recent volume to historical average
     relative_volume:
       enabled: true
       recent_days: 2      # Number of recent days for volume average
       lookback_days: 20   # Number of historical days for comparison
-      min_ratio: 1.5      # Minimum ratio of recent/historical volume
+      min_ratio: 2.0      # Higher ratio to reduce results
   
-  # Date range for screening
+  # Date range for screening - Testing with 3 trading days
   date_range:
-    start: "2025-08-01"
-    end: "2025-08-05" 
+    start: "2025-08-05"  # Monday
+    end: "2025-08-07"    # Wednesday  
   
   # Use all US stocks or specific list
   use_all_us_stocks: true
@@ -70,36 +70,33 @@ backtesting:
 
 execution:
   # Number of backtests to run in parallel
-  parallel_backtests: 5
+  parallel_backtests: 2
   
-  # Maximum number of backtests to execute (not counting cache hits)
-  # Set to 0 or omit to run all backtests
-  # Set to 1 for testing single backtest execution
-  max_backtests: 100
+  # Maximum number of backtests to execute per day for testing
+  # Set to a low number for testing
+  max_backtests: 2
   
   # Delay between starting different backtests (in seconds)
   # This prevents LEAN CLI module installation conflicts
-  startup_delay: 10
+  startup_delay: 5
   
   # Timeout for each backtest in seconds
   # Increase this value if backtests are timing out (default: 300 = 5 minutes)
   timeout_per_backtest: 300
   
   # Number of retry attempts for failed backtests
-  retry_attempts: 2
+  retry_attempts: 1
   
   # Whether to continue on failures
   continue_on_error: true
 
 output:
   # Directory to save results
-  directory: "./pipeline_results"
+  directory: "./pipeline_results_simple_test"
   
   # Output formats for statistics
   formats: 
     - "json"
-    - "csv"
-    - "html"
   
   # Whether to print statistics to console
   print_to_console: true
@@ -139,7 +136,7 @@ caching:
   cleanup_on_startup: false  # Clean expired entries when pipeline starts
   
   # Cache statistics
-  show_stats_on_completion: false  # Display cache hit/miss stats at end
+  show_stats_on_completion: true  # Display cache hit/miss stats at end
 
 # Advanced settings
 advanced:
@@ -149,7 +146,7 @@ advanced:
   
   # Logging
   log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
-  log_file: "./pipeline.log"
+  log_file: "./pipeline_simple_test.log"
   
   # Database settings (if needed)
   save_to_database: true
