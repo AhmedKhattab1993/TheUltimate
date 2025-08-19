@@ -1,0 +1,3 @@
+symbol,total_return,sharpe_ratio,max_drawdown,win_rate,total_trades,profit_factor,average_win,average_loss,compounding_annual_return,volatility,start_equity,end_equity,net_profit
+TMDX,-4.97,0.0,0.0,33.33,21,0.3555,379.8714,534.2386,0.0,0.0,100000.0,95032.471,-4967.528999999995
+STRL,-1.11,0.0,0.0,36.84,19,0.7523,452.7571,351.0775,0.0,0.0,100000.0,98889.6208,-1110.3791999999958

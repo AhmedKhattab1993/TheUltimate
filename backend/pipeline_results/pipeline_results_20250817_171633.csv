@@ -1,0 +1,3 @@
+symbol,total_return,sharpe_ratio,max_drawdown,win_rate,total_trades,profit_factor,average_win,average_loss,compounding_annual_return,volatility,start_equity,end_equity,net_profit
+SOFX,-1.19,0.0,0.0,36.0,25,0.96,882.8656,517.2781,0.0,0.0,100000.0,98806.5397,-1193.460300000006
+SIXG,0.59,0.0,0.0,40.0,10,4.1898,250.3225,39.83,0.0,0.0,100000.0,100589.5017,589.5016999999934

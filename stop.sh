@@ -90,18 +90,11 @@ if [ -n "$VITE_PIDS" ]; then
     echo -e "${GREEN}✓ Orphaned vite processes stopped${NC}"
 fi
 
-# Stop TimescaleDB
+# PostgreSQL runs on host - we don't stop it
 echo ""
-echo "Stopping TimescaleDB..."
-
-if docker ps | grep -q timescaledb; then
-    docker stop timescaledb > /dev/null 2>&1
-    docker rm timescaledb > /dev/null 2>&1
-    echo -e "${GREEN}✓ TimescaleDB stopped${NC}"
-    echo -e "${YELLOW}Note: Data volume 'screener_timescale_data' is preserved${NC}"
-else
-    echo -e "${YELLOW}TimescaleDB container was not running${NC}"
-fi
+echo "Note: PostgreSQL is running on the host system."
+echo "It will continue running to preserve your data."
+echo "To stop PostgreSQL manually: sudo systemctl stop postgresql"
 
 # Clean up PID files and directory
 echo ""
@@ -127,11 +120,16 @@ echo "========================================="
 echo ""
 echo "All services have been stopped."
 echo ""
-echo "To restart the services, run: ./start-screener.sh"
+echo "To restart the services, run: ./start.sh"
 echo ""
 
-# Optional: Show docker volumes
-if command -v docker >/dev/null 2>&1; then
-    echo "Database volumes (preserved):"
-    docker volume ls | grep screener || echo "  No screener volumes found"
+# Show PostgreSQL status
+if command -v pg_isready >/dev/null 2>&1; then
+    echo "PostgreSQL status:"
+    if pg_isready -h localhost -p 5432 > /dev/null 2>&1; then
+        echo "  PostgreSQL is running on localhost:5432"
+        echo "  Your data is safely stored on the host filesystem"
+    else
+        echo "  PostgreSQL is not running"
+    fi
 fi

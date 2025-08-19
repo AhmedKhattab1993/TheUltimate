@@ -58,7 +58,7 @@ class APIClient:
         url = f"{self.base_url}/api/v2/simple-screener/screen"
         
         # Convert request to dict, handling date serialization
-        request_data = request.dict()
+        request_data = request.model_dump()
         
         # Convert dates to strings
         if isinstance(request_data.get('start_date'), date):

@@ -33,7 +33,8 @@ class ScreenerResultsManager:
         """
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"screener_results_{timestamp}.json"
+            result_id = f"screener_results_{timestamp}"
+            filename = f"{result_id}.json"
             filepath = self.results_dir / filename
             
             results = {
@@ -117,7 +118,8 @@ class ScreenerResultsManager:
                         "filename": file.name,
                         "timestamp": data.get("timestamp"),
                         "symbol_count": data.get("count", 0),
-                        "filters": data.get("filters", {})
+                        "filters": data.get("filters", {}),
+                        "metadata": data.get("metadata", {})
                     })
                 except Exception as e:
                     logger.warning(f"Failed to load {file}: {e}")

@@ -72,7 +72,7 @@ class BacktestManager:
                     "strategy_name": run_info.request.strategy_name,
                     "start_date": run_info.request.start_date.isoformat(),
                     "end_date": run_info.request.end_date.isoformat(),
-                    "initial_cash": run_info.request.initial_cash,
+                    "initial_cash": float(run_info.request.initial_cash),
                     "symbols": run_info.request.symbols,
                     "resolution": run_info.request.resolution,
                     "parameters": run_info.request.parameters
@@ -543,6 +543,7 @@ class BacktestManager:
                                         strategy_storage = BacktestStorage(strategy_name=run_info.request.strategy_name)
                                         result = await strategy_storage.save_result(
                                             backtest_id=backtest_id,
+                                            symbol=run_info.request.symbols[0] if run_info.request.symbols else "UNKNOWN",
                                             strategy_name=run_info.request.strategy_name,
                                             start_date=run_info.request.start_date,
                                             end_date=run_info.request.end_date,

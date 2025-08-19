@@ -36,9 +36,17 @@ port_in_use() {
 # Check prerequisites
 echo "Checking prerequisites..."
 
-if ! command_exists docker; then
-    echo -e "${RED}Error: Docker is not installed${NC}"
-    echo "Please install Docker: https://docs.docker.com/get-docker/"
+# Check PostgreSQL is installed
+if ! command_exists psql; then
+    echo -e "${RED}Error: PostgreSQL is not installed${NC}"
+    echo "Please run: ./backend/install_postgres_host.sh"
+    exit 1
+fi
+
+# Check PostgreSQL is running
+if ! pg_isready -h localhost -p 5432 > /dev/null 2>&1; then
+    echo -e "${RED}Error: PostgreSQL is not running${NC}"
+    echo "Please start PostgreSQL: sudo systemctl start postgresql"
     exit 1
 fi
 
@@ -55,22 +63,14 @@ if ! command_exists npm; then
 fi
 
 echo -e "${GREEN}✓ All prerequisites installed${NC}"
+echo -e "${GREEN}✓ PostgreSQL is running on localhost:5432${NC}"
 echo ""
 
 # Check for port conflicts
 echo "Checking port availability..."
 
-if port_in_use 5432; then
-    echo -e "${YELLOW}Warning: Port 5432 is already in use (PostgreSQL)${NC}"
-    echo "Checking if it's our TimescaleDB container..."
-    if docker ps | grep -q timescaledb; then
-        echo -e "${GREEN}✓ TimescaleDB container is already running${NC}"
-        TIMESCALE_RUNNING=true
-    else
-        echo -e "${RED}Error: Port 5432 is in use by another service${NC}"
-        exit 1
-    fi
-fi
+# Port 5432 check is already done above
+echo "PostgreSQL is running on localhost:5432"
 
 if port_in_use 8000; then
     echo -e "${RED}Error: Port 8000 is already in use${NC}"
@@ -87,45 +87,28 @@ fi
 echo -e "${GREEN}✓ All required ports are available${NC}"
 echo ""
 
-# Start TimescaleDB if not already running
-if [ "$TIMESCALE_RUNNING" != "true" ]; then
-    echo "Starting TimescaleDB..."
-    
-    # Check if volume exists, create if not
-    if ! docker volume ls | grep -q screener_timescale_data; then
-        echo "Creating TimescaleDB data volume..."
-        docker volume create screener_timescale_data
-    fi
-    
-    # Start TimescaleDB container
-    docker run -d \
-        --name timescaledb \
-        -p 5432:5432 \
-        -e POSTGRES_PASSWORD=postgres \
-        -e POSTGRES_DB=stock_screener \
-        -v screener_timescale_data:/var/lib/postgresql/data \
-        timescale/timescaledb:latest-pg14
-    
-    echo "Waiting for TimescaleDB to be ready..."
-    sleep 5
-    
-    # Wait for database to be ready
-    RETRIES=30
-    until docker exec timescaledb pg_isready -U postgres > /dev/null 2>&1 || [ $RETRIES -eq 0 ]; do
-        echo -n "."
-        sleep 1
-        RETRIES=$((RETRIES - 1))
-    done
-    
-    if [ $RETRIES -eq 0 ]; then
-        echo -e "\n${RED}Error: TimescaleDB failed to start${NC}"
+# Check database and create if needed
+echo "Checking database..."
+if ! PGPASSWORD=postgres psql -h localhost -U postgres -lqt 2>/dev/null | cut -d \| -f 1 | grep -qw stock_screener; then
+    echo -e "${YELLOW}Creating database stock_screener...${NC}"
+    PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE stock_screener" 2>/dev/null || true
+fi
+
+# Check if tables exist
+TABLE_COUNT=$(PGPASSWORD=postgres psql -h localhost -U postgres -d stock_screener -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('daily_bars', 'symbols')" 2>/dev/null | tr -d ' ' || echo "0")
+if [ "$TABLE_COUNT" -lt "2" ]; then
+    echo -e "${YELLOW}Database tables not found, initializing...${NC}"
+    cd "$PROJECT_ROOT/backend"
+    if [ -f "init_database.sh" ]; then
+        ./init_database.sh
+    else
+        echo -e "${RED}Error: init_database.sh not found${NC}"
         exit 1
     fi
-    
-    echo -e "\n${GREEN}✓ TimescaleDB started successfully${NC}"
-else
-    echo -e "${GREEN}✓ TimescaleDB is already running${NC}"
+    cd "$PROJECT_ROOT"
 fi
+
+echo -e "${GREEN}✓ Database is ready${NC}"
 
 # Setup Python virtual environment for backend
 echo ""
@@ -165,7 +148,7 @@ fi
 # Start backend
 echo ""
 echo "Starting backend API server..."
-nohup python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload > backend.log 2>&1 &
+nohup venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload > backend.log 2>&1 &
 BACKEND_PID=$!
 echo $BACKEND_PID > "$PID_DIR/backend.pid"
 
@@ -232,7 +215,7 @@ echo -e "${GREEN}Stock Screener Started Successfully!${NC}"
 echo "========================================="
 echo ""
 echo "Services running:"
-echo "  • TimescaleDB: localhost:5432"
+echo "  • PostgreSQL: localhost:5432 (running on host)"
 echo "  • Backend API: http://localhost:8000"
 echo "  • Frontend:    http://localhost:5173"
 echo ""

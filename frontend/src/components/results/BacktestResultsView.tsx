@@ -13,6 +13,7 @@ import { useResultsContext } from '@/contexts/ResultsContext'
 import { useResults } from '@/hooks/useResults'
 import { Pagination } from '@/components/ui/pagination'
 import { cn } from '@/lib/utils'
+import { getApiUrl } from '@/services/api'
 
 // Metric display component
 interface MetricProps {
@@ -90,12 +91,43 @@ export function BacktestResultsView() {
   const [selectedResult, setSelectedResult] = useState<any>(null)
   const [showDetailsDialog, setShowDetailsDialog] = useState(false)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [trades, setTrades] = useState<any[]>([])
+  const [loadingTrades, setLoadingTrades] = useState(false)
+
+  // Safety check for undefined state
+  if (!state.backtestResults) {
+    return (
+      <Card>
+        <CardContent className="p-6">
+          <p className="text-center text-muted-foreground">Loading backtest results...</p>
+        </CardContent>
+      </Card>
+    )
+  }
 
   const handleViewDetails = async (backtestId: string) => {
     try {
       const details = await getBacktestResultDetails(backtestId)
       setSelectedResult(details)
       setShowDetailsDialog(true)
+      
+      // Fetch trades for this backtest
+      setLoadingTrades(true)
+      try {
+        const response = await fetch(`${getApiUrl()}/api/v2/backtest/db/results/${backtestId}/trades?limit=50`)
+        if (response.ok) {
+          const tradesData = await response.json()
+          setTrades(tradesData)
+        } else {
+          console.error('Failed to fetch trades')
+          setTrades([])
+        }
+      } catch (error) {
+        console.error('Error fetching trades:', error)
+        setTrades([])
+      } finally {
+        setLoadingTrades(false)
+      }
     } catch (error) {
       console.error('Failed to fetch result details:', error)
     }
@@ -314,7 +346,12 @@ export function BacktestResultsView() {
       </Card>
 
       {/* Details Dialog */}
-      <Dialog open={showDetailsDialog} onOpenChange={setShowDetailsDialog}>
+      <Dialog open={showDetailsDialog} onOpenChange={(open) => {
+        setShowDetailsDialog(open)
+        if (!open) {
+          setTrades([])  // Clear trades when dialog closes
+        }
+      }}>
         <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Backtest Result Details</DialogTitle>
@@ -453,6 +490,91 @@ export function BacktestResultsView() {
                     </Card>
                   </div>
                 )}
+
+                {/* Trades Table */}
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Activity className="h-4 w-4" />
+                    <h4 className="font-semibold">Trade History</h4>
+                    {trades.length > 0 && (
+                      <span className="text-sm text-muted-foreground">
+                        (Showing last {trades.length} trades)
+                      </span>
+                    )}
+                  </div>
+                  <Card>
+                    <CardContent className="p-0">
+                      {loadingTrades ? (
+                        <div className="p-8 text-center">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                          <p className="text-muted-foreground">Loading trades...</p>
+                        </div>
+                      ) : trades.length === 0 ? (
+                        <div className="p-8 text-center text-muted-foreground">
+                          No trades available for this backtest
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="w-12">#</TableHead>
+                                <TableHead>Time (ET)</TableHead>
+                                <TableHead>Symbol</TableHead>
+                                <TableHead className="text-center">Direction</TableHead>
+                                <TableHead className="text-right">Quantity</TableHead>
+                                <TableHead className="text-right">Fill Price</TableHead>
+                                <TableHead className="text-right">Value</TableHead>
+                                <TableHead className="text-right">Fee</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {trades.map((trade, index) => {
+                                const tradeValue = trade.fillQuantity * trade.fillPrice
+                                return (
+                                  <TableRow key={index}>
+                                    <TableCell className="font-mono text-xs text-muted-foreground">
+                                      {index + 1}
+                                    </TableCell>
+                                    <TableCell className="font-mono text-sm">
+                                      {format(parseISO(trade.tradeTime), 'HH:mm:ss')}
+                                    </TableCell>
+                                    <TableCell className="font-medium">
+                                      {trade.symbol}
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                      <Badge 
+                                        variant={trade.direction === 'buy' ? 'default' : 'secondary'}
+                                        className={cn(
+                                          "text-xs",
+                                          trade.direction === 'buy' ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                                        )}
+                                      >
+                                        {trade.direction.toUpperCase()}
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell className="text-right font-mono">
+                                      {trade.quantity.toLocaleString()}
+                                    </TableCell>
+                                    <TableCell className="text-right font-mono">
+                                      ${trade.fillPrice.toFixed(2)}
+                                    </TableCell>
+                                    <TableCell className="text-right font-mono">
+                                      ${tradeValue.toFixed(2)}
+                                    </TableCell>
+                                    <TableCell className="text-right font-mono text-muted-foreground">
+                                      ${trade.orderFee.toFixed(2)}
+                                    </TableCell>
+                                  </TableRow>
+                                )
+                              })}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
               </div>
             </TooltipProvider>
           )}

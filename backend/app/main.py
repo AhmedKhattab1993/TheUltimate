@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.api import simple_screener
+from app.api import simple_screener, backtest, screener_results
 from app.services.polygon_client import PolygonAPIError
 from app.services.database import db_pool
 
@@ -186,6 +186,20 @@ app.include_router(
     tags=["simple-screener"]
 )
 
+# Include backtest router
+app.include_router(
+    backtest.router,
+    # No prefix needed - router already has /api/v2/backtest
+    tags=["backtest"]
+)
+
+# Include screener results router
+app.include_router(
+    screener_results.router,
+    # No prefix needed - router already has /api/v2/screener/results
+    tags=["screener-results"]
+)
+
 
 # Root endpoint
 @app.get("/", tags=["root"])
@@ -199,6 +213,15 @@ async def root():
             # Simple screener endpoints (v2)
             "simple_screen": "/api/v2/simple-screener/screen",
             "simple_filters_info": "/api/v2/simple-screener/filters/info",
-            "simple_examples": "/api/v2/simple-screener/examples"
+            "simple_examples": "/api/v2/simple-screener/examples",
+            # Backtest endpoints (v2)
+            "backtest_strategies": "/api/v2/backtest/strategies",
+            "backtest_run": "/api/v2/backtest/run",
+            "backtest_status": "/api/v2/backtest/status/{backtest_id}",
+            "backtest_results": "/api/v2/backtest/results",
+            "backtest_monitor_ws": "/api/v2/backtest/monitor/{backtest_id}",
+            # Screener results endpoints (v2)
+            "screener_results_list": "/api/v2/screener/results",
+            "screener_results_detail": "/api/v2/screener/results/{result_id}"
         }
     }

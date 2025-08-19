@@ -1,0 +1,22 @@
+{
+  "timestamp": "2025-08-10T07:00:00",
+  "symbols": ["SPY", "QQQ", "IWM", "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "TSLA", "META"],
+  "filters": {
+    "start_date": "2023-01-01",
+    "end_date": "2023-01-05",
+    "filters": {
+      "price_range": {
+        "enabled": true,
+        "min_price": 10.0,
+        "max_price": 500.0
+      }
+    }
+  },
+  "metadata": {
+    "total_symbols_screened": 100,
+    "total_qualifying_stocks": 10,
+    "execution_time_ms": 1234.5,
+    "db_prefiltering_used": false
+  },
+  "count": 10
+}

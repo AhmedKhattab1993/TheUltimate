@@ -34,8 +34,8 @@ export function ResultsTable({ results }: ResultsTableProps) {
     return value
   }
 
-  const formatVolume = (volume: number) => {
-    if (!volume) return '-'
+  const formatVolume = (volume: number | null | undefined) => {
+    if (!volume || volume === null || volume === undefined) return '-'
     if (volume >= 1000000) {
       return `${(volume / 1000000).toFixed(1)}M`
     }

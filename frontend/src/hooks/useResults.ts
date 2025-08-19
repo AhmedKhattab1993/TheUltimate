@@ -38,7 +38,7 @@ export function useResults() {
       dispatch({
         type: 'SET_SCREENER_RESULTS',
         data: data.results,
-        totalCount: data.total_count
+        totalCount: data.totalCount
       })
     } catch (error) {
       dispatch({
@@ -107,7 +107,7 @@ export function useResults() {
       dispatch({
         type: 'SET_BACKTEST_RESULTS',
         data: transformedResults,
-        totalCount: data.total_count
+        totalCount: data.totalCount
       })
     } catch (error) {
       dispatch({

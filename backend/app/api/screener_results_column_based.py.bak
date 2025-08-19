@@ -1,0 +1,364 @@
+"""
+API endpoints for screener results management.
+"""
+
+from fastapi import APIRouter, HTTPException, Query, Depends
+from typing import List, Optional, Dict, Any
+from datetime import datetime, date
+import logging
+import json
+from pathlib import Path
+
+from ..models.screener_results import (
+    ScreenerResultSummary,
+    ScreenerResultDetail,
+    ScreenerResultsListResponse
+)
+from ..services.screener_results import screener_results_manager
+from ..services.database import db_pool
+
+router = APIRouter(prefix="/api/v2/screener/results", tags=["screener-results"])
+logger = logging.getLogger(__name__)
+
+
+@router.get("", response_model=ScreenerResultsListResponse)
+async def list_screener_results(
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Results per page"),
+    start_date: Optional[date] = Query(None, description="Filter results after this date"),
+    end_date: Optional[date] = Query(None, description="Filter results before this date")
+):
+    """
+    List screener results with pagination and date filtering.
+    
+    Args:
+        page: Page number (1-based)
+        page_size: Number of results per page
+        start_date: Optional filter for results after this date
+        end_date: Optional filter for results before this date
+        
+    Returns:
+        Paginated list of screener results
+    """
+    try:
+        # Build query to fetch unique screening sessions from screener_results
+        # Group by session_id to get unique screening runs
+        query = """
+        WITH screening_sessions AS (
+            SELECT 
+                session_id,
+                MIN(screened_at) as created_at,
+                COUNT(DISTINCT symbol) as result_count,
+                MIN(filter_min_price) as filter_min_price,
+                MAX(filter_max_price) as filter_max_price,
+                MIN(filter_min_volume) as filter_min_volume,
+                MIN(filter_min_market_cap) as filter_min_market_cap,
+                MAX(filter_max_market_cap) as filter_max_market_cap,
+                MIN(filter_min_change) as filter_min_change,
+                MAX(filter_max_change) as filter_max_change,
+                MIN(filter_min_atr) as filter_min_atr,
+                MIN(filter_min_gap) as filter_min_gap,
+                BOOL_OR(filter_above_vwap) as filter_above_vwap,
+                BOOL_OR(filter_above_sma20) as filter_above_sma20,
+                MIN(data_date) as start_date,
+                MAX(data_date) as end_date,
+                ARRAY_AGG(DISTINCT symbol ORDER BY symbol) as symbols
+            FROM screener_results
+            WHERE session_id IS NOT NULL
+            GROUP BY session_id
+        )
+        SELECT 
+            session_id as id,
+            created_at,
+            result_count,
+            filter_min_price,
+            filter_max_price,
+            filter_min_volume,
+            filter_min_market_cap,
+            filter_max_market_cap,
+            filter_min_change,
+            filter_max_change,
+            filter_min_atr,
+            filter_min_gap,
+            filter_above_vwap,
+            filter_above_sma20,
+            start_date,
+            end_date,
+            symbols
+        FROM screening_sessions
+        WHERE 1=1
+        """
+        params = []
+        param_count = 0
+        
+        # Add date filters if provided
+        if start_date:
+            param_count += 1
+            query += f" AND created_at::date >= ${param_count}"
+            params.append(start_date)
+            
+        if end_date:
+            param_count += 1
+            query += f" AND created_at::date <= ${param_count}"
+            params.append(end_date)
+            
+        # Add ordering
+        query += " ORDER BY created_at DESC"
+        
+        # Get total count for pagination
+        count_query = f"""
+        WITH screening_sessions AS (
+            SELECT 
+                session_id,
+                MIN(screened_at) as created_at
+            FROM screener_results
+            WHERE session_id IS NOT NULL
+            GROUP BY session_id
+        )
+        SELECT COUNT(*)
+        FROM screening_sessions
+        WHERE 1=1
+        """
+        if start_date:
+            count_query += f" AND created_at::date >= $1"
+        if end_date:
+            count_query += f" AND created_at::date <= ${2 if start_date else 1}"
+        
+        total_count = await db_pool.fetchval(count_query, *params)
+        
+        # Add limit and offset for pagination
+        param_count += 1
+        query += f" LIMIT ${param_count}"
+        params.append(page_size)
+        
+        param_count += 1
+        query += f" OFFSET ${param_count}"
+        params.append((page - 1) * page_size)
+        
+        # Execute query
+        rows = await db_pool.fetch(query, *params)
+        
+        # Convert to response models
+        summaries = []
+        for row in rows:
+            # Build filters dictionary from individual columns
+            filters = {}
+            if row['filter_min_price'] is not None:
+                filters['min_price'] = float(row['filter_min_price'])
+            if row['filter_max_price'] is not None:
+                filters['max_price'] = float(row['filter_max_price'])
+            if row['filter_min_volume'] is not None:
+                filters['min_volume'] = row['filter_min_volume']
+            if row['filter_min_market_cap'] is not None:
+                filters['min_market_cap'] = row['filter_min_market_cap']
+            if row['filter_max_market_cap'] is not None:
+                filters['max_market_cap'] = row['filter_max_market_cap']
+            if row['filter_min_change'] is not None:
+                filters['min_change'] = float(row['filter_min_change'])
+            if row['filter_max_change'] is not None:
+                filters['max_change'] = float(row['filter_max_change'])
+            if row['filter_min_atr'] is not None:
+                filters['min_atr'] = float(row['filter_min_atr'])
+            if row['filter_min_gap'] is not None:
+                filters['min_gap'] = float(row['filter_min_gap'])
+            if row['filter_above_vwap']:
+                filters['above_vwap'] = True
+            if row['filter_above_sma20']:
+                filters['above_sma20'] = True
+            
+            # Add date range to filters for frontend compatibility
+            filters['start_date'] = row['start_date'].isoformat()
+            filters['end_date'] = row['end_date'].isoformat()
+            
+            # Calculate execution time (mock for now since it's not stored)
+            execution_time_ms = 100.0  # Default value
+            total_symbols_screened = len(row['symbols']) if row['symbols'] else 0
+            
+            summary = ScreenerResultSummary(
+                id=str(row['id']),  # Convert UUID to string
+                timestamp=row['created_at'].isoformat(),
+                symbol_count=row['result_count'] or 0,
+                filters=filters,
+                execution_time_ms=execution_time_ms,
+                total_symbols_screened=total_symbols_screened
+            )
+            summaries.append(summary)
+        
+        return ScreenerResultsListResponse(
+            results=summaries,
+            total_count=int(total_count) if total_count else 0,
+            page=page,
+            page_size=page_size
+        )
+        
+    except Exception as e:
+        logger.error(f"Error listing screener results: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{result_id}", response_model=ScreenerResultDetail)
+async def get_screener_result(result_id: str):
+    """
+    Get detailed screener result by ID.
+    
+    Args:
+        result_id: The result ID (session_id from screening run)
+        
+    Returns:
+        Detailed screener result including all symbols and metrics
+    """
+    try:
+        # Query the screener_results table for this session
+        query = """
+        SELECT 
+            session_id,
+            symbol,
+            company_name,
+            screened_at,
+            data_date,
+            price,
+            volume,
+            market_cap,
+            filter_min_price,
+            filter_max_price,
+            filter_min_volume,
+            filter_min_market_cap,
+            filter_max_market_cap,
+            filter_min_change,
+            filter_max_change,
+            filter_min_atr,
+            filter_min_gap,
+            filter_above_vwap,
+            filter_above_sma20,
+            daily_change_percent,
+            atr_value,
+            gap_percent,
+            distance_from_vwap_percent,
+            distance_from_sma20_percent
+        FROM screener_results
+        WHERE session_id = $1
+        ORDER BY symbol
+        """
+        
+        rows = await db_pool.fetch(query, result_id)
+        
+        if not rows:
+            raise HTTPException(status_code=404, detail=f"Screener result '{result_id}' not found")
+        
+        # Get the first row to extract common filter values
+        first_row = rows[0]
+        
+        # Build filters dictionary from the first row (all rows in a session have same filters)
+        filters = {}
+        if first_row['filter_min_price'] is not None:
+            filters['min_price'] = float(first_row['filter_min_price'])
+        if first_row['filter_max_price'] is not None:
+            filters['max_price'] = float(first_row['filter_max_price'])
+        if first_row['filter_min_volume'] is not None:
+            filters['min_volume'] = first_row['filter_min_volume']
+        if first_row['filter_min_market_cap'] is not None:
+            filters['min_market_cap'] = first_row['filter_min_market_cap']
+        if first_row['filter_max_market_cap'] is not None:
+            filters['max_market_cap'] = first_row['filter_max_market_cap']
+        if first_row['filter_min_change'] is not None:
+            filters['min_change'] = float(first_row['filter_min_change'])
+        if first_row['filter_max_change'] is not None:
+            filters['max_change'] = float(first_row['filter_max_change'])
+        if first_row['filter_min_atr'] is not None:
+            filters['min_atr'] = float(first_row['filter_min_atr'])
+        if first_row['filter_min_gap'] is not None:
+            filters['min_gap'] = float(first_row['filter_min_gap'])
+        if first_row['filter_above_vwap']:
+            filters['above_vwap'] = True
+        if first_row['filter_above_sma20']:
+            filters['above_sma20'] = True
+        
+        # Get date range from the results
+        min_date = min(row['data_date'] for row in rows)
+        max_date = max(row['data_date'] for row in rows)
+        filters['start_date'] = min_date.isoformat()
+        filters['end_date'] = max_date.isoformat()
+        
+        # Build symbols with metrics
+        symbols_with_metrics = []
+        for row in rows:
+            symbol_data = {
+                "symbol": row['symbol'],
+                "latest_price": float(row['price']) if row['price'] else None,
+                "latest_volume": row['volume']
+            }
+            # Add additional metrics if needed
+            if row['company_name']:
+                symbol_data["company_name"] = row['company_name']
+            if row['market_cap']:
+                symbol_data["market_cap"] = row['market_cap']
+            if row['daily_change_percent'] is not None:
+                symbol_data["daily_change_percent"] = float(row['daily_change_percent'])
+            if row['atr_value'] is not None:
+                symbol_data["atr_value"] = float(row['atr_value'])
+            if row['gap_percent'] is not None:
+                symbol_data["gap_percent"] = float(row['gap_percent'])
+            if row['distance_from_vwap_percent'] is not None:
+                symbol_data["distance_from_vwap_percent"] = float(row['distance_from_vwap_percent'])
+            if row['distance_from_sma20_percent'] is not None:
+                symbol_data["distance_from_sma20_percent"] = float(row['distance_from_sma20_percent'])
+            
+            symbols_with_metrics.append(symbol_data)
+        
+        # Build metadata
+        metadata = {
+            "execution_time_ms": 100.0,  # Default value since not stored
+            "total_symbols_screened": len(symbols_with_metrics),
+            "date_range": {
+                "start": min_date.isoformat(),
+                "end": max_date.isoformat()
+            },
+            "session_id": result_id
+        }
+        
+        # Create detailed response
+        detail = ScreenerResultDetail(
+            id=result_id,
+            timestamp=first_row['screened_at'].isoformat(),
+            symbol_count=len(symbols_with_metrics),
+            filters=filters,
+            metadata=metadata,
+            symbols=symbols_with_metrics
+        )
+        
+        return detail
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting screener result: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{result_id}")
+async def delete_screener_result(result_id: str):
+    """
+    Delete a screener result.
+    
+    Args:
+        result_id: The result ID to delete (session_id)
+        
+    Returns:
+        Success message if deleted
+    """
+    try:
+        # Delete all results for this session from database
+        query = "DELETE FROM screener_results WHERE session_id = $1 RETURNING session_id"
+        
+        deleted_rows = await db_pool.fetch(query, result_id)
+        
+        if not deleted_rows:
+            raise HTTPException(status_code=404, detail=f"Screener result '{result_id}' not found")
+        
+        return {"message": f"Screener result '{result_id}' deleted successfully ({len(deleted_rows)} symbols removed)"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting screener result: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

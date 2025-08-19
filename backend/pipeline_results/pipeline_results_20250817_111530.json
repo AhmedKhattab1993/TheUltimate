@@ -1,0 +1,130 @@
+{
+  "summary": {
+    "total_backtests": 2,
+    "successful_backtests": 2,
+    "failed_backtests": 0,
+    "timestamp": "2025-08-17T11:15:30.513727"
+  },
+  "failed_backtests": [],
+  "individual_results": [
+    {
+      "total_return": 0.46,
+      "sharpe_ratio": 0.0,
+      "max_drawdown": 0.0,
+      "win_rate": 50.0,
+      "total_trades": 2,
+      "profit_factor": 1.5271,
+      "average_win": 1856.1,
+      "average_loss": 1215.48,
+      "compounding_annual_return": 0.0,
+      "volatility": 0.0,
+      "start_equity": 100000.0,
+      "end_equity": 100463.164,
+      "net_profit": 463.1640000000043,
+      "symbol": "AGX"
+    },
+    {
+      "total_return": -3.49,
+      "sharpe_ratio": 0.0,
+      "max_drawdown": 0.0,
+      "win_rate": 0.0,
+      "total_trades": 4,
+      "profit_factor": 0.0,
+      "average_win": 0.0,
+      "average_loss": 1106.8175,
+      "compounding_annual_return": 0.0,
+      "volatility": 0.0,
+      "start_equity": 100000.0,
+      "end_equity": 96513.399,
+      "net_profit": -3486.600999999995,
+      "symbol": "APLD"
+    }
+  ],
+  "aggregate_statistics": {
+    "average_return": -1.5150000000000001,
+    "median_return": -1.5150000000000001,
+    "std_dev_return": 2.793071785686863,
+    "min_return": -3.49,
+    "max_return": 0.46,
+    "average_sharpe": 0.0,
+    "average_max_drawdown": 0.0,
+    "average_win_rate": 25.0,
+    "total_trades_all": 6,
+    "average_trades_per_symbol": 3
+  },
+  "top_performers": [
+    {
+      "total_return": 0.46,
+      "sharpe_ratio": 0.0,
+      "max_drawdown": 0.0,
+      "win_rate": 50.0,
+      "total_trades": 2,
+      "profit_factor": 1.5271,
+      "average_win": 1856.1,
+      "average_loss": 1215.48,
+      "compounding_annual_return": 0.0,
+      "volatility": 0.0,
+      "start_equity": 100000.0,
+      "end_equity": 100463.164,
+      "net_profit": 463.1640000000043,
+      "symbol": "AGX"
+    },
+    {
+      "total_return": -3.49,
+      "sharpe_ratio": 0.0,
+      "max_drawdown": 0.0,
+      "win_rate": 0.0,
+      "total_trades": 4,
+      "profit_factor": 0.0,
+      "average_win": 0.0,
+      "average_loss": 1106.8175,
+      "compounding_annual_return": 0.0,
+      "volatility": 0.0,
+      "start_equity": 100000.0,
+      "end_equity": 96513.399,
+      "net_profit": -3486.600999999995,
+      "symbol": "APLD"
+    }
+  ],
+  "worst_performers": [
+    {
+      "total_return": 0.46,
+      "sharpe_ratio": 0.0,
+      "max_drawdown": 0.0,
+      "win_rate": 50.0,
+      "total_trades": 2,
+      "profit_factor": 1.5271,
+      "average_win": 1856.1,
+      "average_loss": 1215.48,
+      "compounding_annual_return": 0.0,
+      "volatility": 0.0,
+      "start_equity": 100000.0,
+      "end_equity": 100463.164,
+      "net_profit": 463.1640000000043,
+      "symbol": "AGX"
+    },
+    {
+      "total_return": -3.49,
+      "sharpe_ratio": 0.0,
+      "max_drawdown": 0.0,
+      "win_rate": 0.0,
+      "total_trades": 4,
+      "profit_factor": 0.0,
+      "average_win": 0.0,
+      "average_loss": 1106.8175,
+      "compounding_annual_return": 0.0,
+      "volatility": 0.0,
+      "start_equity": 100000.0,
+      "end_equity": 96513.399,
+      "net_profit": -3486.600999999995,
+      "symbol": "APLD"
+    }
+  ],
+  "return_distribution": {
+    "profitable_count": 1,
+    "unprofitable_count": 1,
+    "percentile_25": -4.477500000000001,
+    "percentile_50": -1.5150000000000001,
+    "percentile_75": 1.4475000000000002
+  }
+}

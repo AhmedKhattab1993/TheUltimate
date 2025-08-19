@@ -303,7 +303,7 @@ async def simple_screen_stocks(
     if results:
         try:
             symbols = [r.symbol for r in results]
-            filters_dict = request.dict()
+            filters_dict = request.model_dump()
             metadata = {
                 "total_symbols_screened": len(data_by_symbol),
                 "total_qualifying_stocks": total_qualifying,

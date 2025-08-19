@@ -228,7 +228,7 @@ async def collect_daily_data(
         background_tasks[task_id] = {
             "status": "started",
             "started_at": datetime.now(),
-            "request": request.dict()
+            "request": request.model_dump()
         }
         
         return DataCollectionResponse(

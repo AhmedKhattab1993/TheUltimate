@@ -14,7 +14,7 @@ import asyncio
 import logging
 import sys
 import yaml
-from datetime import datetime
+from datetime import datetime, date
 from pathlib import Path
 from typing import Dict, Any, List
 
@@ -24,9 +24,13 @@ sys.path.append(str(Path(__file__).parent))
 from app.services.backtest_queue_manager import BacktestQueueManager
 from app.services.statistics_aggregator import StatisticsAggregator
 from app.services.cleanup_service import CleanupService
+from app.services.cache_service import CacheService
+from app.models.cache_models import CachedScreenerRequest, CachedScreenerResult
 from app.models.simple_requests import (
     SimpleScreenRequest, 
     SimplePriceRangeParams,
+    PriceVsMAParams,
+    RSIParams,
     GapParams,
     PreviousDayDollarVolumeParams,
     RelativeVolumeParams,
@@ -51,9 +55,27 @@ class ScreenerBacktestPipeline:
         self.config_path = Path(config_path)
         self.config = self._load_config()
         self.api_client = APIClient(base_url=settings.api_base_url)
+        
+        # Initialize cache service if enabled
+        cache_config = self.config.get('caching', {})
+        self.cache_enabled = cache_config.get('enabled', False)
+        if self.cache_enabled:
+            self.cache_service = CacheService(
+                screener_ttl_hours=cache_config.get('screener_ttl_hours', 24),
+                backtest_ttl_days=cache_config.get('backtest_ttl_days', 7)
+            )
+            logger.info("Cache service initialized")
+        else:
+            self.cache_service = None
+        
+        # Initialize queue manager with cache and storage settings
+        storage_config = self.config.get('storage', {})
         self.queue_manager = BacktestQueueManager(
             max_parallel=self.config['execution']['parallel_backtests'],
-            startup_delay=self.config['execution'].get('startup_delay', 15.0)
+            startup_delay=self.config['execution'].get('startup_delay', 15.0),
+            cache_service=self.cache_service if self.cache_enabled else None,
+            enable_storage=storage_config.get('enabled', True),
+            enable_cleanup=storage_config.get('cleanup_after_storage', True)
         )
         self.stats_aggregator = StatisticsAggregator()
         self.cleanup_service = CleanupService()
@@ -71,30 +93,51 @@ class ScreenerBacktestPipeline:
         screening_config = self.config['screening']
         filters_config = screening_config['filters']
         
-        # Build individual filters
+        # Build individual filters based on enabled flags
         filters = SimpleFilters()
         
-        if 'price_range' in filters_config:
+        # Price Range Filter
+        if 'price_range' in filters_config and filters_config['price_range'].get('enabled', False):
             pr = filters_config['price_range']
             filters.price_range = SimplePriceRangeParams(
                 min_price=pr['min_price'],
                 max_price=pr['max_price']
             )
         
-        if 'gap' in filters_config:
+        # Price vs MA Filter
+        if 'price_vs_ma' in filters_config and filters_config['price_vs_ma'].get('enabled', False):
+            pma = filters_config['price_vs_ma']
+            filters.price_vs_ma = PriceVsMAParams(
+                ma_period=pma['ma_period'],
+                condition=pma['condition']
+            )
+        
+        # RSI Filter
+        if 'rsi' in filters_config and filters_config['rsi'].get('enabled', False):
+            rsi = filters_config['rsi']
+            filters.rsi = RSIParams(
+                rsi_period=rsi.get('rsi_period', rsi.get('period', 14)),  # Support both field names
+                condition=rsi['condition'],
+                threshold=rsi['threshold']
+            )
+        
+        # Gap Filter
+        if 'gap' in filters_config and filters_config['gap'].get('enabled', False):
             gap = filters_config['gap']
             filters.gap = GapParams(
                 gap_threshold=gap['gap_threshold'],
                 direction=gap['direction']
             )
         
-        if 'prev_day_dollar_volume' in filters_config:
+        # Previous Day Dollar Volume Filter
+        if 'prev_day_dollar_volume' in filters_config and filters_config['prev_day_dollar_volume'].get('enabled', False):
             pddv = filters_config['prev_day_dollar_volume']
             filters.prev_day_dollar_volume = PreviousDayDollarVolumeParams(
                 min_dollar_volume=pddv['min_dollar_volume']
             )
         
-        if 'relative_volume' in filters_config:
+        # Relative Volume Filter
+        if 'relative_volume' in filters_config and filters_config['relative_volume'].get('enabled', False):
             rv = filters_config['relative_volume']
             filters.relative_volume = RelativeVolumeParams(
                 recent_days=rv['recent_days'],
@@ -117,6 +160,45 @@ class ScreenerBacktestPipeline:
         # Build screener request
         request = self._build_screener_request()
         
+        # Check cache if enabled
+        if self.cache_enabled:
+            # Create cache request model based on enabled filters
+            cache_request = CachedScreenerRequest(
+                start_date=request.start_date,
+                end_date=request.end_date,
+                # Price filters
+                min_price=request.filters.price_range.min_price if request.filters.price_range else None,
+                max_price=request.filters.price_range.max_price if request.filters.price_range else None,
+                # Price vs MA filter
+                price_vs_ma_enabled=request.filters.price_vs_ma is not None,
+                price_vs_ma_period=request.filters.price_vs_ma.ma_period if request.filters.price_vs_ma else None,
+                price_vs_ma_condition=request.filters.price_vs_ma.condition if request.filters.price_vs_ma else None,
+                # RSI filter
+                rsi_enabled=request.filters.rsi is not None,
+                rsi_period=request.filters.rsi.rsi_period if request.filters.rsi else None,
+                rsi_threshold=request.filters.rsi.threshold if request.filters.rsi else None,
+                rsi_condition=request.filters.rsi.condition if request.filters.rsi else None,
+                # Gap filter
+                gap_enabled=request.filters.gap is not None,
+                gap_threshold=request.filters.gap.gap_threshold if request.filters.gap else None,
+                gap_direction=request.filters.gap.direction if request.filters.gap else None,
+                # Previous day dollar volume filter
+                prev_day_dollar_volume_enabled=request.filters.prev_day_dollar_volume is not None,
+                prev_day_dollar_volume=request.filters.prev_day_dollar_volume.min_dollar_volume if request.filters.prev_day_dollar_volume else None,
+                # Relative volume filter
+                relative_volume_enabled=request.filters.relative_volume is not None,
+                relative_volume_recent_days=request.filters.relative_volume.recent_days if request.filters.relative_volume else None,
+                relative_volume_lookback_days=request.filters.relative_volume.lookback_days if request.filters.relative_volume else None,
+                relative_volume_min_ratio=request.filters.relative_volume.min_ratio if request.filters.relative_volume else None
+            )
+            
+            # Check cache
+            cached_results = await self.cache_service.get_screener_results(cache_request)
+            if cached_results is not None:
+                logger.info(f"Cache hit! Retrieved {len(cached_results)} symbols from cache")
+                # Extract symbols from cached results
+                return [result.symbol for result in cached_results]
+        
         # Call screener API
         try:
             response = await self.api_client.screen_stocks(request)
@@ -131,6 +213,50 @@ class ScreenerBacktestPipeline:
             if symbols:
                 logger.info(f"Top qualifying symbols: {', '.join(symbols[:10])}")
             
+            # Save to cache if enabled
+            if self.cache_enabled and symbols:
+                # Create cache models for each result
+                cache_results = []
+                for result in response.results:
+                    cache_result = CachedScreenerResult(
+                        symbol=result.symbol,
+                        company_name=None,  # SimpleScreenResult doesn't have company_name
+                        data_date=request.end_date,  # Use end date as the data date
+                        # Copy filter parameters from request
+                        # Price filters
+                        filter_min_price=request.filters.price_range.min_price if request.filters.price_range else None,
+                        filter_max_price=request.filters.price_range.max_price if request.filters.price_range else None,
+                        # Price vs MA filter
+                        filter_price_vs_ma_enabled=request.filters.price_vs_ma is not None,
+                        filter_price_vs_ma_period=request.filters.price_vs_ma.ma_period if request.filters.price_vs_ma else None,
+                        filter_price_vs_ma_condition=request.filters.price_vs_ma.condition if request.filters.price_vs_ma else None,
+                        # RSI filter
+                        filter_rsi_enabled=request.filters.rsi is not None,
+                        filter_rsi_period=request.filters.rsi.rsi_period if request.filters.rsi else None,
+                        filter_rsi_threshold=request.filters.rsi.threshold if request.filters.rsi else None,
+                        filter_rsi_condition=request.filters.rsi.condition if request.filters.rsi else None,
+                        # Gap filter
+                        filter_gap_enabled=request.filters.gap is not None,
+                        filter_gap_threshold=request.filters.gap.gap_threshold if request.filters.gap else None,
+                        filter_gap_direction='any' if request.filters.gap and request.filters.gap.direction == 'both' else request.filters.gap.direction if request.filters.gap else None,
+                        # Previous day dollar volume filter
+                        filter_prev_day_dollar_volume_enabled=request.filters.prev_day_dollar_volume is not None,
+                        filter_prev_day_dollar_volume=request.filters.prev_day_dollar_volume.min_dollar_volume if request.filters.prev_day_dollar_volume else None,
+                        # Relative volume filter
+                        filter_relative_volume_enabled=request.filters.relative_volume is not None,
+                        filter_relative_volume_recent_days=request.filters.relative_volume.recent_days if request.filters.relative_volume else None,
+                        filter_relative_volume_lookback_days=request.filters.relative_volume.lookback_days if request.filters.relative_volume else None,
+                        filter_relative_volume_min_ratio=request.filters.relative_volume.min_ratio if request.filters.relative_volume else None
+                    )
+                    cache_results.append(cache_result)
+                
+                # Save all results
+                success = await self.cache_service.save_screener_results(cache_request, cache_results)
+                if success:
+                    logger.info(f"Saved {len(cache_results)} screener results to cache")
+                else:
+                    logger.warning("Failed to save screener results to cache")
+            
             return symbols
             
         except Exception as e:
@@ -144,9 +270,109 @@ class ScreenerBacktestPipeline:
         backtest_config = self.config['backtesting']
         execution_config = self.config['execution']
         
-        # Create backtest requests for each symbol
+        # Check if max_backtests limit is set
+        max_backtests = execution_config.get('max_backtests', 0)
+        
+        # Prepare date range and parameters for caching
+        date_range = {
+            'start': backtest_config['date_range']['start'],
+            'end': backtest_config['date_range']['end']
+        }
+        
+        # Track which backtests need to be run
         backtest_requests = []
+        cached_results = {}
+        
         for symbol in symbols:
+            # Check cache if enabled
+            if self.cache_enabled:
+                from app.models.cache_models import CachedBacktestRequest
+                
+                # Extract parameters from backtest configuration
+                parameters = backtest_config.get('parameters', {})
+                
+                # Create cache request model using new cache key parameters
+                cache_request = CachedBacktestRequest(
+                    symbol=symbol,
+                    strategy_name=backtest_config.get('strategy', 'MarketStructure'),
+                    start_date=datetime.strptime(backtest_config['date_range']['start'], '%Y-%m-%d').date(),
+                    end_date=datetime.strptime(backtest_config['date_range']['end'], '%Y-%m-%d').date(),
+                    initial_cash=backtest_config.get('initial_cash', 100000),
+                    pivot_bars=parameters.get('pivot_bars', 20),
+                    lower_timeframe=parameters.get('lower_timeframe', '5min'),
+                    # Legacy parameters for backward compatibility
+                    holding_period=parameters.get('holding_period', 10),
+                    gap_threshold=parameters.get('gap_threshold', 2.0),
+                    stop_loss=parameters.get('stop_loss'),
+                    take_profit=parameters.get('take_profit')
+                )
+                
+                cached_result = await self.cache_service.get_backtest_results(cache_request)
+                if cached_result is not None:
+                    logger.info(f"Cache hit for backtest: {symbol}")
+                    # Convert cached result to expected format with comprehensive metrics
+                    cached_results[symbol] = {
+                        'statistics': {
+                            # Core performance metrics
+                            'total_return': float(cached_result.total_return),
+                            'net_profit': float(cached_result.net_profit) if cached_result.net_profit else 0.0,
+                            'net_profit_currency': float(cached_result.net_profit_currency) if cached_result.net_profit_currency else 0.0,
+                            'compounding_annual_return': float(cached_result.compounding_annual_return) if cached_result.compounding_annual_return else 0.0,
+                            'final_value': float(cached_result.final_value) if cached_result.final_value else 0.0,
+                            'start_equity': float(cached_result.start_equity) if cached_result.start_equity else 0.0,
+                            'end_equity': float(cached_result.end_equity) if cached_result.end_equity else 0.0,
+                            
+                            # Enhanced risk metrics
+                            'sharpe_ratio': float(cached_result.sharpe_ratio) if cached_result.sharpe_ratio else 0.0,
+                            'sortino_ratio': float(cached_result.sortino_ratio) if cached_result.sortino_ratio else 0.0,
+                            'max_drawdown': float(cached_result.max_drawdown) if cached_result.max_drawdown else 0.0,
+                            'probabilistic_sharpe_ratio': float(cached_result.probabilistic_sharpe_ratio) if cached_result.probabilistic_sharpe_ratio else 0.0,
+                            'annual_standard_deviation': float(cached_result.annual_standard_deviation) if cached_result.annual_standard_deviation else 0.0,
+                            'annual_variance': float(cached_result.annual_variance) if cached_result.annual_variance else 0.0,
+                            'beta': float(cached_result.beta) if cached_result.beta else 0.0,
+                            'alpha': float(cached_result.alpha) if cached_result.alpha else 0.0,
+                            
+                            # Advanced trading statistics
+                            'total_trades': cached_result.total_trades,
+                            'winning_trades': cached_result.winning_trades,
+                            'losing_trades': cached_result.losing_trades,
+                            'win_rate': float(cached_result.win_rate),
+                            'loss_rate': float(cached_result.loss_rate) if cached_result.loss_rate else 0.0,
+                            'average_win': float(cached_result.average_win) if cached_result.average_win else 0.0,
+                            'average_loss': float(cached_result.average_loss) if cached_result.average_loss else 0.0,
+                            'profit_factor': float(cached_result.profit_factor) if cached_result.profit_factor else 0.0,
+                            'profit_loss_ratio': float(cached_result.profit_loss_ratio) if cached_result.profit_loss_ratio else 0.0,
+                            'expectancy': float(cached_result.expectancy) if cached_result.expectancy else 0.0,
+                            'total_orders': cached_result.total_orders if cached_result.total_orders else 0,
+                            
+                            # Advanced metrics
+                            'information_ratio': float(cached_result.information_ratio) if cached_result.information_ratio else 0.0,
+                            'tracking_error': float(cached_result.tracking_error) if cached_result.tracking_error else 0.0,
+                            'treynor_ratio': float(cached_result.treynor_ratio) if cached_result.treynor_ratio else 0.0,
+                            'total_fees': float(cached_result.total_fees) if cached_result.total_fees else 0.0,
+                            'estimated_strategy_capacity': float(cached_result.estimated_strategy_capacity) if cached_result.estimated_strategy_capacity else 0.0,
+                            'lowest_capacity_asset': cached_result.lowest_capacity_asset or "",
+                            'portfolio_turnover': float(cached_result.portfolio_turnover) if cached_result.portfolio_turnover else 0.0,
+                            
+                            # Strategy-specific metrics
+                            'pivot_highs_detected': cached_result.pivot_highs_detected if cached_result.pivot_highs_detected else 0,
+                            'pivot_lows_detected': cached_result.pivot_lows_detected if cached_result.pivot_lows_detected else 0,
+                            'bos_signals_generated': cached_result.bos_signals_generated if cached_result.bos_signals_generated else 0,
+                            'position_flips': cached_result.position_flips if cached_result.position_flips else 0,
+                            'liquidation_events': cached_result.liquidation_events if cached_result.liquidation_events else 0,
+                            
+                            # Algorithm parameters
+                            'initial_cash': float(cached_result.initial_cash),
+                            'pivot_bars': cached_result.pivot_bars,
+                            'lower_timeframe': cached_result.lower_timeframe,
+                            'strategy_name': cached_result.strategy_name
+                        },
+                        'from_cache': True,
+                        'cache_hit': True
+                    }
+                    continue
+            
+            # Add to requests if not cached
             request = {
                 'symbol': symbol,
                 'strategy': backtest_config['strategy'],
@@ -158,15 +384,33 @@ class ScreenerBacktestPipeline:
             }
             backtest_requests.append(request)
         
-        # Run backtests through queue manager
-        results = await self.queue_manager.run_batch(
-            backtest_requests,
-            timeout_per_backtest=execution_config['timeout_per_backtest'],
-            retry_attempts=execution_config['retry_attempts'],
-            continue_on_error=execution_config['continue_on_error']
-        )
+        # Apply max_backtests limit if set
+        if max_backtests > 0 and len(backtest_requests) > max_backtests:
+            logger.info(f"Limiting backtest executions to {max_backtests} (from {len(backtest_requests)} total)")
+            backtest_requests = backtest_requests[:max_backtests]
         
-        return results
+        # Log cache statistics
+        if cached_results:
+            logger.info(f"Retrieved {len(cached_results)} backtests from cache")
+            logger.info(f"Running {len(backtest_requests)} new backtests")
+        
+        # Run non-cached backtests through queue manager
+        if backtest_requests:
+            new_results = await self.queue_manager.run_batch(
+                backtest_requests,
+                timeout_per_backtest=execution_config['timeout_per_backtest'],
+                retry_attempts=execution_config['retry_attempts'],
+                continue_on_error=execution_config['continue_on_error']
+            )
+            
+            # Note: Cache saving is now handled within BacktestQueueManager after each backtest completes
+        else:
+            new_results = {}
+        
+        # Combine cached and new results
+        all_results = {**cached_results, **new_results}
+        
+        return all_results
     
     async def process_results(self, backtest_results: Dict[str, Any]):
         """Process and output backtest results."""
@@ -203,7 +447,14 @@ class ScreenerBacktestPipeline:
         if output_config['print_to_console']:
             self.stats_aggregator.print_summary(aggregated_stats)
     
-    async def cleanup(self, backtest_results: Dict[str, Any]):
+    async def cleanup(self):
+        """Clean up resources like API client session."""
+        # Close API client session
+        if self.api_client and self.api_client.session:
+            await self.api_client.session.close()
+            logger.debug("Closed API client session")
+    
+    async def cleanup_logs(self, backtest_results: Dict[str, Any]):
         """Clean up backtest logs and temporary files."""
         output_config = self.config['output']
         
@@ -237,7 +488,17 @@ class ScreenerBacktestPipeline:
             logger.info(f"Screening period: {self.config['screening']['date_range']['start']} to {self.config['screening']['date_range']['end']}")
             logger.info(f"Backtest strategy: {self.config['backtesting']['strategy']}")
             logger.info(f"Parallel backtests: {self.config['execution']['parallel_backtests']}")
+            max_backtests = self.config['execution'].get('max_backtests', 0)
+            if max_backtests > 0:
+                logger.info(f"Max backtest executions: {max_backtests}")
+            logger.info(f"Cache enabled: {self.cache_enabled}")
             logger.info("=" * 80)
+            
+            # Clean expired cache if configured
+            if self.cache_enabled and self.config.get('caching', {}).get('cleanup_on_startup', True):
+                logger.info("Cleaning expired cache entries...")
+                screener_cleaned, backtest_cleaned = await self.cache_service.clean_expired_cache()
+                logger.info(f"Cleaned {screener_cleaned} screener and {backtest_cleaned} backtest cache entries")
             
             # Step 1: Run screener
             logger.info("\n[STEP 1/4] Running stock screener...")
@@ -257,7 +518,28 @@ class ScreenerBacktestPipeline:
             
             # Step 4: Cleanup
             logger.info("\n[STEP 4/4] Cleaning up...")
-            await self.cleanup(backtest_results)
+            await self.cleanup_logs(backtest_results)
+            
+            # Show cache statistics if enabled
+            if self.cache_enabled and self.config.get('caching', {}).get('show_stats_on_completion', True):
+                logger.info("\n" + "=" * 80)
+                logger.info("CACHE STATISTICS")
+                logger.info("=" * 80)
+                cache_stats = await self.cache_service.get_cache_stats()
+                
+                screener_stats = cache_stats['screener']
+                logger.info(f"Screener Cache:")
+                logger.info(f"  Active entries: {screener_stats.get('active_entries', 0)}")
+                logger.info(f"  Total hits: {screener_stats.get('total_hits', 0)}")
+                logger.info(f"  Total misses: {screener_stats.get('total_misses', 0)}")
+                logger.info(f"  Hit rate: {screener_stats.get('hit_rate', 0):.1f}%")
+                
+                backtest_stats = cache_stats['backtest']
+                logger.info(f"\nBacktest Cache:")
+                logger.info(f"  Active entries: {backtest_stats.get('active_entries', 0)}")
+                logger.info(f"  Total hits: {backtest_stats.get('total_hits', 0)}")
+                logger.info(f"  Total misses: {backtest_stats.get('total_misses', 0)}")
+                logger.info(f"  Hit rate: {backtest_stats.get('hit_rate', 0):.1f}%")
             
             logger.info("\n" + "=" * 80)
             logger.info("PIPELINE COMPLETED SUCCESSFULLY")
@@ -266,6 +548,9 @@ class ScreenerBacktestPipeline:
         except Exception as e:
             logger.error(f"Pipeline failed: {e}", exc_info=True)
             raise
+        finally:
+            # Clean up resources
+            await self.cleanup()
 
 
 async def main():

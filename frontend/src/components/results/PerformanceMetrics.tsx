@@ -31,7 +31,9 @@ export function PerformanceMetrics({ metrics }: PerformanceMetricsProps) {
               <p className="text-sm font-medium">Total Time</p>
             </div>
             <p className="text-2xl font-bold">
-              {(metrics.total_execution_time_ms / 1000).toFixed(2)}s
+              {metrics.total_execution_time_ms !== null && metrics.total_execution_time_ms !== undefined ? 
+                `${(metrics.total_execution_time_ms / 1000).toFixed(2)}s` : '0s'
+              }
             </p>
           </div>
           
@@ -41,7 +43,9 @@ export function PerformanceMetrics({ metrics }: PerformanceMetricsProps) {
               <p className="text-sm font-medium">Data Fetch</p>
             </div>
             <p className="text-2xl font-bold">
-              {metrics.data_fetch_time_ms.toFixed(0)}ms
+              {metrics.data_fetch_time_ms !== null && metrics.data_fetch_time_ms !== undefined ? 
+                `${metrics.data_fetch_time_ms.toFixed(0)}ms` : '0ms'
+              }
             </p>
           </div>
           
@@ -51,7 +55,9 @@ export function PerformanceMetrics({ metrics }: PerformanceMetricsProps) {
               <p className="text-sm font-medium">Screening</p>
             </div>
             <p className="text-2xl font-bold">
-              {metrics.screening_time_ms.toFixed(0)}ms
+              {metrics.screening_time_ms !== null && metrics.screening_time_ms !== undefined ? 
+                `${metrics.screening_time_ms.toFixed(0)}ms` : '0ms'
+              }
             </p>
           </div>
           
