@@ -3,18 +3,21 @@ API endpoints for backtesting functionality.
 """
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Query, Depends
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
+from datetime import date, datetime
 import logging
 import json
 
 from ..models.backtest import (
     BacktestRequest, BacktestRunInfo, BacktestResult,
-    BacktestListResponse, StrategyInfo, BacktestProgress, BacktestStatus
+    BacktestListResponse, StrategyInfo, BacktestProgress, BacktestStatus,
+    BacktestStatistics
 )
 from ..services.backtest_manager import backtest_manager
 from ..services.lean_runner import LeanRunner
 from ..services.backtest_storage import BacktestStorage
 from ..services.screener_results import screener_results_manager
+from ..services.database import db_pool
 
 
 router = APIRouter(prefix="/api/v2/backtest", tags=["backtest"])
@@ -194,13 +197,17 @@ async def list_backtest_results(
         
         # Collect results from each strategy's backtests folder
         for strategy in strategies:
-            strategy_storage = BacktestStorage(strategy_name=strategy["name"])
-            strategy_results = await strategy_storage.list_results(
-                page=1,
-                page_size=1000,  # Get all results for aggregation
-                strategy_name=strategy_name
-            )
-            all_results.extend(strategy_results.results)
+            try:
+                strategy_storage = BacktestStorage(strategy_name=strategy["name"])
+                strategy_results = await strategy_storage.list_results(
+                    page=1,
+                    page_size=1000,  # Get all results for aggregation
+                    strategy_name=strategy_name
+                )
+                all_results.extend(strategy_results.results)
+            except Exception as e:
+                # Log error but continue with other strategies
+                logger.warning(f"Error loading results for strategy '{strategy['name']}': {e}")
         
         # Sort all results by created_at date
         all_results.sort(key=lambda x: x.created_at, reverse=True)
@@ -457,3 +464,985 @@ async def get_example_requests():
     ]
     
     return {"examples": examples}
+
+
+@router.get("/db/results", response_model=BacktestListResponse)
+async def list_backtest_results_from_db(
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Results per page"),
+    symbol: Optional[str] = Query(None, description="Filter by symbol"),
+    strategy_name: Optional[str] = Query(None, description="Filter by strategy name"),
+    initial_cash: Optional[float] = Query(None, description="Filter by initial cash amount"),
+    pivot_bars: Optional[int] = Query(None, description="Filter by pivot bars setting"),
+    lower_timeframe: Optional[str] = Query(None, description="Filter by lower timeframe"),
+    start_date: Optional[date] = Query(None, description="Filter results after this date"),
+    end_date: Optional[date] = Query(None, description="Filter results before this date"),
+    sort_by: Optional[str] = Query("created_at", description="Sort by field (created_at, total_return, sharpe_ratio, max_drawdown, win_rate, profit_factor)"),
+    sort_order: Optional[str] = Query("desc", description="Sort order (asc, desc)")
+):
+    """
+    List historical backtest results from database with pagination and comprehensive filtering.
+    
+    This endpoint reads from the market_structure_results table with enhanced schema support.
+    
+    Args:
+        page: Page number (1-based)
+        page_size: Number of results per page
+        symbol: Optional filter by symbol
+        strategy_name: Optional filter by strategy name
+        initial_cash: Optional filter by initial cash amount
+        pivot_bars: Optional filter by pivot bars setting
+        lower_timeframe: Optional filter by lower timeframe
+        start_date: Optional filter for results after this date
+        end_date: Optional filter for results before this date
+        sort_by: Sort by field (created_at, total_return, sharpe_ratio, max_drawdown, win_rate, profit_factor)
+        sort_order: Sort order (asc, desc)
+        
+    Returns:
+        Paginated list of backtest results with comprehensive metrics
+    """
+    try:
+        # Validate input parameters
+        if page_size > 100:
+            raise HTTPException(status_code=400, detail="page_size cannot exceed 100")
+        
+        if initial_cash is not None and initial_cash <= 0:
+            raise HTTPException(status_code=400, detail="initial_cash must be greater than 0")
+        
+        if pivot_bars is not None and pivot_bars <= 0:
+            raise HTTPException(status_code=400, detail="pivot_bars must be greater than 0")
+        
+        if start_date and end_date and end_date < start_date:
+            raise HTTPException(status_code=400, detail="end_date must be on or after start_date")
+        
+        # Validate sort parameters
+        valid_sort_fields = ['created_at', 'total_return', 'sharpe_ratio', 'max_drawdown', 'win_rate', 'profit_factor', 'net_profit', 'compounding_annual_return']
+        if sort_by not in valid_sort_fields:
+            sort_by = 'created_at'
+        
+        sort_order = sort_order.lower()
+        if sort_order not in ['asc', 'desc']:
+            sort_order = 'desc'
+        
+        # Build comprehensive query to fetch all new performance metrics
+        query = """
+        SELECT 
+            id,
+            backtest_id,
+            symbol,
+            strategy_name,
+            start_date,
+            end_date,
+            initial_cash,
+            resolution,
+            pivot_bars,
+            lower_timeframe,
+            -- Core Performance Results
+            total_return,
+            net_profit,
+            net_profit_currency,
+            compounding_annual_return,
+            final_value,
+            start_equity,
+            end_equity,
+            -- Risk Metrics
+            sharpe_ratio,
+            sortino_ratio,
+            max_drawdown,
+            probabilistic_sharpe_ratio,
+            annual_standard_deviation,
+            annual_variance,
+            beta,
+            alpha,
+            -- Trading Statistics
+            total_trades,
+            winning_trades,
+            losing_trades,
+            win_rate,
+            loss_rate,
+            average_win,
+            average_loss,
+            profit_factor,
+            profit_loss_ratio,
+            expectancy,
+            total_orders,
+            -- Advanced Metrics
+            information_ratio,
+            tracking_error,
+            treynor_ratio,
+            total_fees,
+            estimated_strategy_capacity,
+            lowest_capacity_asset,
+            portfolio_turnover,
+            -- Strategy-Specific Metrics
+            pivot_highs_detected,
+            pivot_lows_detected,
+            bos_signals_generated,
+            position_flips,
+            liquidation_events,
+            -- Execution Metadata
+            execution_time_ms,
+            result_path,
+            status,
+            error_message,
+            cache_hit,
+            created_at
+        FROM market_structure_results
+        WHERE 1=1
+        """
+        params = []
+        param_count = 0
+        
+        # Add cache key parameter filters
+        if symbol:
+            param_count += 1
+            query += f" AND symbol = ${param_count}"
+            params.append(symbol)
+            
+        if strategy_name:
+            param_count += 1
+            query += f" AND strategy_name = ${param_count}"
+            params.append(strategy_name)
+            
+        if initial_cash is not None:
+            param_count += 1
+            query += f" AND initial_cash = ${param_count}"
+            params.append(initial_cash)
+            
+        if pivot_bars is not None:
+            param_count += 1
+            query += f" AND pivot_bars = ${param_count}"
+            params.append(pivot_bars)
+            
+        if lower_timeframe:
+            param_count += 1
+            query += f" AND lower_timeframe = ${param_count}"
+            params.append(lower_timeframe)
+            
+        # Add date filters
+        if start_date:
+            param_count += 1
+            query += f" AND start_date >= ${param_count}"
+            params.append(start_date)
+            
+        if end_date:
+            param_count += 1
+            query += f" AND end_date <= ${param_count}"
+            params.append(end_date)
+            
+        # Add ordering with proper null handling
+        query += f" ORDER BY {sort_by} {sort_order.upper()} NULLS LAST"
+        
+        # Get total count for pagination
+        count_query = "SELECT COUNT(*) FROM market_structure_results WHERE 1=1"
+        count_params = []
+        count_param_num = 0
+        
+        # Apply same filters to count query
+        if symbol:
+            count_param_num += 1
+            count_query += f" AND symbol = ${count_param_num}"
+            count_params.append(symbol)
+            
+        if strategy_name:
+            count_param_num += 1
+            count_query += f" AND strategy_name = ${count_param_num}"
+            count_params.append(strategy_name)
+            
+        if initial_cash is not None:
+            count_param_num += 1
+            count_query += f" AND initial_cash = ${count_param_num}"
+            count_params.append(initial_cash)
+            
+        if pivot_bars is not None:
+            count_param_num += 1
+            count_query += f" AND pivot_bars = ${count_param_num}"
+            count_params.append(pivot_bars)
+            
+        if lower_timeframe:
+            count_param_num += 1
+            count_query += f" AND lower_timeframe = ${count_param_num}"
+            count_params.append(lower_timeframe)
+            
+        if start_date:
+            count_param_num += 1
+            count_query += f" AND start_date >= ${count_param_num}"
+            count_params.append(start_date)
+            
+        if end_date:
+            count_param_num += 1
+            count_query += f" AND end_date <= ${count_param_num}"
+            count_params.append(end_date)
+        
+        total_count = await db_pool.fetchval(count_query, *count_params)
+        
+        # Add limit and offset for pagination
+        param_count += 1
+        query += f" LIMIT ${param_count}"
+        params.append(page_size)
+        
+        param_count += 1
+        query += f" OFFSET ${param_count}"
+        params.append((page - 1) * page_size)
+        
+        # Execute query
+        rows = await db_pool.fetch(query, *params)
+        
+        # Convert to response models using comprehensive data
+        results = []
+        skipped_count = 0
+        for row in rows:
+            try:
+                # Create BacktestStatistics with all available metrics
+                backtest_stats = BacktestStatistics(
+                    # Core Performance Metrics
+                    total_return=float(row['total_return']) if row['total_return'] is not None else 0,
+                    net_profit=float(row['net_profit']) if row['net_profit'] is not None else 0,
+                    net_profit_currency=float(row['net_profit_currency']) if row['net_profit_currency'] is not None else 0,
+                    compounding_annual_return=float(row['compounding_annual_return']) if row['compounding_annual_return'] is not None else 0,
+                    final_value=float(row['final_value']) if row['final_value'] is not None else 0,
+                    start_equity=float(row['start_equity']) if row['start_equity'] is not None else 0,
+                    end_equity=float(row['end_equity']) if row['end_equity'] is not None else 0,
+                    
+                    # Risk Metrics
+                    sharpe_ratio=float(row['sharpe_ratio']) if row['sharpe_ratio'] is not None else 0,
+                    sortino_ratio=float(row['sortino_ratio']) if row['sortino_ratio'] is not None else 0,
+                    max_drawdown=float(row['max_drawdown']) if row['max_drawdown'] is not None else 0,
+                    probabilistic_sharpe_ratio=float(row['probabilistic_sharpe_ratio']) if row['probabilistic_sharpe_ratio'] is not None else 0,
+                    annual_standard_deviation=float(row['annual_standard_deviation']) if row['annual_standard_deviation'] is not None else 0,
+                    annual_variance=float(row['annual_variance']) if row['annual_variance'] is not None else 0,
+                    beta=float(row['beta']) if row['beta'] is not None else 0,
+                    alpha=float(row['alpha']) if row['alpha'] is not None else 0,
+                    
+                    # Trading Statistics
+                    total_orders=int(row['total_orders']) if row['total_orders'] is not None else 0,
+                    total_trades=int(row['total_trades']) if row['total_trades'] is not None else 0,
+                    winning_trades=int(row['winning_trades']) if row['winning_trades'] is not None else 0,
+                    losing_trades=int(row['losing_trades']) if row['losing_trades'] is not None else 0,
+                    win_rate=float(row['win_rate']) if row['win_rate'] is not None else 0,
+                    loss_rate=float(row['loss_rate']) if row['loss_rate'] is not None else 0,
+                    average_win=float(row['average_win']) if row['average_win'] is not None else 0,
+                    average_loss=float(row['average_loss']) if row['average_loss'] is not None else 0,
+                    profit_factor=float(row['profit_factor']) if row['profit_factor'] is not None else 0,
+                    profit_loss_ratio=float(row['profit_loss_ratio']) if row['profit_loss_ratio'] is not None else 0,
+                    expectancy=float(row['expectancy']) if row['expectancy'] is not None else 0,
+                    
+                    # Advanced Metrics
+                    information_ratio=float(row['information_ratio']) if row['information_ratio'] is not None else 0,
+                    tracking_error=float(row['tracking_error']) if row['tracking_error'] is not None else 0,
+                    treynor_ratio=float(row['treynor_ratio']) if row['treynor_ratio'] is not None else 0,
+                    total_fees=float(row['total_fees']) if row['total_fees'] is not None else 0,
+                    estimated_strategy_capacity=float(row['estimated_strategy_capacity']) if row['estimated_strategy_capacity'] is not None else 1000000,
+                    lowest_capacity_asset=row['lowest_capacity_asset'] if row['lowest_capacity_asset'] else row['symbol'],
+                    portfolio_turnover=float(row['portfolio_turnover']) if row['portfolio_turnover'] is not None else 0,
+                    
+                    # Strategy-Specific Metrics
+                    pivot_highs_detected=int(row['pivot_highs_detected']) if row['pivot_highs_detected'] is not None else None,
+                    pivot_lows_detected=int(row['pivot_lows_detected']) if row['pivot_lows_detected'] is not None else None,
+                    bos_signals_generated=int(row['bos_signals_generated']) if row['bos_signals_generated'] is not None else None,
+                    position_flips=int(row['position_flips']) if row['position_flips'] is not None else None,
+                    liquidation_events=int(row['liquidation_events']) if row['liquidation_events'] is not None else None
+                )
+                
+                # Create BacktestResult with comprehensive data
+                result = BacktestResult(
+                    backtest_id=row['backtest_id'],
+                    symbol=row['symbol'],
+                    strategy_name=row['strategy_name'] if row['strategy_name'] else 'MarketStructure',
+                    start_date=row['start_date'],
+                    end_date=row['end_date'],
+                    initial_cash=float(row['initial_cash']) if row['initial_cash'] is not None else 100000,
+                    resolution=row['resolution'] if row['resolution'] else 'Minute',
+                    pivot_bars=int(row['pivot_bars']) if row['pivot_bars'] is not None else 5,
+                    lower_timeframe=row['lower_timeframe'] if row['lower_timeframe'] else '5min',
+                    final_value=float(row['final_value']) if row['final_value'] is not None else 0,
+                    statistics=backtest_stats,
+                    execution_time_ms=int(row['execution_time_ms']) if row['execution_time_ms'] is not None else None,
+                    result_path=row['result_path'] if row['result_path'] else f"db:{str(row['id'])}",
+                    status=row['status'] if row['status'] else 'completed',
+                    error_message=row['error_message'],
+                    cache_hit=row['cache_hit'],
+                    orders=None,  # Orders not included in list view
+                    equity_curve=None,  # Equity curve not included in list view
+                    created_at=row['created_at']
+                )
+                results.append(result)
+            except Exception as e:
+                # Skip this result and log the error
+                skipped_count += 1
+                logger.warning(f"Skipping backtest result due to validation error: {e}. Row ID: {row.get('id', 'unknown')}")
+                continue
+        
+        # Log if any results were skipped
+        if skipped_count > 0:
+            logger.info(f"Skipped {skipped_count} backtest results due to validation errors")
+        
+        return BacktestListResponse(
+            results=results,
+            total_count=int(total_count) if total_count else 0,
+            page=page,
+            page_size=page_size
+        )
+        
+    except HTTPException:
+        raise
+    except ValueError as e:
+        logger.error(f"Validation error in list_backtest_results_from_db: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error listing backtest results from database: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve backtest results: {str(e)}")
+
+
+@router.get("/db/results/{result_id}", response_model=BacktestResult)
+async def get_backtest_result_from_db(result_id: str):
+    """
+    Get detailed backtest result from database with comprehensive metrics.
+    
+    This endpoint reads from the market_structure_results table with enhanced schema support.
+    
+    Args:
+        result_id: The backtest_id (cache hash)
+        
+    Returns:
+        Complete backtest result including all performance statistics and metadata
+    """
+    try:
+        # No validation needed for cache hash - it's a string
+        
+        # Query the market_structure_results table with all comprehensive fields
+        query = """
+        SELECT 
+            id,
+            backtest_id,
+            symbol,
+            strategy_name,
+            start_date,
+            end_date,
+            initial_cash,
+            resolution,
+            pivot_bars,
+            lower_timeframe,
+            -- Core Performance Results
+            total_return,
+            net_profit,
+            net_profit_currency,
+            compounding_annual_return,
+            final_value,
+            start_equity,
+            end_equity,
+            -- Risk Metrics
+            sharpe_ratio,
+            sortino_ratio,
+            max_drawdown,
+            probabilistic_sharpe_ratio,
+            annual_standard_deviation,
+            annual_variance,
+            beta,
+            alpha,
+            -- Trading Statistics
+            total_trades,
+            winning_trades,
+            losing_trades,
+            win_rate,
+            loss_rate,
+            average_win,
+            average_loss,
+            profit_factor,
+            profit_loss_ratio,
+            expectancy,
+            total_orders,
+            -- Advanced Metrics
+            information_ratio,
+            tracking_error,
+            treynor_ratio,
+            total_fees,
+            estimated_strategy_capacity,
+            lowest_capacity_asset,
+            portfolio_turnover,
+            -- Strategy-Specific Metrics
+            pivot_highs_detected,
+            pivot_lows_detected,
+            bos_signals_generated,
+            position_flips,
+            liquidation_events,
+            -- Execution Metadata
+            execution_time_ms,
+            result_path,
+            status,
+            error_message,
+            cache_hit,
+            created_at
+        FROM market_structure_results
+        WHERE backtest_id = $1
+        """
+        
+        row = await db_pool.fetchrow(query, result_id)
+        
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Backtest result '{result_id}' not found")
+        
+        try:
+            # Create BacktestStatistics with all comprehensive metrics
+            backtest_stats = BacktestStatistics(
+                # Core Performance Metrics
+                total_return=float(row['total_return']) if row['total_return'] is not None else 0,
+                net_profit=float(row['net_profit']) if row['net_profit'] is not None else 0,
+                net_profit_currency=float(row['net_profit_currency']) if row['net_profit_currency'] is not None else 0,
+                compounding_annual_return=float(row['compounding_annual_return']) if row['compounding_annual_return'] is not None else 0,
+                final_value=float(row['final_value']) if row['final_value'] is not None else 0,
+                start_equity=float(row['start_equity']) if row['start_equity'] is not None else 0,
+                end_equity=float(row['end_equity']) if row['end_equity'] is not None else 0,
+                
+                # Risk Metrics
+                sharpe_ratio=float(row['sharpe_ratio']) if row['sharpe_ratio'] is not None else 0,
+                sortino_ratio=float(row['sortino_ratio']) if row['sortino_ratio'] is not None else 0,
+                max_drawdown=float(row['max_drawdown']) if row['max_drawdown'] is not None else 0,
+                probabilistic_sharpe_ratio=float(row['probabilistic_sharpe_ratio']) if row['probabilistic_sharpe_ratio'] is not None else 0,
+                annual_standard_deviation=float(row['annual_standard_deviation']) if row['annual_standard_deviation'] is not None else 0,
+                annual_variance=float(row['annual_variance']) if row['annual_variance'] is not None else 0,
+                beta=float(row['beta']) if row['beta'] is not None else 0,
+                alpha=float(row['alpha']) if row['alpha'] is not None else 0,
+                
+                # Trading Statistics
+                total_orders=int(row['total_orders']) if row['total_orders'] is not None else 0,
+                total_trades=int(row['total_trades']) if row['total_trades'] is not None else 0,
+                winning_trades=int(row['winning_trades']) if row['winning_trades'] is not None else 0,
+                losing_trades=int(row['losing_trades']) if row['losing_trades'] is not None else 0,
+                win_rate=float(row['win_rate']) if row['win_rate'] is not None else 0,
+                loss_rate=float(row['loss_rate']) if row['loss_rate'] is not None else 0,
+                average_win=float(row['average_win']) if row['average_win'] is not None else 0,
+                average_loss=float(row['average_loss']) if row['average_loss'] is not None else 0,
+                profit_factor=float(row['profit_factor']) if row['profit_factor'] is not None else 0,
+                profit_loss_ratio=float(row['profit_loss_ratio']) if row['profit_loss_ratio'] is not None else 0,
+                expectancy=float(row['expectancy']) if row['expectancy'] is not None else 0,
+                
+                # Advanced Metrics
+                information_ratio=float(row['information_ratio']) if row['information_ratio'] is not None else 0,
+                tracking_error=float(row['tracking_error']) if row['tracking_error'] is not None else 0,
+                treynor_ratio=float(row['treynor_ratio']) if row['treynor_ratio'] is not None else 0,
+                total_fees=float(row['total_fees']) if row['total_fees'] is not None else 0,
+                estimated_strategy_capacity=float(row['estimated_strategy_capacity']) if row['estimated_strategy_capacity'] is not None else 1000000,
+                lowest_capacity_asset=row['lowest_capacity_asset'] if row['lowest_capacity_asset'] else row['symbol'],
+                portfolio_turnover=float(row['portfolio_turnover']) if row['portfolio_turnover'] is not None else 0,
+                
+                # Strategy-Specific Metrics
+                pivot_highs_detected=int(row['pivot_highs_detected']) if row['pivot_highs_detected'] is not None else None,
+                pivot_lows_detected=int(row['pivot_lows_detected']) if row['pivot_lows_detected'] is not None else None,
+                bos_signals_generated=int(row['bos_signals_generated']) if row['bos_signals_generated'] is not None else None,
+                position_flips=int(row['position_flips']) if row['position_flips'] is not None else None,
+                liquidation_events=int(row['liquidation_events']) if row['liquidation_events'] is not None else None
+            )
+            
+            # Create BacktestResult with comprehensive data
+            result = BacktestResult(
+                backtest_id=row['backtest_id'],
+                symbol=row['symbol'],
+                strategy_name=row['strategy_name'] if row['strategy_name'] else 'MarketStructure',
+                start_date=row['start_date'],
+                end_date=row['end_date'],
+                initial_cash=float(row['initial_cash']) if row['initial_cash'] is not None else 100000,
+                resolution=row['resolution'] if row['resolution'] else 'Minute',
+                pivot_bars=int(row['pivot_bars']) if row['pivot_bars'] is not None else 5,
+                lower_timeframe=row['lower_timeframe'] if row['lower_timeframe'] else '5min',
+                final_value=float(row['final_value']) if row['final_value'] is not None else 0,
+                statistics=backtest_stats,
+                execution_time_ms=int(row['execution_time_ms']) if row['execution_time_ms'] is not None else None,
+                result_path=row['result_path'] if row['result_path'] else f"db:{str(row['id'])}",
+                status=row['status'] if row['status'] else 'completed',
+                error_message=row['error_message'],
+                cache_hit=row['cache_hit'],
+                # For detailed view, we could include orders and equity curve if they're stored separately
+                # For now, they remain None as they're not part of the current schema design
+                orders=None,
+                equity_curve=None,
+                created_at=row['created_at']
+            )
+            
+            return result
+        except Exception as e:
+            logger.error(f"Error parsing backtest result from database: {e}. Row ID: {row.get('id', 'unknown')}")
+            raise HTTPException(status_code=404, detail=f"Backtest result has invalid data and cannot be displayed")
+        
+    except HTTPException:
+        raise
+    except ValueError as e:
+        logger.error(f"Validation error in get_backtest_result_from_db: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error getting backtest result from database: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve backtest result: {str(e)}")
+
+
+@router.get("/db/cache-lookup", response_model=BacktestResult)
+async def lookup_cached_backtest_result(
+    symbol: str = Query(..., description="Stock symbol"),
+    strategy_name: str = Query(..., description="Strategy name"),
+    start_date: date = Query(..., description="Backtest start date"),
+    end_date: date = Query(..., description="Backtest end date"),
+    initial_cash: float = Query(..., description="Initial cash amount"),
+    pivot_bars: int = Query(..., description="Pivot bars setting"),
+    lower_timeframe: str = Query(..., description="Lower timeframe")
+):
+    """
+    Lookup cached backtest result using cache key parameters.
+    
+    This endpoint uses the composite index on cache key parameters for optimal performance.
+    All cache key parameters are required to perform the lookup.
+    
+    Args:
+        symbol: Stock symbol
+        strategy_name: Strategy name
+        start_date: Backtest start date
+        end_date: Backtest end date
+        initial_cash: Initial cash amount
+        pivot_bars: Pivot bars setting
+        lower_timeframe: Lower timeframe
+        
+    Returns:
+        Cached backtest result if found
+    """
+    try:
+        # Validate input parameters
+        if pivot_bars <= 0:
+            raise HTTPException(status_code=400, detail="pivot_bars must be greater than 0")
+        
+        if initial_cash <= 0:
+            raise HTTPException(status_code=400, detail="initial_cash must be greater than 0")
+        
+        if end_date < start_date:
+            raise HTTPException(status_code=400, detail="end_date must be on or after start_date")
+        
+        # Query using the composite index on cache key parameters
+        # This should be extremely fast due to the index: (symbol, strategy_name, start_date, end_date, initial_cash, pivot_bars, lower_timeframe)
+        query = """
+        SELECT 
+            id,
+            backtest_id,
+            symbol,
+            strategy_name,
+            start_date,
+            end_date,
+            initial_cash,
+            resolution,
+            pivot_bars,
+            lower_timeframe,
+            -- Core Performance Results
+            total_return,
+            net_profit,
+            net_profit_currency,
+            compounding_annual_return,
+            final_value,
+            start_equity,
+            end_equity,
+            -- Risk Metrics
+            sharpe_ratio,
+            sortino_ratio,
+            max_drawdown,
+            probabilistic_sharpe_ratio,
+            annual_standard_deviation,
+            annual_variance,
+            beta,
+            alpha,
+            -- Trading Statistics
+            total_trades,
+            winning_trades,
+            losing_trades,
+            win_rate,
+            loss_rate,
+            average_win,
+            average_loss,
+            profit_factor,
+            profit_loss_ratio,
+            expectancy,
+            total_orders,
+            -- Advanced Metrics
+            information_ratio,
+            tracking_error,
+            treynor_ratio,
+            total_fees,
+            estimated_strategy_capacity,
+            lowest_capacity_asset,
+            portfolio_turnover,
+            -- Strategy-Specific Metrics
+            pivot_highs_detected,
+            pivot_lows_detected,
+            bos_signals_generated,
+            position_flips,
+            liquidation_events,
+            -- Execution Metadata
+            execution_time_ms,
+            result_path,
+            status,
+            error_message,
+            cache_hit,
+            created_at
+        FROM market_structure_results
+        WHERE symbol = $1 
+          AND strategy_name = $2 
+          AND start_date = $3 
+          AND end_date = $4 
+          AND initial_cash = $5 
+          AND pivot_bars = $6 
+          AND lower_timeframe = $7
+        ORDER BY created_at DESC
+        LIMIT 1
+        """
+        
+        row = await db_pool.fetchrow(
+            query, 
+            symbol, 
+            strategy_name, 
+            start_date, 
+            end_date, 
+            initial_cash, 
+            pivot_bars, 
+            lower_timeframe
+        )
+        
+        if not row:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"No cached backtest result found for the specified parameters"
+            )
+        
+        try:
+            # Create comprehensive BacktestStatistics
+            backtest_stats = BacktestStatistics(
+                # Core Performance Metrics
+                total_return=float(row['total_return']) if row['total_return'] is not None else 0,
+                net_profit=float(row['net_profit']) if row['net_profit'] is not None else 0,
+                net_profit_currency=float(row['net_profit_currency']) if row['net_profit_currency'] is not None else 0,
+                compounding_annual_return=float(row['compounding_annual_return']) if row['compounding_annual_return'] is not None else 0,
+                final_value=float(row['final_value']) if row['final_value'] is not None else 0,
+                start_equity=float(row['start_equity']) if row['start_equity'] is not None else 0,
+                end_equity=float(row['end_equity']) if row['end_equity'] is not None else 0,
+                
+                # Risk Metrics
+                sharpe_ratio=float(row['sharpe_ratio']) if row['sharpe_ratio'] is not None else 0,
+                sortino_ratio=float(row['sortino_ratio']) if row['sortino_ratio'] is not None else 0,
+                max_drawdown=float(row['max_drawdown']) if row['max_drawdown'] is not None else 0,
+                probabilistic_sharpe_ratio=float(row['probabilistic_sharpe_ratio']) if row['probabilistic_sharpe_ratio'] is not None else 0,
+                annual_standard_deviation=float(row['annual_standard_deviation']) if row['annual_standard_deviation'] is not None else 0,
+                annual_variance=float(row['annual_variance']) if row['annual_variance'] is not None else 0,
+                beta=float(row['beta']) if row['beta'] is not None else 0,
+                alpha=float(row['alpha']) if row['alpha'] is not None else 0,
+                
+                # Trading Statistics
+                total_orders=int(row['total_orders']) if row['total_orders'] is not None else 0,
+                total_trades=int(row['total_trades']) if row['total_trades'] is not None else 0,
+                winning_trades=int(row['winning_trades']) if row['winning_trades'] is not None else 0,
+                losing_trades=int(row['losing_trades']) if row['losing_trades'] is not None else 0,
+                win_rate=float(row['win_rate']) if row['win_rate'] is not None else 0,
+                loss_rate=float(row['loss_rate']) if row['loss_rate'] is not None else 0,
+                average_win=float(row['average_win']) if row['average_win'] is not None else 0,
+                average_loss=float(row['average_loss']) if row['average_loss'] is not None else 0,
+                profit_factor=float(row['profit_factor']) if row['profit_factor'] is not None else 0,
+                profit_loss_ratio=float(row['profit_loss_ratio']) if row['profit_loss_ratio'] is not None else 0,
+                expectancy=float(row['expectancy']) if row['expectancy'] is not None else 0,
+                
+                # Advanced Metrics
+                information_ratio=float(row['information_ratio']) if row['information_ratio'] is not None else 0,
+                tracking_error=float(row['tracking_error']) if row['tracking_error'] is not None else 0,
+                treynor_ratio=float(row['treynor_ratio']) if row['treynor_ratio'] is not None else 0,
+                total_fees=float(row['total_fees']) if row['total_fees'] is not None else 0,
+                estimated_strategy_capacity=float(row['estimated_strategy_capacity']) if row['estimated_strategy_capacity'] is not None else 1000000,
+                lowest_capacity_asset=row['lowest_capacity_asset'] if row['lowest_capacity_asset'] else row['symbol'],
+                portfolio_turnover=float(row['portfolio_turnover']) if row['portfolio_turnover'] is not None else 0,
+                
+                # Strategy-Specific Metrics
+                pivot_highs_detected=int(row['pivot_highs_detected']) if row['pivot_highs_detected'] is not None else None,
+                pivot_lows_detected=int(row['pivot_lows_detected']) if row['pivot_lows_detected'] is not None else None,
+                bos_signals_generated=int(row['bos_signals_generated']) if row['bos_signals_generated'] is not None else None,
+                position_flips=int(row['position_flips']) if row['position_flips'] is not None else None,
+                liquidation_events=int(row['liquidation_events']) if row['liquidation_events'] is not None else None
+            )
+            
+            # Create comprehensive BacktestResult
+            result = BacktestResult(
+                backtest_id=str(row['id']),
+                symbol=row['symbol'],
+                strategy_name=row['strategy_name'] if row['strategy_name'] else 'MarketStructure',
+                start_date=row['start_date'],
+                end_date=row['end_date'],
+                initial_cash=float(row['initial_cash']) if row['initial_cash'] is not None else 100000,
+                resolution=row['resolution'] if row['resolution'] else 'Minute',
+                pivot_bars=int(row['pivot_bars']) if row['pivot_bars'] is not None else 5,
+                lower_timeframe=row['lower_timeframe'] if row['lower_timeframe'] else '5min',
+                final_value=float(row['final_value']) if row['final_value'] is not None else 0,
+                statistics=backtest_stats,
+                execution_time_ms=int(row['execution_time_ms']) if row['execution_time_ms'] is not None else None,
+                result_path=row['result_path'] if row['result_path'] else f"db:{str(row['id'])}",
+                status=row['status'] if row['status'] else 'completed',
+                error_message=row['error_message'],
+                cache_hit=True,  # This is definitely a cache hit since we found an existing result
+                orders=None,
+                equity_curve=None,
+                created_at=row['created_at']
+            )
+            
+            return result
+        except Exception as e:
+            logger.error(f"Error parsing cached backtest result: {e}. Row ID: {row.get('id', 'unknown')}")
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Cached backtest result has invalid data and cannot be displayed"
+            )
+        
+    except HTTPException:
+        raise
+    except ValueError as e:
+        logger.error(f"Validation error in cache lookup: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error performing cache lookup: {e}")
+        raise HTTPException(status_code=500, detail=f"Cache lookup failed: {str(e)}")
+
+
+@router.delete("/db/results/{result_id}")
+async def delete_backtest_result_from_db(result_id: str):
+    """
+    Delete a backtest result from database.
+    
+    Args:
+        result_id: The result ID to delete
+        
+    Returns:
+        Success message if deleted
+    """
+    try:
+        # Validate UUID format
+        try:
+            from uuid import UUID
+            UUID(result_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid result ID format")
+        
+        # Delete from database with new table name
+        query = "DELETE FROM market_structure_results WHERE backtest_id = $1 RETURNING backtest_id"
+        
+        deleted_id = await db_pool.fetchval(query, result_id)
+        
+        if not deleted_id:
+            raise HTTPException(status_code=404, detail=f"Backtest result '{result_id}' not found")
+        
+        return {"message": f"Backtest result '{result_id}' deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting backtest result from database: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/db/statistics")
+async def get_backtest_statistics(
+    symbol: Optional[str] = Query(None, description="Filter by symbol"),
+    strategy_name: Optional[str] = Query(None, description="Filter by strategy name"),
+    start_date: Optional[date] = Query(None, description="Filter results after this date"),
+    end_date: Optional[date] = Query(None, description="Filter results before this date")
+):
+    """
+    Get aggregated statistics across multiple backtest results.
+    
+    This endpoint provides summary statistics and insights across filtered backtest results,
+    useful for analyzing performance patterns and strategy effectiveness.
+    
+    Args:
+        symbol: Optional filter by symbol
+        strategy_name: Optional filter by strategy name
+        start_date: Optional filter for results after this date
+        end_date: Optional filter for results before this date
+        
+    Returns:
+        Aggregated statistics including count, averages, and performance metrics
+    """
+    try:
+        # Build base query with filters
+        where_conditions = []
+        params = []
+        param_count = 0
+        
+        if symbol:
+            param_count += 1
+            where_conditions.append(f"symbol = ${param_count}")
+            params.append(symbol)
+            
+        if strategy_name:
+            param_count += 1
+            where_conditions.append(f"strategy_name = ${param_count}")
+            params.append(strategy_name)
+            
+        if start_date:
+            param_count += 1
+            where_conditions.append(f"start_date >= ${param_count}")
+            params.append(start_date)
+            
+        if end_date:
+            param_count += 1
+            where_conditions.append(f"end_date <= ${param_count}")
+            params.append(end_date)
+        
+        where_clause = "WHERE " + " AND ".join(where_conditions) if where_conditions else ""
+        
+        # Get comprehensive statistics
+        query = f"""
+        SELECT 
+            COUNT(*) as total_backtests,
+            COUNT(DISTINCT symbol) as unique_symbols,
+            COUNT(DISTINCT strategy_name) as unique_strategies,
+            AVG(total_return) as avg_total_return,
+            STDDEV(total_return) as stddev_total_return,
+            MIN(total_return) as min_total_return,
+            MAX(total_return) as max_total_return,
+            AVG(sharpe_ratio) as avg_sharpe_ratio,
+            AVG(max_drawdown) as avg_max_drawdown,
+            AVG(win_rate) as avg_win_rate,
+            AVG(profit_factor) as avg_profit_factor,
+            AVG(total_trades) as avg_total_trades,
+            AVG(execution_time_ms) as avg_execution_time_ms,
+            COUNT(CASE WHEN cache_hit = true THEN 1 END) as cache_hits,
+            COUNT(CASE WHEN total_return > 0 THEN 1 END) as profitable_backtests,
+            MIN(created_at) as earliest_backtest,
+            MAX(created_at) as latest_backtest
+        FROM market_structure_results
+        {where_clause}
+        """
+        
+        row = await db_pool.fetchrow(query, *params)
+        
+        if not row or row['total_backtests'] == 0:
+            return {
+                "total_backtests": 0,
+                "message": "No backtest results found matching the specified criteria"
+            }
+        
+        # Calculate additional metrics
+        cache_hit_rate = (row['cache_hits'] / row['total_backtests'] * 100) if row['total_backtests'] > 0 else 0
+        profitability_rate = (row['profitable_backtests'] / row['total_backtests'] * 100) if row['total_backtests'] > 0 else 0
+        
+        # Get top performers
+        top_performers_query = f"""
+        SELECT symbol, strategy_name, total_return, sharpe_ratio, created_at
+        FROM market_structure_results
+        {where_clause}
+        ORDER BY total_return DESC
+        LIMIT 5
+        """
+        
+        top_performers = await db_pool.fetch(top_performers_query, *params)
+        
+        return {
+            "summary": {
+                "total_backtests": int(row['total_backtests']),
+                "unique_symbols": int(row['unique_symbols']),
+                "unique_strategies": int(row['unique_strategies']),
+                "cache_hit_rate": round(cache_hit_rate, 2),
+                "profitability_rate": round(profitability_rate, 2),
+                "date_range": {
+                    "earliest": row['earliest_backtest'].isoformat() if row['earliest_backtest'] else None,
+                    "latest": row['latest_backtest'].isoformat() if row['latest_backtest'] else None
+                }
+            },
+            "performance_metrics": {
+                "returns": {
+                    "average": round(float(row['avg_total_return']), 4) if row['avg_total_return'] else 0,
+                    "standard_deviation": round(float(row['stddev_total_return']), 4) if row['stddev_total_return'] else 0,
+                    "minimum": round(float(row['min_total_return']), 4) if row['min_total_return'] else 0,
+                    "maximum": round(float(row['max_total_return']), 4) if row['max_total_return'] else 0
+                },
+                "risk_metrics": {
+                    "average_sharpe_ratio": round(float(row['avg_sharpe_ratio']), 4) if row['avg_sharpe_ratio'] else 0,
+                    "average_max_drawdown": round(float(row['avg_max_drawdown']), 4) if row['avg_max_drawdown'] else 0
+                },
+                "trading_metrics": {
+                    "average_win_rate": round(float(row['avg_win_rate']), 4) if row['avg_win_rate'] else 0,
+                    "average_profit_factor": round(float(row['avg_profit_factor']), 4) if row['avg_profit_factor'] else 0,
+                    "average_total_trades": round(float(row['avg_total_trades']), 2) if row['avg_total_trades'] else 0
+                }
+            },
+            "execution_metrics": {
+                "average_execution_time_ms": round(float(row['avg_execution_time_ms']), 2) if row['avg_execution_time_ms'] else 0,
+                "cache_hits": int(row['cache_hits']),
+                "profitable_backtests": int(row['profitable_backtests'])
+            },
+            "top_performers": [
+                {
+                    "symbol": performer['symbol'],
+                    "strategy_name": performer['strategy_name'],
+                    "total_return": round(float(performer['total_return']), 4) if performer['total_return'] else 0,
+                    "sharpe_ratio": round(float(performer['sharpe_ratio']), 4) if performer['sharpe_ratio'] else 0,
+                    "created_at": performer['created_at'].isoformat()
+                }
+                for performer in top_performers
+            ]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting backtest statistics: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve statistics: {str(e)}")
+
+
+@router.get("/db/results/{backtest_id}/trades", response_model=List[Dict[str, Any]])
+async def get_backtest_trades(
+    backtest_id: str,
+    limit: int = Query(50, description="Maximum number of trades to return", ge=1, le=500)
+):
+    """
+    Get trades for a specific backtest result.
+    Returns the last N trades (default 50) ordered by trade time descending.
+    """
+    try:
+        # First verify the backtest exists
+        backtest_exists = await db_pool.fetchval(
+            "SELECT EXISTS(SELECT 1 FROM market_structure_results WHERE backtest_id = $1)",
+            backtest_id
+        )
+        
+        if not backtest_exists:
+            raise HTTPException(status_code=404, detail=f"Backtest result {backtest_id} not found")
+        
+        # Fetch trades ordered by trade time descending (most recent first)
+        # Then limit to the requested number
+        query = """
+            SELECT 
+                symbol_value,
+                trade_time AT TIME ZONE 'America/New_York' as trade_time_et,
+                direction,
+                quantity,
+                fill_price,
+                order_fee_amount,
+                fill_quantity,
+                trade_time_unix
+            FROM backtest_trades
+            WHERE backtest_id = $1
+            ORDER BY trade_time DESC
+            LIMIT $2
+        """
+        
+        rows = await db_pool.fetch(query, backtest_id, limit)
+        
+        # Convert to list of dicts with formatted data
+        trades = []
+        for row in rows:
+            trades.append({
+                "symbol": row['symbol_value'],
+                "tradeTime": row['trade_time_et'].isoformat(),
+                "tradeTimeUnix": row['trade_time_unix'],
+                "direction": row['direction'],
+                "quantity": abs(float(row['quantity'])),  # Make quantity positive
+                "fillPrice": float(row['fill_price']) if row['fill_price'] else 0,
+                "fillQuantity": float(row['fill_quantity']) if row['fill_quantity'] else abs(float(row['quantity'])),
+                "orderFee": float(row['order_fee_amount']) if row['order_fee_amount'] else 0
+            })
+        
+        # Return trades in chronological order (oldest first) for display
+        trades.reverse()
+        
+        return trades
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching trades for backtest {backtest_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve trades: {str(e)}")

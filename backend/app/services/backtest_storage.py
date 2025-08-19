@@ -7,6 +7,9 @@ import logging
 from datetime import datetime, date
 from pathlib import Path
 from typing import Dict, Any, Optional, List
+import asyncpg
+import os
+from zoneinfo import ZoneInfo
 
 from ..models.backtest import (
     BacktestResult, BacktestStatistics, BacktestListResponse
@@ -215,6 +218,11 @@ class BacktestStorage:
                 json.dump(result.model_dump(), f, indent=2, default=str)
             
             logger.info(f"Saved backtest result {backtest_id} to {result_path}")
+            
+            # Save trades to database if we have orders
+            if orders:
+                await self._save_trades_to_database(backtest_id, orders)
+            
             return result
             
         except Exception as e:
@@ -423,3 +431,82 @@ class BacktestStorage:
         except Exception as e:
             logger.error(f"Error reconstructing result from LEAN files: {e}")
             return None
+    
+    async def _save_trades_to_database(self, backtest_id: str, orders: List[Dict[str, Any]]):
+        """Save filled trades to the database with Eastern Time conversion."""
+        try:
+            # Database connection parameters
+            db_config = {
+                'host': os.getenv('DB_HOST', 'localhost'),
+                'port': int(os.getenv('DB_PORT', '5432')),
+                'database': os.getenv('DB_NAME', 'stock_screener'),
+                'user': os.getenv('DB_USER', 'postgres'),
+                'password': os.getenv('DB_PASSWORD', 'postgres')
+            }
+            
+            # Connect to database
+            conn = await asyncpg.connect(**db_config)
+            
+            # Filter only filled trades
+            filled_trades = [order for order in orders if order.get('status') == 'filled']
+            
+            if not filled_trades:
+                logger.info(f"No filled trades to save for backtest {backtest_id}")
+                await conn.close()
+                return
+            
+            # Prepare batch insert data
+            insert_data = []
+            eastern_tz = ZoneInfo('America/New_York')
+            
+            for trade in filled_trades:
+                # Convert unix timestamp to Eastern Time
+                unix_timestamp = float(trade.get('time', 0))
+                trade_time_utc = datetime.fromtimestamp(unix_timestamp, tz=ZoneInfo('UTC'))
+                trade_time_eastern = trade_time_utc.astimezone(eastern_tz)
+                
+                # Extract order IDs from the composite ID (e.g., "1182382954-1-2")
+                id_parts = trade.get('id', '').split('-')
+                algorithm_id = id_parts[0] if len(id_parts) > 0 else ''
+                order_id = int(id_parts[1]) if len(id_parts) > 1 else 0
+                order_event_id = int(id_parts[2]) if len(id_parts) > 2 else 0
+                
+                insert_data.append((
+                    backtest_id,  # backtest_id
+                    algorithm_id,  # algorithm_id
+                    order_id,  # order_id
+                    order_event_id,  # order_event_id
+                    trade.get('symbol', ''),  # symbol
+                    trade.get('symbolValue', ''),  # symbol_value
+                    trade_time_eastern,  # trade_time (Eastern)
+                    int(unix_timestamp),  # trade_time_unix
+                    trade.get('status', 'filled'),  # status
+                    trade.get('direction', ''),  # direction
+                    float(trade.get('quantity', 0)),  # quantity
+                    float(trade.get('fillPrice', 0)) if trade.get('fillPrice') else None,  # fill_price
+                    trade.get('fillPriceCurrency', 'USD'),  # fill_price_currency
+                    float(trade.get('fillQuantity', 0)) if trade.get('fillQuantity') else None,  # fill_quantity
+                    float(trade.get('orderFeeAmount', 0)) if trade.get('orderFeeAmount') else None,  # order_fee_amount
+                    trade.get('orderFeeCurrency', 'USD'),  # order_fee_currency
+                    bool(trade.get('isAssignment', False)),  # is_assignment
+                    trade.get('message', '')  # message
+                ))
+            
+            # Batch insert trades
+            await conn.executemany("""
+                INSERT INTO backtest_trades (
+                    backtest_id, algorithm_id, order_id, order_event_id,
+                    symbol, symbol_value, trade_time, trade_time_unix,
+                    status, direction, quantity, fill_price, fill_price_currency,
+                    fill_quantity, order_fee_amount, order_fee_currency,
+                    is_assignment, message
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+            """, insert_data)
+            
+            await conn.close()
+            logger.info(f"Saved {len(insert_data)} filled trades for backtest {backtest_id}")
+            
+        except Exception as e:
+            logger.error(f"Error saving trades to database: {e}")
+            # Don't fail the whole backtest save if trade save fails
+            pass

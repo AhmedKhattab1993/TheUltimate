@@ -20,7 +20,7 @@ from pathlib import Path
 import asyncpg
 
 from ..models.backtest import BacktestRequest, BacktestStatus
-from ..models.cache_models import CachedBacktestResult
+from ..models.cache_models import CachedBacktestResult, CachedBacktestRequest
 from .backtest_manager import backtest_manager
 from .cache_service import CacheService
 from .backtest_storage import BacktestStorage
@@ -431,9 +431,23 @@ class BacktestQueueManager:
                 # Extract parameters from request data
                 parameters = task.request_data.get('parameters', {})
                 
+                # First create a CachedBacktestRequest to get the deterministic ID
+                cache_request = CachedBacktestRequest(
+                    symbol=task.symbol,
+                    strategy_name=statistics.get('strategy_name', task.request_data.get('strategy', 'MarketStructure')),
+                    start_date=datetime.strptime(task.request_data['start_date'], '%Y-%m-%d').date(),
+                    end_date=datetime.strptime(task.request_data['end_date'], '%Y-%m-%d').date(),
+                    initial_cash=statistics.get('initial_cash', task.request_data.get('initial_cash', 100000)),
+                    pivot_bars=statistics.get('pivot_bars', parameters.get('pivot_bars', 20)),
+                    lower_timeframe=statistics.get('lower_timeframe', parameters.get('lower_timeframe', '5min'))
+                )
+                
+                # Use cache hash as the backtest ID
+                cache_hash = cache_request.get_cache_hash()
+                
                 # Create comprehensive CachedBacktestResult model with all new fields
                 backtest_result = CachedBacktestResult(
-                    backtest_id=uuid.UUID(task.result.get('backtest_id', task.id)),
+                    backtest_id=cache_hash,
                     symbol=task.symbol,
                     strategy_name=statistics.get('strategy_name', task.request_data.get('strategy', 'MarketStructure')),
                     
@@ -510,8 +524,9 @@ class BacktestQueueManager:
             
             # Store in database using BacktestStorage (file storage)
             if self.backtest_storage:
+                # Use the same cache hash that was used for cache storage
                 backtest_result = await self.backtest_storage.save_result(
-                    backtest_id=task.result.get('backtest_id', task.id),
+                    backtest_id=cache_hash,
                     symbol=task.symbol,
                     strategy_name=task.request_data.get('strategy', 'MarketStructure'),
                     start_date=datetime.strptime(task.request_data['start_date'], '%Y-%m-%d').date(),
