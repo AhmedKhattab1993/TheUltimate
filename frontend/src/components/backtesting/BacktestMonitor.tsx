@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 
 export function BacktestMonitor() {
   const { state } = useBacktestContext()
-  const { progress } = state
+  const { progress, bulkProgress } = state
 
   const statusIcon = {
     idle: Clock,
@@ -49,7 +49,36 @@ export function BacktestMonitor() {
 
         <Progress value={progress.percentage} className="h-2" />
 
-        {progress.backtestId && (
+        {/* Bulk Progress Details */}
+        {bulkProgress && bulkProgress.total > 1 && (
+          <div className="pt-3 border-t space-y-2">
+            <div className="grid grid-cols-3 gap-2 text-sm">
+              <div>
+                <p className="text-muted-foreground">Total</p>
+                <p className="font-medium">{bulkProgress.total}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Completed</p>
+                <p className="font-medium text-green-600">{bulkProgress.completed}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Running</p>
+                <p className="font-medium text-blue-600">{bulkProgress.running}</p>
+              </div>
+            </div>
+            
+            {bulkProgress.currentSymbol && bulkProgress.currentDate && (
+              <div className="pt-2">
+                <p className="text-xs text-muted-foreground">
+                  Current: <span className="font-medium">{bulkProgress.currentSymbol}</span> on {bulkProgress.currentDate}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Single Backtest ID */}
+        {progress.backtestId && !bulkProgress && (
           <div className="pt-2 border-t">
             <p className="text-xs text-muted-foreground">
               Backtest ID: <span className="font-mono">{progress.backtestId}</span>

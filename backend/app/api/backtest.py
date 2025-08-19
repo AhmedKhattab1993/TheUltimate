@@ -4,7 +4,7 @@ API endpoints for backtesting functionality.
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Query, Depends
 from typing import List, Optional, Dict, Any
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import logging
 import json
 
@@ -415,6 +415,294 @@ async def list_screener_results():
         return {"results": results}
     except Exception as e:
         logger.error(f"Error listing screener results: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/run-bulk")
+async def start_bulk_backtests(request: BacktestRequest):
+    """
+    Start multiple backtests - one per symbol per trading day.
+    
+    This endpoint processes each trading day individually (backward from end to start),
+    creating separate backtests for each symbol on each day. This matches the behavior
+    of the pipeline script for consistency.
+    
+    Args:
+        request: Backtest configuration with date range and symbols
+        
+    Returns:
+        List of backtest IDs and summary information
+    """
+    try:
+        # Validate request
+        if not request.symbols and not request.use_screener_results:
+            raise HTTPException(
+                status_code=400,
+                detail="Please provide symbols or enable use_screener_results"
+            )
+        
+        # Get trading days in reverse order (end to start)
+        trading_days = []
+        current = request.end_date
+        while current >= request.start_date:
+            # Check if it's a weekday (Monday=0 to Friday=4)
+            if current.weekday() < 5:
+                trading_days.append(current)
+            current = current - timedelta(days=1)
+        
+        if not trading_days:
+            raise HTTPException(
+                status_code=400,
+                detail="No trading days found in the specified date range"
+            )
+        
+        # Get symbols to backtest
+        symbols = request.symbols
+        if request.use_screener_results:
+            # Get latest screener results
+            latest_results = screener_results_manager.get_latest_results()
+            if not latest_results:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No screener results found to use"
+                )
+            symbols = latest_results.get("symbols", [])
+        
+        if not symbols:
+            raise HTTPException(
+                status_code=400,
+                detail="No symbols to backtest"
+            )
+        
+        # Create individual backtests
+        backtest_tasks = []
+        total_backtests = len(trading_days) * len(symbols)
+        
+        logger.info(f"Starting bulk backtest: {len(trading_days)} days × {len(symbols)} symbols = {total_backtests} backtests")
+        
+        for day_idx, trading_day in enumerate(trading_days, 1):
+            for symbol_idx, symbol in enumerate(symbols, 1):
+                # Create a new request for this specific symbol and day
+                single_request = BacktestRequest(
+                    strategy_name=request.strategy_name,
+                    initial_cash=request.initial_cash,
+                    start_date=trading_day,
+                    end_date=trading_day,
+                    symbols=[symbol],
+                    resolution=request.resolution,
+                    parameters=request.parameters
+                )
+                
+                # Start the backtest
+                try:
+                    run_info = await backtest_manager.start_backtest(single_request)
+                    backtest_tasks.append({
+                        "backtest_id": run_info.backtest_id,
+                        "symbol": symbol,
+                        "date": trading_day.isoformat(),
+                        "day_number": day_idx,
+                        "symbol_number": symbol_idx,
+                        "status": run_info.status.value
+                    })
+                except Exception as e:
+                    logger.error(f"Failed to start backtest for {symbol} on {trading_day}: {e}")
+                    backtest_tasks.append({
+                        "backtest_id": None,
+                        "symbol": symbol,
+                        "date": trading_day.isoformat(),
+                        "day_number": day_idx,
+                        "symbol_number": symbol_idx,
+                        "status": "failed",
+                        "error": str(e)
+                    })
+        
+        # Return summary
+        successful_starts = sum(1 for task in backtest_tasks if task["backtest_id"] is not None)
+        
+        return {
+            "total_backtests": total_backtests,
+            "successful_starts": successful_starts,
+            "failed_starts": total_backtests - successful_starts,
+            "trading_days": len(trading_days),
+            "symbols": len(symbols),
+            "date_range": {
+                "start": request.start_date.isoformat(),
+                "end": request.end_date.isoformat()
+            },
+            "backtests": backtest_tasks
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error starting bulk backtests: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/screener-results/grouped")
+async def get_screener_results_grouped():
+    """
+    Get screener results grouped by date for Import Scanner functionality.
+    
+    Returns screener results from the database grouped by data_date,
+    showing which symbols were found on each screening day.
+    """
+    try:
+        # Query the database for screener results grouped by date
+        query = """
+        SELECT 
+            data_date,
+            session_id,
+            COUNT(DISTINCT symbol) as symbol_count,
+            ARRAY_AGG(DISTINCT symbol ORDER BY symbol) as symbols
+        FROM screener_results
+        WHERE data_date IS NOT NULL
+        GROUP BY data_date, session_id
+        ORDER BY data_date DESC, session_id DESC
+        """
+        
+        rows = await db_pool.fetch(query)
+        
+        # Group by date
+        results_by_date = {}
+        for row in rows:
+            date_str = row['data_date'].isoformat()
+            if date_str not in results_by_date:
+                results_by_date[date_str] = {
+                    "date": date_str,
+                    "sessions": [],
+                    "total_symbols": 0,
+                    "all_symbols": set()
+                }
+            
+            results_by_date[date_str]["sessions"].append({
+                "session_id": row['session_id'],
+                "symbol_count": row['symbol_count'],
+                "symbols": row['symbols']
+            })
+            
+            # Add to total unique symbols for this date
+            results_by_date[date_str]["all_symbols"].update(row['symbols'])
+        
+        # Convert to list and finalize
+        grouped_results = []
+        for date_str, data in results_by_date.items():
+            data["total_symbols"] = len(data["all_symbols"])
+            data["all_symbols"] = sorted(list(data["all_symbols"]))
+            grouped_results.append(data)
+        
+        return {
+            "total_dates": len(grouped_results),
+            "results": grouped_results
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting grouped screener results: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/run-screener-backtests")
+async def start_screener_backtests(
+    start_date: date = Query(..., description="Start date for screener results"),
+    end_date: date = Query(..., description="End date for screener results"),
+    strategy_name: str = Query(..., description="Strategy to use"),
+    initial_cash: float = Query(100000, description="Initial cash amount"),
+    resolution: str = Query("Minute", description="Data resolution"),
+    parameters: Optional[Dict[str, Any]] = None
+):
+    """
+    Start backtests for screener results within a date range.
+    
+    This endpoint queries the screener results database for symbols found
+    on each day within the date range, then runs backtests for each
+    symbol on its respective screening day.
+    """
+    try:
+        # Query screener results within date range
+        query = """
+        SELECT DISTINCT
+            data_date,
+            symbol
+        FROM screener_results
+        WHERE data_date >= $1 AND data_date <= $2
+        ORDER BY data_date DESC, symbol
+        """
+        
+        rows = await db_pool.fetch(query, start_date, end_date)
+        
+        if not rows:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No screener results found between {start_date} and {end_date}"
+            )
+        
+        # Group symbols by date
+        symbols_by_date = {}
+        for row in rows:
+            date_str = row['data_date'].isoformat()
+            if date_str not in symbols_by_date:
+                symbols_by_date[date_str] = []
+            symbols_by_date[date_str].append(row['symbol'])
+        
+        # Create backtests for each symbol on its screening day
+        backtest_tasks = []
+        total_backtests = sum(len(symbols) for symbols in symbols_by_date.values())
+        
+        logger.info(f"Starting screener-based backtests: {len(symbols_by_date)} days, {total_backtests} total backtests")
+        
+        for date_str, symbols in symbols_by_date.items():
+            trading_day = date.fromisoformat(date_str)
+            
+            for symbol in symbols:
+                # Create request for this symbol on this specific day
+                single_request = BacktestRequest(
+                    strategy_name=strategy_name,
+                    initial_cash=initial_cash,
+                    start_date=trading_day,
+                    end_date=trading_day,
+                    symbols=[symbol],
+                    resolution=resolution,
+                    parameters=parameters or {}
+                )
+                
+                try:
+                    run_info = await backtest_manager.start_backtest(single_request)
+                    backtest_tasks.append({
+                        "backtest_id": run_info.backtest_id,
+                        "symbol": symbol,
+                        "screening_date": date_str,
+                        "status": run_info.status.value
+                    })
+                except Exception as e:
+                    logger.error(f"Failed to start backtest for {symbol} on {trading_day}: {e}")
+                    backtest_tasks.append({
+                        "backtest_id": None,
+                        "symbol": symbol,
+                        "screening_date": date_str,
+                        "status": "failed",
+                        "error": str(e)
+                    })
+        
+        # Return summary
+        successful_starts = sum(1 for task in backtest_tasks if task["backtest_id"] is not None)
+        
+        return {
+            "total_backtests": total_backtests,
+            "successful_starts": successful_starts,
+            "failed_starts": total_backtests - successful_starts,
+            "screening_days": len(symbols_by_date),
+            "date_range": {
+                "start": start_date.isoformat(),
+                "end": end_date.isoformat()
+            },
+            "backtests_by_date": symbols_by_date,
+            "backtests": backtest_tasks
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error starting screener backtests: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -26,6 +26,30 @@ export interface BacktestProgress {
   backtestId?: string
 }
 
+export interface BulkBacktestInfo {
+  totalBacktests: number
+  successfulStarts: number
+  failedStarts: number
+  backtests: Array<{
+    backtest_id: string | null
+    symbol: string
+    date: string
+    status: string
+    error?: string
+  }>
+}
+
+export interface BulkProgress {
+  total: number
+  completed: number
+  running: number
+  failed: number
+  currentBacktest?: number
+  currentSymbol?: string
+  currentDate?: string
+  message?: string
+}
+
 export interface BacktestStatistics {
   // Core Performance Metrics
   totalReturn: number
@@ -113,6 +137,9 @@ export interface BacktestState {
   error: string | null
   loading: boolean
   websocket: WebSocket | null
+  websockets?: WebSocket[]
+  bulkInfo?: BulkBacktestInfo
+  bulkProgress?: BulkProgress
 }
 
 // Action types
@@ -121,7 +148,9 @@ export type BacktestAction =
   | { type: 'SET_PARAMETER'; field: keyof BacktestParameters; value: any }
   | { type: 'SET_SYMBOLS'; symbols: string[] }
   | { type: 'START_BACKTEST'; backtestId: string }
+  | { type: 'START_BULK_BACKTESTS'; bulkInfo: BulkBacktestInfo }
   | { type: 'UPDATE_PROGRESS'; progress: Partial<BacktestProgress> }
+  | { type: 'UPDATE_BULK_PROGRESS'; bulkProgress: BulkProgress }
   | { type: 'SET_RESULT'; result: BacktestResult }
   | { type: 'ADD_HISTORICAL_RESULT'; result: BacktestResult }
   | { type: 'SET_HISTORICAL_RESULTS'; results: BacktestResult[] }
@@ -129,6 +158,7 @@ export type BacktestAction =
   | { type: 'CLEAR_ERROR' }
   | { type: 'SET_LOADING'; loading: boolean }
   | { type: 'SET_WEBSOCKET'; websocket: WebSocket | null }
+  | { type: 'SET_WEBSOCKETS'; websockets: WebSocket[] }
   | { type: 'RESET' }
 
 // Initial state
@@ -241,6 +271,42 @@ function backtestReducer(state: BacktestState, action: BacktestAction): Backtest
 
     case 'SET_WEBSOCKET':
       return { ...state, websocket: action.websocket }
+
+    case 'SET_WEBSOCKETS':
+      return { ...state, websockets: action.websockets }
+
+    case 'START_BULK_BACKTESTS':
+      return {
+        ...state,
+        bulkInfo: action.bulkInfo,
+        bulkProgress: {
+          total: action.bulkInfo.totalBacktests,
+          completed: 0,
+          running: action.bulkInfo.successfulStarts,
+          failed: action.bulkInfo.failedStarts,
+          message: 'Starting backtests...'
+        },
+        progress: {
+          status: 'running',
+          percentage: 0,
+          message: `Starting ${action.bulkInfo.totalBacktests} backtests...`
+        },
+        error: null
+      }
+
+    case 'UPDATE_BULK_PROGRESS':
+      return {
+        ...state,
+        bulkProgress: action.bulkProgress,
+        progress: {
+          ...state.progress,
+          percentage: action.bulkProgress.total > 0
+            ? Math.round((action.bulkProgress.completed / action.bulkProgress.total) * 100)
+            : 0,
+          message: action.bulkProgress.message || state.progress.message,
+          status: action.bulkProgress.completed === action.bulkProgress.total ? 'completed' : 'running'
+        }
+      }
 
     case 'RESET':
       return {

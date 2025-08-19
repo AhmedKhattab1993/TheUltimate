@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { StrategySelector } from './StrategySelector'
@@ -6,9 +6,10 @@ import { BacktestForm } from './BacktestForm'
 import { BacktestMonitor } from './BacktestMonitor'
 import { BacktestResultsView } from '../results/BacktestResultsView'
 import { MarketStructureForm } from './MarketStructureForm'
+import { ImportScannerDialog } from './ImportScannerDialog'
 import { useBacktestContext } from '@/contexts/BacktestContext'
 import { useResultsContext } from '@/contexts/ResultsContext'
-import { Play, RefreshCw, AlertCircle } from 'lucide-react'
+import { Play, RefreshCw, AlertCircle, FileSearch } from 'lucide-react'
 import { format } from 'date-fns'
 import { getApiUrl } from '@/services/api'
 
@@ -20,6 +21,7 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
   const { state, dispatch } = useBacktestContext()
   const { dispatch: resultsDispatch } = useResultsContext()
   const { parameters, progress, loading, error, strategies } = state
+  const [showImportScanner, setShowImportScanner] = useState(false)
 
   // Fetch available strategies on mount
   useEffect(() => {
@@ -137,8 +139,8 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
     dispatch({ type: 'CLEAR_ERROR' })
 
     try {
-      // Start the backtest
-      const response = await fetch(`${getApiUrl()}/api/v2/backtest/run`, {
+      // Use bulk backtest endpoint for day-by-day processing
+      const response = await fetch(`${getApiUrl()}/api/v2/backtest/run-bulk`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -154,25 +156,119 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
 
       if (!response.ok) {
         const error = await response.json()
-        throw new Error(error.detail || 'Failed to start backtest')
+        throw new Error(error.detail || 'Failed to start backtests')
       }
 
       const data = await response.json()
-      const backtestId = data.backtest_id
+      
+      // Store bulk backtest info
+      dispatch({ 
+        type: 'START_BULK_BACKTESTS', 
+        bulkInfo: {
+          totalBacktests: data.total_backtests,
+          successfulStarts: data.successful_starts,
+          failedStarts: data.failed_starts,
+          backtests: data.backtests
+        }
+      })
 
-      dispatch({ type: 'START_BACKTEST', backtestId })
-
-      // Connect to WebSocket for progress updates
-      connectWebSocket(backtestId)
+      // Connect WebSocket for each backtest
+      if (data.backtests && data.backtests.length > 0) {
+        // Monitor first backtest, but track all
+        const activeBacktests = data.backtests.filter((bt: any) => bt.backtest_id)
+        if (activeBacktests.length > 0) {
+          connectBulkWebSockets(activeBacktests)
+        }
+      }
 
     } catch (err) {
       dispatch({ 
         type: 'SET_ERROR', 
-        error: err instanceof Error ? err.message : 'Failed to run backtest' 
+        error: err instanceof Error ? err.message : 'Failed to run backtests' 
       })
     } finally {
       dispatch({ type: 'SET_LOADING', loading: false })
     }
+  }
+
+  const connectBulkWebSockets = (backtests: any[]) => {
+    // Close existing connections if any
+    if (state.websockets) {
+      state.websockets.forEach(ws => ws.close())
+    }
+
+    const wsUrl = getApiUrl().replace('http', 'ws')
+    const websockets: WebSocket[] = []
+    let completedCount = 0
+    const totalCount = backtests.length
+
+    // Track progress for all backtests
+    dispatch({
+      type: 'UPDATE_BULK_PROGRESS',
+      bulkProgress: {
+        total: totalCount,
+        completed: 0,
+        running: totalCount,
+        failed: 0,
+        currentBacktest: 0
+      }
+    })
+
+    // Connect to each backtest
+    backtests.forEach((backtest, index) => {
+      if (!backtest.backtest_id) return
+
+      const ws = new WebSocket(`${wsUrl}/api/v2/backtest/monitor/${backtest.backtest_id}`)
+      
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data)
+        
+        if (data.type === 'progress') {
+          // Update progress for current backtest
+          dispatch({
+            type: 'UPDATE_BULK_PROGRESS',
+            bulkProgress: {
+              total: totalCount,
+              completed: completedCount,
+              running: totalCount - completedCount,
+              failed: 0,
+              currentBacktest: index + 1,
+              currentSymbol: backtest.symbol,
+              currentDate: backtest.date,
+              message: `Processing ${backtest.symbol} for ${backtest.date} (${index + 1}/${totalCount})`
+            }
+          })
+        } else if (data.type === 'result' || data.type === 'error') {
+          completedCount++
+          
+          // Update bulk progress
+          dispatch({
+            type: 'UPDATE_BULK_PROGRESS',
+            bulkProgress: {
+              total: totalCount,
+              completed: completedCount,
+              running: totalCount - completedCount,
+              failed: data.type === 'error' ? 1 : 0,
+              currentBacktest: completedCount,
+              message: completedCount === totalCount ? 'All backtests completed' : `Completed ${completedCount}/${totalCount}`
+            }
+          })
+
+          // If all completed, refresh results
+          if (completedCount === totalCount) {
+            fetchHistoricalResults()
+          }
+        }
+      }
+
+      ws.onerror = () => {
+        console.error(`WebSocket error for backtest ${backtest.backtest_id}`)
+      }
+
+      websockets.push(ws)
+    })
+
+    dispatch({ type: 'SET_WEBSOCKETS', websockets })
   }
 
   const connectWebSocket = (backtestId: string) => {
@@ -226,6 +322,11 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
 
   const handleReset = () => {
     dispatch({ type: 'RESET' })
+  }
+
+  const handleImportScanner = (dateRange: { start: string; end: string }) => {
+    // The dialog already started the backtests, just refresh results
+    fetchHistoricalResults()
   }
 
   const isRunning = progress.status === 'running'
@@ -293,6 +394,16 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
 
         <Button
           variant="outline"
+          onClick={() => setShowImportScanner(true)}
+          disabled={loading || isRunning || !parameters.strategy}
+          size="lg"
+        >
+          <FileSearch className="mr-2 h-4 w-4" />
+          Import Scanner
+        </Button>
+
+        <Button
+          variant="outline"
           onClick={handleReset}
           disabled={loading || isRunning}
           size="lg"
@@ -305,6 +416,18 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
       <div className="mt-6">
         <BacktestResultsView />
       </div>
+
+      {/* Import Scanner Dialog */}
+      <ImportScannerDialog
+        open={showImportScanner}
+        onClose={() => setShowImportScanner(false)}
+        onImport={handleImportScanner}
+        parameters={{
+          strategy: strategies.find(s => s.file_path === parameters.strategy)?.name || 'main',
+          initialCash: parameters.initialCash,
+          strategyParameters: parameters.strategyParameters
+        }}
+      />
     </div>
   )
 }
