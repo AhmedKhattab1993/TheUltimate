@@ -6,7 +6,6 @@ import { BacktestForm } from './BacktestForm'
 import { BacktestMonitor } from './BacktestMonitor'
 import { BacktestResultsView } from '../results/BacktestResultsView'
 import { MarketStructureForm } from './MarketStructureForm'
-import { ImportScannerDialog } from './ImportScannerDialog'
 import { useBacktestContext } from '@/contexts/BacktestContext'
 import { useResultsContext } from '@/contexts/ResultsContext'
 import { Play, RefreshCw, AlertCircle, FileSearch } from 'lucide-react'
@@ -21,7 +20,6 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
   const { state, dispatch } = useBacktestContext()
   const { dispatch: resultsDispatch } = useResultsContext()
   const { parameters, isRunning, error, strategies } = state
-  const [showImportScanner, setShowImportScanner] = useState(false)
 
   // Fetch available strategies on mount
   useEffect(() => {
@@ -139,20 +137,40 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
     dispatch({ type: 'CLEAR_ERROR' })
 
     try {
-      // Use bulk backtest endpoint for day-by-day processing
-      const response = await fetch(`${getApiUrl()}/api/v2/backtest/run-bulk`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          strategy_name: strategies.find(s => s.file_path === parameters.strategy)?.name || 'main',
-          initial_cash: parameters.initialCash,
-          start_date: format(parameters.startDate!, 'yyyy-MM-dd'),
-          end_date: format(parameters.endDate!, 'yyyy-MM-dd'),
-          symbols: parameters.symbols,
-          use_screener_results: parameters.useScreenerResults || false,
-          parameters: parameters.strategyParameters || {}
+      let response
+      
+      if (parameters.useScreenerResults) {
+        // Use latest UI screener session from database
+        const strategyName = strategies.find(s => s.file_path === parameters.strategy)?.name || 'main'
+        response = await fetch(
+          `${getApiUrl()}/api/v2/backtest/run-screener-backtests?` + 
+          new URLSearchParams({
+            use_latest_ui_session: 'true',
+            strategy_name: strategyName,
+            initial_cash: parameters.initialCash.toString(),
+            resolution: 'Minute',
+            ...(parameters.strategyParameters && { parameters: JSON.stringify(parameters.strategyParameters) })
+          }),
+          {
+            method: 'POST'
+          }
+        )
+      } else {
+        // Use regular bulk backtest endpoint
+        response = await fetch(`${getApiUrl()}/api/v2/backtest/run-bulk`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            strategy_name: strategies.find(s => s.file_path === parameters.strategy)?.name || 'main',
+            initial_cash: parameters.initialCash,
+            start_date: format(parameters.startDate!, 'yyyy-MM-dd'),
+            end_date: format(parameters.endDate!, 'yyyy-MM-dd'),
+            symbols: parameters.symbols,
+            use_screener_results: false,
+            parameters: parameters.strategyParameters || {}
+          })
         })
-      })
+      }
 
       if (!response.ok) {
         const error = await response.json()
@@ -252,11 +270,6 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
     dispatch({ type: 'RESET' })
   }
 
-  const handleImportScanner = (dateRange: { start: string; end: string }) => {
-    // The dialog already started the backtests, just refresh results
-    fetchHistoricalResults()
-  }
-
   // isRunning state is now directly from context
 
   return (
@@ -320,15 +333,6 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
           )}
         </Button>
 
-        <Button
-          variant="outline"
-          onClick={() => setShowImportScanner(true)}
-          disabled={isRunning || !parameters.strategy}
-          size="lg"
-        >
-          <FileSearch className="mr-2 h-4 w-4" />
-          Import Scanner
-        </Button>
 
         <Button
           variant="outline"
@@ -344,18 +348,6 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
       <div className="mt-6">
         <BacktestResultsView />
       </div>
-
-      {/* Import Scanner Dialog */}
-      <ImportScannerDialog
-        open={showImportScanner}
-        onClose={() => setShowImportScanner(false)}
-        onImport={handleImportScanner}
-        parameters={{
-          strategy: strategies.find(s => s.file_path === parameters.strategy)?.name || 'main',
-          initialCash: parameters.initialCash,
-          strategyParameters: parameters.strategyParameters
-        }}
-      />
     </div>
   )
 }

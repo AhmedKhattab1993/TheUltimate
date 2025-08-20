@@ -134,7 +134,7 @@ export function BacktestForm({ screenerSymbols = [] }: BacktestFormProps) {
               Use latest screener results
             </Label>
             <p className="text-xs text-muted-foreground mt-1">
-              Automatically use symbols from the most recent screening
+              Use symbols from the latest UI screener session (each symbol backtested on its screening day)
             </p>
           </div>
         </div>
@@ -212,7 +212,7 @@ export function BacktestForm({ screenerSymbols = [] }: BacktestFormProps) {
             <Alert className="mt-3">
               <AlertDescription className="text-xs">
                 <FileSearch className="h-3 w-3 inline mr-1" />
-                Will use symbols from the latest screener results
+                Will use symbols from the latest UI screener session. Each symbol will be backtested on its respective screening day.
               </AlertDescription>
             </Alert>
           )}
