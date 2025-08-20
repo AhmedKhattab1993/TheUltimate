@@ -10,7 +10,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Calendar, FileSearch, AlertCircle } from 'lucide-react'
 import { format } from 'date-fns'
@@ -202,7 +201,7 @@ export function ImportScannerDialog({
           </div>
 
           {/* Results list */}
-          <ScrollArea className="h-[400px] pr-4">
+          <div className="h-[400px] overflow-y-auto pr-4">
             {loading ? (
               <div className="flex items-center justify-center py-8">
                 <div className="text-muted-foreground">Loading screener results...</div>
@@ -280,7 +279,7 @@ export function ImportScannerDialog({
                 ))}
               </div>
             )}
-          </ScrollArea>
+          </div>
         </div>
 
         <DialogFooter>
