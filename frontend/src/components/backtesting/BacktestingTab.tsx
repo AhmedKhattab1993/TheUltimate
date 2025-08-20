@@ -20,7 +20,7 @@ interface BacktestingTabProps {
 export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
   const { state, dispatch } = useBacktestContext()
   const { dispatch: resultsDispatch } = useResultsContext()
-  const { parameters, progress, loading, error, strategies } = state
+  const { parameters, isRunning, error, strategies } = state
   const [showImportScanner, setShowImportScanner] = useState(false)
 
   // Fetch available strategies on mount
@@ -135,7 +135,7 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
   const runBacktest = async () => {
     if (!validateForm()) return
 
-    dispatch({ type: 'SET_LOADING', loading: true })
+    dispatch({ type: 'START_BACKTESTS' })
     dispatch({ type: 'CLEAR_ERROR' })
 
     try {
@@ -160,21 +160,10 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
       }
 
       const data = await response.json()
-      
-      // Store bulk backtest info
-      dispatch({ 
-        type: 'START_BULK_BACKTESTS', 
-        bulkInfo: {
-          totalBacktests: data.total_backtests,
-          successfulStarts: data.successful_starts,
-          failedStarts: data.failed_starts,
-          backtests: data.backtests
-        }
-      })
 
-      // Connect to bulk WebSocket endpoint if we have a bulk_id
+      // Connect to simplified WebSocket endpoint
       if (data.bulk_id) {
-        connectBulkWebSocket(data.bulk_id)
+        connectWebSocket(data.bulk_id)
       }
 
     } catch (err) {
@@ -182,136 +171,80 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
         type: 'SET_ERROR', 
         error: err instanceof Error ? err.message : 'Failed to run backtests' 
       })
-    } finally {
-      dispatch({ type: 'SET_LOADING', loading: false })
     }
   }
 
-  const connectBulkWebSocket = (bulkId: string) => {
+  const connectWebSocket = (bulkId: string) => {
+    const timestamp = new Date().toLocaleTimeString() + '.' + new Date().getMilliseconds().toString().padStart(3, '0')
+    console.log(`[BacktestingTab] WEBSOCKET_CONNECT START at ${timestamp} - bulkId: ${bulkId}`)
+    console.log(`[BacktestingTab] Current isRunning state: ${isRunning}`)
+    
     // Close existing connection if any
     if (state.websocket) {
+      console.log('[BacktestingTab] Closing existing WebSocket connection')
       state.websocket.close()
     }
 
     const wsUrl = getApiUrl().replace('http', 'ws')
-    const ws = new WebSocket(`${wsUrl}/api/v2/backtest/monitor/bulk/${bulkId}`)
+    const fullWsUrl = `${wsUrl}/api/v2/backtest/monitor/bulk/${bulkId}`
+    console.log(`[BacktestingTab] Connecting to WebSocket URL: ${fullWsUrl}`)
+    const ws = new WebSocket(fullWsUrl)
 
     ws.onopen = () => {
-      console.log('Bulk WebSocket connected')
+      const connectTime = new Date().toLocaleTimeString() + '.' + new Date().getMilliseconds().toString().padStart(3, '0')
+      console.log(`[BacktestingTab] ✅ WEBSOCKET CONNECTED at ${connectTime} for bulkId: ${bulkId}`)
+      console.log(`[BacktestingTab] WebSocket readyState: ${ws.readyState}`)
     }
 
     ws.onmessage = (event) => {
+      const messageTime = new Date().toLocaleTimeString() + '.' + new Date().getMilliseconds().toString().padStart(3, '0')
       const data = JSON.parse(event.data)
+      console.log(`[BacktestingTab] 📨 WEBSOCKET MESSAGE RECEIVED at ${messageTime}:`, data)
+      console.log(`[BacktestingTab] Message type: ${data.type}, bulk_id: ${data.bulk_id}`)
+      console.log(`[BacktestingTab] Current isRunning before processing: ${isRunning}`)
       
-      if (data.type === 'bulk_progress') {
-        const { progress, current, is_complete } = data
+      // Only listen for completion message
+      if (data.type === 'all_complete') {
+        console.log(`[BacktestingTab] 🎉 ALL BACKTESTS COMPLETE for bulk_id: ${data.bulk_id}`)
+        console.log('[BacktestingTab] Dispatching COMPLETE_BACKTESTS action')
         
-        // Update bulk progress
-        dispatch({
-          type: 'UPDATE_BULK_PROGRESS',
-          bulkProgress: {
-            total: progress.total,
-            completed: progress.completed,
-            running: progress.running,
-            failed: progress.failed,
-            currentBacktest: progress.completed + progress.running,
-            currentSymbol: current?.symbol,
-            currentDate: current?.date,
-            message: current ? 
-              `Processing ${current.symbol} for ${current.date} (${progress.completed + 1}/${progress.total})` :
-              `Completed ${progress.completed}/${progress.total}`
+        // Update state to not running
+        dispatch({ type: 'COMPLETE_BACKTESTS' })
+        
+        // Refresh results and close WebSocket
+        setTimeout(() => {
+          console.log('[BacktestingTab] Refreshing results and closing WebSocket after 500ms')
+          fetchHistoricalResults()
+          if (ws.readyState === WebSocket.OPEN) {
+            console.log('[BacktestingTab] Closing WebSocket')
+            ws.close()
+          } else {
+            console.log(`[BacktestingTab] WebSocket already closed, readyState: ${ws.readyState}`)
           }
-        })
-
-        // Update overall progress percentage
-        dispatch({
-          type: 'UPDATE_PROGRESS',
-          progress: {
-            percentage: progress.percentage,
-            message: current ? 
-              `Processing ${current.symbol} for ${current.date}` :
-              `Running backtests...`
-          }
-        })
-
-        // If all completed, refresh results and clean up
-        if (is_complete) {
-          // Set loading to false
-          dispatch({ type: 'SET_LOADING', loading: false })
-          
-          // Close WebSocket after a delay
-          setTimeout(() => {
-            fetchHistoricalResults()
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.close()
-            }
-          }, 1000) // Small delay to ensure all results are saved
-        }
+        }, 500)
+      } else {
+        console.log(`[BacktestingTab] Ignoring message with type: ${data.type}`)
       }
     }
 
     ws.onerror = (error) => {
-      console.error('Bulk WebSocket error:', error)
+      const errorTime = new Date().toLocaleTimeString() + '.' + new Date().getMilliseconds().toString().padStart(3, '0')
+      console.error(`[BacktestingTab] ❌ WEBSOCKET ERROR at ${errorTime}:`, error)
+      console.error(`[BacktestingTab] WebSocket readyState: ${ws.readyState}`)
       dispatch({ 
         type: 'SET_ERROR', 
-        error: 'Lost connection to backtest progress updates' 
+        error: 'Lost connection to backtest updates' 
       })
     }
 
-    ws.onclose = () => {
-      console.log('Bulk WebSocket disconnected')
+    ws.onclose = (event) => {
+      const closeTime = new Date().toLocaleTimeString() + '.' + new Date().getMilliseconds().toString().padStart(3, '0')
+      console.log(`[BacktestingTab] 🔌 WEBSOCKET DISCONNECTED at ${closeTime}`)
+      console.log(`[BacktestingTab] Close code: ${event.code}, reason: ${event.reason}, wasClean: ${event.wasClean}`)
       dispatch({ type: 'SET_WEBSOCKET', websocket: null })
     }
 
-    dispatch({ type: 'SET_WEBSOCKET', websocket: ws })
-  }
-
-  const connectWebSocket = (backtestId: string) => {
-    // Close existing connection if any
-    if (state.websocket) {
-      state.websocket.close()
-    }
-
-    const wsUrl = getApiUrl().replace('http', 'ws')
-    const ws = new WebSocket(`${wsUrl}/api/v2/backtest/monitor/${backtestId}`)
-
-    ws.onopen = () => {
-      console.log('WebSocket connected')
-    }
-
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data)
-      
-      if (data.type === 'progress') {
-        dispatch({
-          type: 'UPDATE_PROGRESS',
-          progress: {
-            percentage: data.percentage,
-            message: data.message
-          }
-        })
-      } else if (data.type === 'result') {
-        dispatch({ type: 'SET_RESULT', result: data.result })
-        dispatch({ type: 'ADD_HISTORICAL_RESULT', result: data.result })
-        
-        // Also fetch updated results in ResultsContext
-        fetchHistoricalResults()
-        
-        ws.close()
-      } else if (data.type === 'error') {
-        dispatch({ type: 'SET_ERROR', error: data.message })
-        ws.close()
-      }
-    }
-
-    ws.onerror = () => {
-      dispatch({ type: 'SET_ERROR', error: 'WebSocket connection failed' })
-    }
-
-    ws.onclose = () => {
-      dispatch({ type: 'SET_WEBSOCKET', websocket: null })
-    }
-
+    console.log('[BacktestingTab] Setting WebSocket in context')
     dispatch({ type: 'SET_WEBSOCKET', websocket: ws })
   }
 
@@ -324,7 +257,7 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
     fetchHistoricalResults()
   }
 
-  const isRunning = progress.status === 'running'
+  // isRunning state is now directly from context
 
   return (
     <div className="space-y-6">
@@ -371,10 +304,10 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
       <div className="flex gap-3">
         <Button
           onClick={runBacktest}
-          disabled={loading || isRunning}
+          disabled={isRunning}
           size="lg"
         >
-          {loading || isRunning ? (
+          {isRunning ? (
             <>
               <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
               Running Backtest...
@@ -390,7 +323,7 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
         <Button
           variant="outline"
           onClick={() => setShowImportScanner(true)}
-          disabled={loading || isRunning || !parameters.strategy}
+          disabled={isRunning || !parameters.strategy}
           size="lg"
         >
           <FileSearch className="mr-2 h-4 w-4" />
@@ -400,7 +333,7 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
         <Button
           variant="outline"
           onClick={handleReset}
-          disabled={loading || isRunning}
+          disabled={isRunning}
           size="lg"
         >
           Reset

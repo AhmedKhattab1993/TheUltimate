@@ -32,8 +32,8 @@ logger = logging.getLogger(__name__)
 class BacktestTask:
     """Represents a single backtest task in the queue."""
     
-    def __init__(self, symbol: str, request_data: Dict[str, Any]):
-        self.id = str(uuid.uuid4())
+    def __init__(self, symbol: str, request_data: Dict[str, Any], task_id: Optional[str] = None):
+        self.id = task_id if task_id else str(uuid.uuid4())
         self.symbol = symbol
         self.request_data = request_data
         self.status = BacktestStatus.PENDING
@@ -67,7 +67,7 @@ class BacktestQueueManager:
         self.semaphore = asyncio.Semaphore(max_parallel)
         self.active_tasks: Dict[str, BacktestTask] = {}
         self.completed_tasks: Dict[str, BacktestTask] = {}
-        self.progress_callback: Optional[Callable] = None
+        self.completion_callback: Optional[Callable] = None
         self._last_backtest_start_time: Optional[datetime] = None
         self._startup_lock = asyncio.Lock()
         self.cache_service = cache_service
@@ -75,9 +75,9 @@ class BacktestQueueManager:
         self.enable_cleanup = enable_cleanup
         self.backtest_storage = BacktestStorage() if enable_storage else None
         
-    def set_progress_callback(self, callback: Callable):
-        """Set a callback function for progress updates."""
-        self.progress_callback = callback
+    def set_completion_callback(self, callback: Callable):
+        """Set a callback function for completion notification."""
+        self.completion_callback = callback
     
     async def _run_single_backtest(self, task: BacktestTask, timeout: int) -> Dict[str, Any]:
         """Run a single backtest with timeout control."""
@@ -131,7 +131,8 @@ class BacktestQueueManager:
                     if status_info and status_info.status == BacktestStatus.COMPLETED:
                         task.status = BacktestStatus.COMPLETED
                         task.result = {
-                            'backtest_id': backtest_id,
+                            'backtest_id': task.id,  # Use task ID for WebSocket tracking
+                            'lean_backtest_id': backtest_id,  # Store LEAN ID separately
                             'status': 'completed',
                             'result_path': status_info.result_path,
                             'symbol': task.symbol
@@ -166,7 +167,7 @@ class BacktestQueueManager:
                 raise
             finally:
                 task.completed_at = datetime.now()
-                self._update_progress()
+                self._check_completion()
     
     async def run_batch(
         self,
@@ -286,7 +287,9 @@ class BacktestQueueManager:
                     continue
             
             # Not in cache, create task
-            task = BacktestTask(symbol, request_data)
+            # Use provided task_id if available
+            task_id = request_data.get('task_id')
+            task = BacktestTask(symbol, request_data, task_id)
             self.active_tasks[task.id] = task
             tasks.append(task)
         
@@ -320,7 +323,8 @@ class BacktestQueueManager:
             results[task.symbol] = {
                 'status': 'failed',
                 'error': str(last_error),
-                'symbol': task.symbol
+                'symbol': task.symbol,
+                'backtest_id': task.id  # Include task ID for tracking
             }
             
             if not continue_on_error:
@@ -338,6 +342,9 @@ class BacktestQueueManager:
                 del self.active_tasks[task.id]
                 self.completed_tasks[task.id] = task
         
+        # Check for completion after all tasks are processed
+        self._check_completion()
+        
         # Merge cached results with new results
         all_results = {**cached_results, **results}
         
@@ -353,24 +360,22 @@ class BacktestQueueManager:
         
         return all_results
     
-    def _update_progress(self):
-        """Update progress and call callback if set."""
+    def _check_completion(self):
+        """Check if all backtests are complete and call completion callback."""
         total = len(self.active_tasks) + len(self.completed_tasks)
         completed = len(self.completed_tasks)
         
-        if total > 0:
-            progress = (completed / total) * 100
-            status = {
-                'total': total,
-                'completed': completed,
-                'active': len(self.active_tasks),
-                'progress_percent': progress
-            }
-            
-            logger.info(f"Progress: {completed}/{total} ({progress:.1f}%)")
-            
-            if self.progress_callback:
-                self.progress_callback(status)
+        logger.info(f"Backtest progress: {completed}/{total}")
+        
+        # Check if all backtests are complete
+        if len(self.active_tasks) == 0 and len(self.completed_tasks) > 0:
+            logger.info("All backtests completed")
+            if self.completion_callback:
+                # If callback is async, create a task to run it
+                if asyncio.iscoroutinefunction(self.completion_callback):
+                    asyncio.create_task(self.completion_callback())
+                else:
+                    self.completion_callback()
     
     def get_status(self) -> Dict[str, Any]:
         """Get current queue status."""
@@ -394,7 +399,8 @@ class BacktestQueueManager:
             Backtest result dictionary
         """
         symbol = request_data['symbol']
-        task = BacktestTask(symbol, request_data)
+        task_id = request_data.get('task_id')
+        task = BacktestTask(symbol, request_data, task_id)
         
         try:
             result = await self._run_single_backtest(task, timeout)

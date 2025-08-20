@@ -1,10 +1,10 @@
 """
-WebSocket handler for bulk backtest progress updates.
+Simplified WebSocket handler for bulk backtest completion notifications.
 """
 
 import asyncio
 import logging
-from typing import Dict, List, Set
+from typing import Dict, List
 from fastapi import WebSocket, WebSocketDisconnect
 from datetime import datetime
 import json
@@ -13,153 +13,107 @@ logger = logging.getLogger(__name__)
 
 
 class BulkBacktestWebSocketManager:
-    """Manages WebSocket connections for bulk backtest progress updates."""
+    """Manages WebSocket connections for bulk backtest completion notifications."""
     
     def __init__(self):
         self.active_connections: Dict[str, List[WebSocket]] = {}  # bulk_id -> [websockets]
-        self.bulk_backtest_info: Dict[str, Dict] = {}  # bulk_id -> info
-        self.backtest_to_bulk: Dict[str, str] = {}  # backtest_id -> bulk_id
+        self.bulk_status: Dict[str, bool] = {}  # bulk_id -> is_complete
         
     async def connect(self, bulk_id: str, websocket: WebSocket):
         """Connect a WebSocket for bulk backtest monitoring."""
+        logger.info(f"[BulkWebSocket] CONNECT START - bulk_id: {bulk_id}")
+        logger.info(f"[BulkWebSocket] Current bulk_status: {self.bulk_status}")
+        logger.info(f"[BulkWebSocket] Current active_connections: {list(self.active_connections.keys())}")
+        
         await websocket.accept()
         if bulk_id not in self.active_connections:
             self.active_connections[bulk_id] = []
         self.active_connections[bulk_id].append(websocket)
-        logger.info(f"WebSocket connected for bulk backtest {bulk_id}")
+        logger.info(f"[BulkWebSocket] WebSocket connected for bulk backtest {bulk_id} - total connections: {len(self.active_connections[bulk_id])}")
         
-        # Send initial status if available
-        if bulk_id in self.bulk_backtest_info:
-            await self.send_status_update(bulk_id, websocket)
+        # Check if this bulk backtest is already completed (race condition fix)
+        bulk_completed = bulk_id in self.bulk_status and self.bulk_status[bulk_id]
+        logger.info(f"[BulkWebSocket] Checking completion status for {bulk_id}: {bulk_completed}")
+        
+        if bulk_completed:
+            logger.info(f"[BulkWebSocket] Bulk backtest {bulk_id} already completed, sending immediate completion message")
+            message = {
+                "type": "all_complete",
+                "bulk_id": bulk_id
+            }
+            try:
+                await websocket.send_json(message)
+                logger.info(f"[BulkWebSocket] Successfully sent immediate completion notification to {bulk_id}")
+            except Exception as e:
+                logger.warning(f"[BulkWebSocket] Failed to send immediate completion notification to {bulk_id}: {e}")
+        else:
+            logger.info(f"[BulkWebSocket] Bulk backtest {bulk_id} not yet completed, waiting for completion notification")
     
     def disconnect(self, bulk_id: str, websocket: WebSocket):
         """Disconnect a WebSocket."""
+        logger.info(f"[BulkWebSocket] DISCONNECT START - bulk_id: {bulk_id}")
         if bulk_id in self.active_connections:
             self.active_connections[bulk_id].remove(websocket)
+            remaining = len(self.active_connections[bulk_id])
+            logger.info(f"[BulkWebSocket] Removed WebSocket, remaining connections for {bulk_id}: {remaining}")
             if not self.active_connections[bulk_id]:
                 del self.active_connections[bulk_id]
-        logger.info(f"WebSocket disconnected for bulk backtest {bulk_id}")
+                logger.info(f"[BulkWebSocket] No more connections for {bulk_id}, removed from active_connections")
+        else:
+            logger.warning(f"[BulkWebSocket] Tried to disconnect {bulk_id} but not in active_connections")
+        logger.info(f"[BulkWebSocket] WebSocket disconnected for bulk backtest {bulk_id}")
     
-    def register_bulk_backtest(self, bulk_id: str, total_backtests: int, backtests: List[Dict]):
+    def register_bulk_backtest(self, bulk_id: str):
         """Register a new bulk backtest operation."""
-        self.bulk_backtest_info[bulk_id] = {
-            "total": total_backtests,
-            "completed": 0,
-            "failed": 0,
-            "running": 0,
-            "backtests": backtests,
-            "status_by_id": {},
-            "start_time": datetime.now()
+        logger.info(f"[BulkWebSocket] REGISTER START - bulk_id: {bulk_id}")
+        logger.info(f"[BulkWebSocket] Previous bulk_status: {self.bulk_status}")
+        self.bulk_status[bulk_id] = False
+        logger.info(f"[BulkWebSocket] Registered bulk backtest {bulk_id} - status set to False")
+        logger.info(f"[BulkWebSocket] Updated bulk_status: {self.bulk_status}")
+    
+    async def notify_completion(self, bulk_id: str):
+        """Notify all clients that bulk backtest is complete."""
+        timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+        logger.info(f"[BulkWebSocket] NOTIFY_COMPLETION START at {timestamp} - bulk_id: {bulk_id}")
+        logger.info(f"[BulkWebSocket] Previous bulk_status: {self.bulk_status}")
+        logger.info(f"[BulkWebSocket] Current active_connections: {list(self.active_connections.keys())}")
+        
+        # Always mark as completed - this is critical for race condition handling
+        self.bulk_status[bulk_id] = True
+        logger.info(f"[BulkWebSocket] Marked {bulk_id} as completed - bulk_status: {self.bulk_status}")
+        
+        if bulk_id not in self.active_connections:
+            logger.warning(f"[BulkWebSocket] No active connections for bulk_id: {bulk_id} - completion notification stored for race condition fix")
+            return
+        
+        connection_count = len(self.active_connections[bulk_id])
+        logger.info(f"[BulkWebSocket] Found {connection_count} active connections for {bulk_id}")
+        
+        message = {
+            "type": "all_complete",
+            "bulk_id": bulk_id
         }
         
-        # Map individual backtest IDs to bulk ID
-        for backtest in backtests:
-            if backtest.get("backtest_id"):
-                self.backtest_to_bulk[backtest["backtest_id"]] = bulk_id
-    
-    async def update_backtest_status(self, backtest_id: str, status: str, details: Dict = None):
-        """Update the status of an individual backtest."""
-        if backtest_id not in self.backtest_to_bulk:
-            return
-            
-        bulk_id = self.backtest_to_bulk[backtest_id]
-        if bulk_id not in self.bulk_backtest_info:
-            return
-            
-        info = self.bulk_backtest_info[bulk_id]
-        
-        # Update status
-        old_status = info["status_by_id"].get(backtest_id, "pending")
-        info["status_by_id"][backtest_id] = status
-        
-        # Update counters
-        if old_status == "running" and status == "completed":
-            info["running"] -= 1
-            info["completed"] += 1
-        elif old_status == "running" and status == "failed":
-            info["running"] -= 1
-            info["failed"] += 1
-        elif old_status == "pending" and status == "running":
-            info["running"] += 1
-        elif old_status == "pending" and status == "completed":
-            info["completed"] += 1
-        elif old_status == "pending" and status == "failed":
-            info["failed"] += 1
-        
-        # Find the backtest in the list and update its info
-        for backtest in info["backtests"]:
-            if backtest.get("backtest_id") == backtest_id:
-                backtest["status"] = status
-                if details:
-                    backtest.update(details)
-                break
-        
-        # Send update to all connected clients
-        await self.broadcast_update(bulk_id)
-    
-    async def broadcast_update(self, bulk_id: str):
-        """Broadcast status update to all connected clients."""
-        if bulk_id not in self.active_connections:
-            return
-            
         disconnected = []
-        for websocket in self.active_connections[bulk_id]:
+        for i, websocket in enumerate(self.active_connections[bulk_id]):
             try:
-                await self.send_status_update(bulk_id, websocket)
+                await websocket.send_json(message)
+                logger.info(f"[BulkWebSocket] Successfully sent completion notification to connection {i+1}/{connection_count} for {bulk_id}")
             except Exception as e:
-                logger.warning(f"Failed to send update: {e}")
+                logger.warning(f"[BulkWebSocket] Failed to send completion notification to connection {i+1}: {e}")
                 disconnected.append(websocket)
         
         # Remove disconnected clients
+        logger.info(f"[BulkWebSocket] Removing {len(disconnected)} disconnected clients")
         for ws in disconnected:
             self.disconnect(bulk_id, ws)
-    
-    async def send_status_update(self, bulk_id: str, websocket: WebSocket):
-        """Send current status to a specific WebSocket."""
-        if bulk_id not in self.bulk_backtest_info:
-            return
-            
-        info = self.bulk_backtest_info[bulk_id]
         
-        # Calculate overall progress
-        progress = 0
-        if info["total"] > 0:
-            progress = int((info["completed"] + info["failed"]) / info["total"] * 100)
-        
-        # Find current running backtest
-        current_backtest = None
-        for backtest in info["backtests"]:
-            if info["status_by_id"].get(backtest.get("backtest_id")) == "running":
-                current_backtest = backtest
-                break
-        
-        message = {
-            "type": "bulk_progress",
-            "bulk_id": bulk_id,
-            "progress": {
-                "total": info["total"],
-                "completed": info["completed"],
-                "failed": info["failed"],
-                "running": info["running"],
-                "percentage": progress
-            },
-            "current": current_backtest,
-            "backtests": info["backtests"][:10],  # Send first 10 for UI display
-            "is_complete": info["completed"] + info["failed"] == info["total"]
-        }
-        
-        await websocket.send_json(message)
+        logger.info(f"[BulkWebSocket] NOTIFY_COMPLETION COMPLETE for {bulk_id}")
     
     def cleanup_completed(self, bulk_id: str):
         """Clean up completed bulk backtest data."""
-        if bulk_id in self.bulk_backtest_info:
-            # Remove individual mappings
-            for backtest in self.bulk_backtest_info[bulk_id]["backtests"]:
-                backtest_id = backtest.get("backtest_id")
-                if backtest_id and backtest_id in self.backtest_to_bulk:
-                    del self.backtest_to_bulk[backtest_id]
-            
-            del self.bulk_backtest_info[bulk_id]
+        if bulk_id in self.bulk_status:
+            del self.bulk_status[bulk_id]
         
         if bulk_id in self.active_connections:
             del self.active_connections[bulk_id]

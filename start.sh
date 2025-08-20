@@ -148,7 +148,7 @@ fi
 # Start backend
 echo ""
 echo "Starting backend API server..."
-nohup venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload > backend.log 2>&1 &
+nohup venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 > backend.log 2>&1 &
 BACKEND_PID=$!
 echo $BACKEND_PID > "$PID_DIR/backend.pid"
 

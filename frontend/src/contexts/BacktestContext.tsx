@@ -19,36 +19,7 @@ export interface BacktestParameters {
   useScreenerResults?: boolean
 }
 
-export interface BacktestProgress {
-  status: 'idle' | 'running' | 'completed' | 'error'
-  percentage: number
-  message: string
-  backtestId?: string
-}
-
-export interface BulkBacktestInfo {
-  totalBacktests: number
-  successfulStarts: number
-  failedStarts: number
-  backtests: Array<{
-    backtest_id: string | null
-    symbol: string
-    date: string
-    status: string
-    error?: string
-  }>
-}
-
-export interface BulkProgress {
-  total: number
-  completed: number
-  running: number
-  failed: number
-  currentBacktest?: number
-  currentSymbol?: string
-  currentDate?: string
-  message?: string
-}
+// Simplified - just track running state
 
 export interface BacktestStatistics {
   // Core Performance Metrics
@@ -131,15 +102,11 @@ export interface BacktestResult {
 export interface BacktestState {
   strategies: Strategy[]
   parameters: BacktestParameters
-  progress: BacktestProgress
+  isRunning: boolean
   currentResult: BacktestResult | null
   historicalResults: BacktestResult[]
   error: string | null
-  loading: boolean
   websocket: WebSocket | null
-  websockets?: WebSocket[]
-  bulkInfo?: BulkBacktestInfo
-  bulkProgress?: BulkProgress
 }
 
 // Action types
@@ -147,18 +114,14 @@ export type BacktestAction =
   | { type: 'SET_STRATEGIES'; strategies: Strategy[] }
   | { type: 'SET_PARAMETER'; field: keyof BacktestParameters; value: any }
   | { type: 'SET_SYMBOLS'; symbols: string[] }
-  | { type: 'START_BACKTEST'; backtestId: string }
-  | { type: 'START_BULK_BACKTESTS'; bulkInfo: BulkBacktestInfo }
-  | { type: 'UPDATE_PROGRESS'; progress: Partial<BacktestProgress> }
-  | { type: 'UPDATE_BULK_PROGRESS'; bulkProgress: BulkProgress }
+  | { type: 'START_BACKTESTS' }
+  | { type: 'COMPLETE_BACKTESTS' }
   | { type: 'SET_RESULT'; result: BacktestResult }
   | { type: 'ADD_HISTORICAL_RESULT'; result: BacktestResult }
   | { type: 'SET_HISTORICAL_RESULTS'; results: BacktestResult[] }
   | { type: 'SET_ERROR'; error: string }
   | { type: 'CLEAR_ERROR' }
-  | { type: 'SET_LOADING'; loading: boolean }
   | { type: 'SET_WEBSOCKET'; websocket: WebSocket | null }
-  | { type: 'SET_WEBSOCKETS'; websockets: WebSocket[] }
   | { type: 'RESET' }
 
 // Initial state
@@ -171,15 +134,10 @@ const initialState: BacktestState = {
     endDate: new Date(), // Default to today
     symbols: []
   },
-  progress: {
-    status: 'idle',
-    percentage: 0,
-    message: ''
-  },
+  isRunning: false,
   currentResult: null,
   historicalResults: [],
   error: null,
-  loading: false,
   websocket: null
 }
 
@@ -207,37 +165,24 @@ function backtestReducer(state: BacktestState, action: BacktestAction): Backtest
         }
       }
 
-    case 'START_BACKTEST':
+    case 'START_BACKTESTS':
       return {
         ...state,
-        progress: {
-          status: 'running',
-          percentage: 0,
-          message: 'Initializing backtest...',
-          backtestId: action.backtestId
-        },
+        isRunning: true,
         currentResult: null,
         error: null
       }
 
-    case 'UPDATE_PROGRESS':
+    case 'COMPLETE_BACKTESTS':
       return {
         ...state,
-        progress: {
-          ...state.progress,
-          ...action.progress
-        }
+        isRunning: false
       }
 
     case 'SET_RESULT':
       return {
         ...state,
-        currentResult: action.result,
-        progress: {
-          ...state.progress,
-          status: 'completed',
-          percentage: 100
-        }
+        currentResult: action.result
       }
 
     case 'ADD_HISTORICAL_RESULT':
@@ -256,59 +201,14 @@ function backtestReducer(state: BacktestState, action: BacktestAction): Backtest
       return {
         ...state,
         error: action.error,
-        progress: {
-          ...state.progress,
-          status: 'error'
-        },
-        loading: false
+        isRunning: false
       }
 
     case 'CLEAR_ERROR':
       return { ...state, error: null }
 
-    case 'SET_LOADING':
-      return { ...state, loading: action.loading }
-
     case 'SET_WEBSOCKET':
       return { ...state, websocket: action.websocket }
-
-    case 'SET_WEBSOCKETS':
-      return { ...state, websockets: action.websockets }
-
-    case 'START_BULK_BACKTESTS':
-      return {
-        ...state,
-        bulkInfo: action.bulkInfo,
-        bulkProgress: {
-          total: action.bulkInfo.totalBacktests,
-          completed: 0,
-          running: action.bulkInfo.successfulStarts,
-          failed: action.bulkInfo.failedStarts,
-          message: 'Starting backtests...'
-        },
-        progress: {
-          status: 'running',
-          percentage: 0,
-          message: `Starting ${action.bulkInfo.totalBacktests} backtests...`
-        },
-        error: null
-      }
-
-    case 'UPDATE_BULK_PROGRESS':
-      const isComplete = action.bulkProgress.completed === action.bulkProgress.total
-      return {
-        ...state,
-        bulkProgress: action.bulkProgress,
-        progress: {
-          ...state.progress,
-          percentage: action.bulkProgress.total > 0
-            ? Math.round((action.bulkProgress.completed / action.bulkProgress.total) * 100)
-            : 0,
-          message: action.bulkProgress.message || state.progress.message,
-          status: isComplete ? 'completed' : 'running'
-        },
-        loading: isComplete ? false : state.loading
-      }
 
     case 'RESET':
       return {
