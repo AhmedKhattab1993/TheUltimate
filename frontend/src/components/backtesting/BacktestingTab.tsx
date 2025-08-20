@@ -234,10 +234,17 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
           }
         })
 
-        // If all completed, refresh results
+        // If all completed, refresh results and clean up
         if (is_complete) {
+          // Set loading to false
+          dispatch({ type: 'SET_LOADING', loading: false })
+          
+          // Close WebSocket after a delay
           setTimeout(() => {
             fetchHistoricalResults()
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.close()
+            }
           }, 1000) // Small delay to ensure all results are saved
         }
       }
@@ -253,6 +260,7 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
 
     ws.onclose = () => {
       console.log('Bulk WebSocket disconnected')
+      dispatch({ type: 'SET_WEBSOCKET', websocket: null })
     }
 
     dispatch({ type: 'SET_WEBSOCKET', websocket: ws })

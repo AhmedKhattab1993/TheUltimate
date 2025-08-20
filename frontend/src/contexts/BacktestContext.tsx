@@ -295,6 +295,7 @@ function backtestReducer(state: BacktestState, action: BacktestAction): Backtest
       }
 
     case 'UPDATE_BULK_PROGRESS':
+      const isComplete = action.bulkProgress.completed === action.bulkProgress.total
       return {
         ...state,
         bulkProgress: action.bulkProgress,
@@ -304,8 +305,9 @@ function backtestReducer(state: BacktestState, action: BacktestAction): Backtest
             ? Math.round((action.bulkProgress.completed / action.bulkProgress.total) * 100)
             : 0,
           message: action.bulkProgress.message || state.progress.message,
-          status: action.bulkProgress.completed === action.bulkProgress.total ? 'completed' : 'running'
-        }
+          status: isComplete ? 'completed' : 'running'
+        },
+        loading: isComplete ? false : state.loading
       }
 
     case 'RESET':

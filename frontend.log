@@ -360,3 +360,8 @@
 5:58:53 AM [vite] (client) hmr update /src/components/backtesting/BacktestingTab.tsx, /src/index.css
 5:59:54 AM [vite] (client) hmr update /src/components/backtesting/BacktestingTab.tsx, /src/index.css
 6:00:08 AM [vite] (client) hmr update /src/components/backtesting/BacktestingTab.tsx, /src/index.css
+6:22:03 AM [vite] (client) hmr update /src/components/backtesting/BacktestingTab.tsx, /src/index.css
+6:22:19 AM [vite] (client) hmr update /src/contexts/BacktestContext.tsx, /src/index.css
+6:22:19 AM [vite] (client) hmr invalidate /src/contexts/BacktestContext.tsx Could not Fast Refresh ("useBacktestContext" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+6:22:19 AM [vite] (client) hmr update /src/index.css, /src/components/SimpleStockScreener.tsx, /src/components/backtesting/BacktestingTab.tsx, /src/components/backtesting/StrategySelector.tsx, /src/components/backtesting/BacktestForm.tsx, /src/components/backtesting/BacktestMonitor.tsx
+6:22:31 AM [vite] (client) hmr update /src/components/backtesting/BacktestingTab.tsx, /src/index.css
