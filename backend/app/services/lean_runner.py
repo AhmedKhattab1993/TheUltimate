@@ -99,12 +99,16 @@ class LeanRunner:
                 logger.info(f"Setting symbols parameter for {backtest_id}: {','.join(request.symbols)}")
             
             # Add any custom parameters from the request
+            logger.info(f"Request parameters for {backtest_id}: {request.parameters}")
             for key, value in request.parameters.items():
                 config_data["parameters"][key] = str(value)
+                logger.info(f"Setting parameter {key} = {value} for {backtest_id}")
             
             # Write the temporary config file
             with open(temp_config_path, 'w') as f:
                 json.dump(config_data, f, indent=4)
+            
+            logger.info(f"Written config to {temp_config_path} with parameters: {config_data.get('parameters', {})}")
             
             # Acquire a lock before modifying base config
             lock_path = base_config_path.with_suffix('.lock')
