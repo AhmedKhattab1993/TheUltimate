@@ -191,7 +191,11 @@ class CacheService:
             logger.warning("No results to save to cache")
             return False
             
-        session_id = uuid4()
+        # Generate session ID if not provided
+        if hasattr(request, 'session_id') and request.session_id is not None:
+            session_id = request.session_id
+        else:
+            session_id = uuid4()
         
         try:
             # Insert all results in a batch

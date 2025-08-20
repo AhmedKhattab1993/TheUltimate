@@ -11,7 +11,7 @@ import numpy as np
 import time
 import logging
 from datetime import datetime, timedelta, date
-from uuid import uuid4
+from uuid import uuid4, UUID
 
 from ..models.simple_requests import (
     SimpleScreenRequest,
@@ -90,7 +90,8 @@ async def _process_single_day(
     polygon_client: PolygonClient,
     enable_db_prefiltering: bool,
     request_filters: Any,
-    cache_service: CacheService
+    cache_service: CacheService,
+    session_id: Optional[UUID] = None
 ) -> Dict[str, Any]:
     """
     Process screening for a single trading day.
@@ -261,7 +262,8 @@ async def _process_single_day(
                 relative_volume_enabled=request_filters.relative_volume is not None,
                 relative_volume_recent_days=request_filters.relative_volume.recent_days if request_filters.relative_volume else None,
                 relative_volume_lookback_days=request_filters.relative_volume.lookback_days if request_filters.relative_volume else None,
-                relative_volume_min_ratio=request_filters.relative_volume.min_ratio if request_filters.relative_volume else None
+                relative_volume_min_ratio=request_filters.relative_volume.min_ratio if request_filters.relative_volume else None,
+                session_id=session_id  # Include session_id for multi-day runs
             )
             
             # Create cache results for each symbol
@@ -446,6 +448,9 @@ async def simple_screen_stocks(
     trading_days = _get_trading_days(request.start_date, request.end_date)
     logger.info(f"Processing {len(trading_days)} trading days from {request.end_date} to {request.start_date}")
     
+    # Generate a session ID for this screener run (used to group multi-day results)
+    screener_session_id = uuid4()
+    
     # Check if single day or multiple days
     if len(trading_days) == 1:
         # Single day - use original logic for better performance
@@ -456,7 +461,8 @@ async def simple_screen_stocks(
             polygon_client=polygon_client,
             enable_db_prefiltering=request.enable_db_prefiltering,
             request_filters=request.filters,
-            cache_service=cache_service
+            cache_service=cache_service,
+            session_id=screener_session_id
         )
         
         # Convert to response format
@@ -494,7 +500,8 @@ async def simple_screen_stocks(
             polygon_client=polygon_client,
             enable_db_prefiltering=request.enable_db_prefiltering,
             request_filters=request.filters,
-            cache_service=cache_service
+            cache_service=cache_service,
+            session_id=screener_session_id
         )
         
         # Aggregate results

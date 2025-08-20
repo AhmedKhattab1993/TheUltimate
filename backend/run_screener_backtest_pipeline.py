@@ -17,6 +17,7 @@ import yaml
 from datetime import datetime, date, timedelta
 from pathlib import Path
 from typing import Dict, Any, List, Optional
+from uuid import uuid4
 
 # Add backend to path for imports
 sys.path.append(str(Path(__file__).parent))
@@ -55,6 +56,7 @@ class ScreenerBacktestPipeline:
         self.config_path = Path(config_path)
         self.config = self._load_config()
         self.api_client = APIClient(base_url=settings.api_base_url)
+        self.pipeline_session_id = None  # Will be set when run starts
         
         # Initialize cache service if enabled
         cache_config = self.config.get('caching', {})
@@ -189,7 +191,8 @@ class ScreenerBacktestPipeline:
                 relative_volume_enabled=request.filters.relative_volume is not None,
                 relative_volume_recent_days=request.filters.relative_volume.recent_days if request.filters.relative_volume else None,
                 relative_volume_lookback_days=request.filters.relative_volume.lookback_days if request.filters.relative_volume else None,
-                relative_volume_min_ratio=request.filters.relative_volume.min_ratio if request.filters.relative_volume else None
+                relative_volume_min_ratio=request.filters.relative_volume.min_ratio if request.filters.relative_volume else None,
+                session_id=self.pipeline_session_id  # Include session_id for multi-day runs
             )
             
             # Check cache
@@ -586,6 +589,10 @@ class ScreenerBacktestPipeline:
                 logger.info(f"Max backtest executions: {max_backtests}")
             logger.info(f"Cache enabled: {self.cache_enabled}")
             logger.info("=" * 80)
+            
+            # Generate a session ID for this pipeline run
+            self.pipeline_session_id = uuid4()
+            logger.info(f"Pipeline session ID: {self.pipeline_session_id}")
             
             # Clean expired cache if configured
             if self.cache_enabled and self.config.get('caching', {}).get('cleanup_on_startup', True):

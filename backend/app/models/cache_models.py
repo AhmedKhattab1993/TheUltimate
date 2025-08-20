@@ -52,6 +52,9 @@ class CachedScreenerRequest(BaseModel):
     relative_volume_lookback_days: Optional[int] = None
     relative_volume_min_ratio: Optional[Decimal] = None
     
+    # Session identification (optional, for grouping multi-day runs)
+    session_id: Optional[UUID] = None
+    
     def calculate_hash(self) -> str:
         """
         Calculate hash for screener parameters.
