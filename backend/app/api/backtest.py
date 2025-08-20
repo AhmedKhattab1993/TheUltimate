@@ -20,6 +20,8 @@ from ..services.backtest_queue_manager import BacktestQueueManager
 from ..services.cache_service import CacheService
 from ..services.screener_results import screener_results_manager
 from ..services.database import db_pool
+from .bulk_backtest_websocket import bulk_websocket_manager
+import uuid
 
 
 router = APIRouter(prefix="/api/v2/backtest", tags=["backtest"])
@@ -387,6 +389,39 @@ async def monitor_backtest(websocket: WebSocket, backtest_id: str):
         await backtest_manager.remove_websocket_connection(backtest_id, websocket)
 
 
+@router.websocket("/monitor/bulk/{bulk_id}")
+async def monitor_bulk_backtest(websocket: WebSocket, bulk_id: str):
+    """
+    WebSocket endpoint for monitoring bulk backtest operations.
+    
+    Connect to this endpoint to receive real-time updates about multiple backtests
+    running as part of a bulk operation.
+    
+    Message types:
+    - bulk_progress: Overall progress of the bulk operation
+    - backtest_update: Individual backtest status updates
+    """
+    await bulk_websocket_manager.connect(bulk_id, websocket)
+    
+    try:
+        # Keep connection alive and handle messages
+        while True:
+            try:
+                # Wait for messages from client
+                data = await websocket.receive_text()
+                # Could handle specific commands if needed
+                if data == "ping":
+                    await websocket.send_text("pong")
+            except WebSocketDisconnect:
+                break
+            except Exception as e:
+                logger.error(f"WebSocket error: {e}")
+                break
+                
+    finally:
+        bulk_websocket_manager.disconnect(bulk_id, websocket)
+
+
 @router.get("/screener-results/latest")
 async def get_latest_screener_results():
     """
@@ -487,6 +522,9 @@ async def start_bulk_backtests(request: BacktestRequest):
             backtest_ttl_days=7
         )
         
+        # Generate unique bulk ID for this operation
+        bulk_id = str(uuid.uuid4())
+        
         # Create queue manager with same settings as pipeline
         queue_manager = BacktestQueueManager(
             max_parallel=5,  # Same as pipeline default
@@ -498,6 +536,7 @@ async def start_bulk_backtests(request: BacktestRequest):
         
         # Create backtest requests for queue manager
         backtest_requests = []
+        backtest_tasks_preview = []  # For WebSocket registration
         total_backtests = len(trading_days) * len(symbols)
         
         logger.info(f"Starting bulk backtest: {len(trading_days)} days × {len(symbols)} symbols = {total_backtests} backtests")
@@ -515,6 +554,45 @@ async def start_bulk_backtests(request: BacktestRequest):
                     'parameters': request.parameters or {}
                 }
                 backtest_requests.append(backtest_request)
+                
+                # Create preview task for WebSocket tracking
+                backtest_tasks_preview.append({
+                    'backtest_id': str(uuid.uuid4()),  # Pre-generate ID
+                    'symbol': symbol,
+                    'date': trading_day.strftime('%Y-%m-%d'),
+                    'status': 'pending'
+                })
+        
+        # Set up progress callback for WebSocket updates
+        async def progress_callback(status_info):
+            # Extract current running task info
+            if 'active_symbols' in status_info and status_info['active_symbols']:
+                for symbol in status_info['active_symbols']:
+                    # Find the task for this symbol
+                    for task in backtest_tasks_preview:
+                        if task['symbol'] == symbol:
+                            await bulk_websocket_manager.update_backtest_status(
+                                task['backtest_id'], 
+                                'running',
+                                {'symbol': symbol, 'progress': status_info.get('progress', 0)}
+                            )
+                            break
+            
+            # Update completed tasks
+            if 'completed_symbols' in status_info:
+                for symbol in status_info['completed_symbols']:
+                    for task in backtest_tasks_preview:
+                        if task['symbol'] == symbol:
+                            await bulk_websocket_manager.update_backtest_status(
+                                task['backtest_id'],
+                                'completed'
+                            )
+                            break
+        
+        queue_manager.set_progress_callback(progress_callback)
+        
+        # Register bulk backtest with WebSocket manager
+        bulk_websocket_manager.register_bulk_backtest(bulk_id, total_backtests, backtest_tasks_preview)
         
         # Run backtests through queue manager (parallel execution)
         results = await queue_manager.run_batch(
@@ -554,8 +632,9 @@ async def start_bulk_backtests(request: BacktestRequest):
                 "error": result.get('error') if status == 'failed' else None
             })
         
-        # Return summary
+        # Return summary with bulk_id for WebSocket connection
         return {
+            "bulk_id": bulk_id,  # Frontend uses this to connect WebSocket
             "total_backtests": total_backtests,
             "successful_starts": successful_count,
             "failed_starts": failed_count,

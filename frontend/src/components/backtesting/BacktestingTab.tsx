@@ -172,13 +172,9 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
         }
       })
 
-      // Connect WebSocket for each backtest
-      if (data.backtests && data.backtests.length > 0) {
-        // Monitor first backtest, but track all
-        const activeBacktests = data.backtests.filter((bt: any) => bt.backtest_id)
-        if (activeBacktests.length > 0) {
-          connectBulkWebSockets(activeBacktests)
-        }
+      // Connect to bulk WebSocket endpoint if we have a bulk_id
+      if (data.bulk_id) {
+        connectBulkWebSocket(data.bulk_id)
       }
 
     } catch (err) {
@@ -191,84 +187,75 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
     }
   }
 
-  const connectBulkWebSockets = (backtests: any[]) => {
-    // Close existing connections if any
-    if (state.websockets) {
-      state.websockets.forEach(ws => ws.close())
+  const connectBulkWebSocket = (bulkId: string) => {
+    // Close existing connection if any
+    if (state.websocket) {
+      state.websocket.close()
     }
 
     const wsUrl = getApiUrl().replace('http', 'ws')
-    const websockets: WebSocket[] = []
-    let completedCount = 0
-    const totalCount = backtests.length
+    const ws = new WebSocket(`${wsUrl}/api/v2/backtest/monitor/bulk/${bulkId}`)
 
-    // Track progress for all backtests
-    dispatch({
-      type: 'UPDATE_BULK_PROGRESS',
-      bulkProgress: {
-        total: totalCount,
-        completed: 0,
-        running: totalCount,
-        failed: 0,
-        currentBacktest: 0
-      }
-    })
+    ws.onopen = () => {
+      console.log('Bulk WebSocket connected')
+    }
 
-    // Connect to each backtest
-    backtests.forEach((backtest, index) => {
-      if (!backtest.backtest_id) return
-
-      const ws = new WebSocket(`${wsUrl}/api/v2/backtest/monitor/${backtest.backtest_id}`)
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data)
       
-      ws.onmessage = (event) => {
-        const data = JSON.parse(event.data)
+      if (data.type === 'bulk_progress') {
+        const { progress, current, is_complete } = data
         
-        if (data.type === 'progress') {
-          // Update progress for current backtest
-          dispatch({
-            type: 'UPDATE_BULK_PROGRESS',
-            bulkProgress: {
-              total: totalCount,
-              completed: completedCount,
-              running: totalCount - completedCount,
-              failed: 0,
-              currentBacktest: index + 1,
-              currentSymbol: backtest.symbol,
-              currentDate: backtest.date,
-              message: `Processing ${backtest.symbol} for ${backtest.date} (${index + 1}/${totalCount})`
-            }
-          })
-        } else if (data.type === 'result' || data.type === 'error') {
-          completedCount++
-          
-          // Update bulk progress
-          dispatch({
-            type: 'UPDATE_BULK_PROGRESS',
-            bulkProgress: {
-              total: totalCount,
-              completed: completedCount,
-              running: totalCount - completedCount,
-              failed: data.type === 'error' ? 1 : 0,
-              currentBacktest: completedCount,
-              message: completedCount === totalCount ? 'All backtests completed' : `Completed ${completedCount}/${totalCount}`
-            }
-          })
-
-          // If all completed, refresh results
-          if (completedCount === totalCount) {
-            fetchHistoricalResults()
+        // Update bulk progress
+        dispatch({
+          type: 'UPDATE_BULK_PROGRESS',
+          bulkProgress: {
+            total: progress.total,
+            completed: progress.completed,
+            running: progress.running,
+            failed: progress.failed,
+            currentBacktest: progress.completed + progress.running,
+            currentSymbol: current?.symbol,
+            currentDate: current?.date,
+            message: current ? 
+              `Processing ${current.symbol} for ${current.date} (${progress.completed + 1}/${progress.total})` :
+              `Completed ${progress.completed}/${progress.total}`
           }
+        })
+
+        // Update overall progress percentage
+        dispatch({
+          type: 'UPDATE_PROGRESS',
+          progress: {
+            percentage: progress.percentage,
+            message: current ? 
+              `Processing ${current.symbol} for ${current.date}` :
+              `Running backtests...`
+          }
+        })
+
+        // If all completed, refresh results
+        if (is_complete) {
+          setTimeout(() => {
+            fetchHistoricalResults()
+          }, 1000) // Small delay to ensure all results are saved
         }
       }
+    }
 
-      ws.onerror = () => {
-        console.error(`WebSocket error for backtest ${backtest.backtest_id}`)
-      }
+    ws.onerror = (error) => {
+      console.error('Bulk WebSocket error:', error)
+      dispatch({ 
+        type: 'SET_ERROR', 
+        error: 'Lost connection to backtest progress updates' 
+      })
+    }
 
-      websockets.push(ws)
-    })
+    ws.onclose = () => {
+      console.log('Bulk WebSocket disconnected')
+    }
 
-    dispatch({ type: 'SET_WEBSOCKETS', websockets })
+    dispatch({ type: 'SET_WEBSOCKET', websocket: ws })
   }
 
   const connectWebSocket = (backtestId: string) => {
