@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useBacktestContext } from '@/contexts/BacktestContext'
-import { DollarSign, Plus, X, Upload, FileSearch } from 'lucide-react'
+import { DollarSign, Plus, X, FileSearch } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { ScreenerResultsPreviewDialog } from './ScreenerResultsPreviewDialog'
 
@@ -48,10 +48,6 @@ export function BacktestForm({ screenerSymbols = [] }: BacktestFormProps) {
     }
   }
 
-  const handleImportFromScreener = () => {
-    const uniqueSymbols = Array.from(new Set([...parameters.symbols, ...screenerSymbols]))
-    dispatch({ type: 'SET_SYMBOLS', symbols: uniqueSymbols })
-  }
 
   return (
     <>
@@ -152,18 +148,6 @@ export function BacktestForm({ screenerSymbols = [] }: BacktestFormProps) {
         <div className={`space-y-2 ${parameters.useScreenerResults ? 'opacity-50' : ''}`}>
           <div className="flex items-center justify-between">
             <Label>Symbols</Label>
-            {screenerSymbols.length > 0 && !parameters.useScreenerResults && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleImportFromScreener}
-                className="text-xs"
-              >
-                <Upload className="h-3 w-3 mr-1" />
-                Import {screenerSymbols.length} from screener
-              </Button>
-            )}
           </div>
           
           <div className="flex gap-2">
@@ -212,7 +196,7 @@ export function BacktestForm({ screenerSymbols = [] }: BacktestFormProps) {
           {parameters.symbols.length === 0 && !parameters.useScreenerResults && (
             <Alert className="mt-3">
               <AlertDescription className="text-xs">
-                Add symbols to backtest or import from screener results
+                Add symbols to backtest or use latest screener results
               </AlertDescription>
             </Alert>
           )}
