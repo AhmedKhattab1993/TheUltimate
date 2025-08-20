@@ -16,6 +16,8 @@ from ..models.backtest import (
 from ..services.backtest_manager import backtest_manager
 from ..services.lean_runner import LeanRunner
 from ..services.backtest_storage import BacktestStorage
+from ..services.backtest_queue_manager import BacktestQueueManager
+from ..services.cache_service import CacheService
 from ..services.screener_results import screener_results_manager
 from ..services.database import db_pool
 
@@ -427,6 +429,11 @@ async def start_bulk_backtests(request: BacktestRequest):
     creating separate backtests for each symbol on each day. This matches the behavior
     of the pipeline script for consistency.
     
+    Uses BacktestQueueManager for:
+    - Parallel execution with concurrency control
+    - Database storage of results
+    - Cleanup of temporary files
+    
     Args:
         request: Backtest configuration with date range and symbols
         
@@ -474,55 +481,84 @@ async def start_bulk_backtests(request: BacktestRequest):
                 detail="No symbols to backtest"
             )
         
-        # Create individual backtests
-        backtest_tasks = []
+        # Create cache service for database storage
+        cache_service = CacheService(
+            screener_ttl_hours=24,
+            backtest_ttl_days=7
+        )
+        
+        # Create queue manager with same settings as pipeline
+        queue_manager = BacktestQueueManager(
+            max_parallel=5,  # Same as pipeline default
+            startup_delay=15.0,  # Same as pipeline default
+            cache_service=cache_service,
+            enable_storage=True,  # Enable database storage
+            enable_cleanup=True   # Enable cleanup after storage
+        )
+        
+        # Create backtest requests for queue manager
+        backtest_requests = []
         total_backtests = len(trading_days) * len(symbols)
         
         logger.info(f"Starting bulk backtest: {len(trading_days)} days × {len(symbols)} symbols = {total_backtests} backtests")
         
-        for day_idx, trading_day in enumerate(trading_days, 1):
-            for symbol_idx, symbol in enumerate(symbols, 1):
-                # Create a new request for this specific symbol and day
-                single_request = BacktestRequest(
-                    strategy_name=request.strategy_name,
-                    initial_cash=request.initial_cash,
-                    start_date=trading_day,
-                    end_date=trading_day,
-                    symbols=[symbol],
-                    resolution=request.resolution,
-                    parameters=request.parameters
-                )
-                
-                # Start the backtest
-                try:
-                    run_info = await backtest_manager.start_backtest(single_request)
-                    backtest_tasks.append({
-                        "backtest_id": run_info.backtest_id,
-                        "symbol": symbol,
-                        "date": trading_day.isoformat(),
-                        "day_number": day_idx,
-                        "symbol_number": symbol_idx,
-                        "status": run_info.status.value
-                    })
-                except Exception as e:
-                    logger.error(f"Failed to start backtest for {symbol} on {trading_day}: {e}")
-                    backtest_tasks.append({
-                        "backtest_id": None,
-                        "symbol": symbol,
-                        "date": trading_day.isoformat(),
-                        "day_number": day_idx,
-                        "symbol_number": symbol_idx,
-                        "status": "failed",
-                        "error": str(e)
-                    })
+        for trading_day in trading_days:
+            for symbol in symbols:
+                # Create request in the format expected by queue manager
+                backtest_request = {
+                    'symbol': symbol,
+                    'strategy': request.strategy_name,
+                    'start_date': trading_day.strftime('%Y-%m-%d'),
+                    'end_date': trading_day.strftime('%Y-%m-%d'),
+                    'initial_cash': float(request.initial_cash),
+                    'resolution': request.resolution,
+                    'parameters': request.parameters or {}
+                }
+                backtest_requests.append(backtest_request)
+        
+        # Run backtests through queue manager (parallel execution)
+        results = await queue_manager.run_batch(
+            backtest_requests,
+            timeout_per_backtest=300,  # 5 minutes per backtest
+            retry_attempts=2,
+            continue_on_error=True
+        )
+        
+        # Process results
+        backtest_tasks = []
+        successful_count = 0
+        failed_count = 0
+        
+        for symbol, result in results.items():
+            if result.get('status') == 'completed':
+                successful_count += 1
+                status = 'completed'
+            else:
+                failed_count += 1
+                status = 'failed'
+            
+            # Extract date from symbol key (format: "SYMBOL_YYYY-MM-DD")
+            parts = symbol.split('_')
+            if len(parts) > 1:
+                date_str = parts[-1]
+                symbol_name = '_'.join(parts[:-1])
+            else:
+                date_str = trading_days[0].strftime('%Y-%m-%d')
+                symbol_name = symbol
+            
+            backtest_tasks.append({
+                "backtest_id": result.get('backtest_id'),
+                "symbol": symbol_name,
+                "date": date_str,
+                "status": status,
+                "error": result.get('error') if status == 'failed' else None
+            })
         
         # Return summary
-        successful_starts = sum(1 for task in backtest_tasks if task["backtest_id"] is not None)
-        
         return {
             "total_backtests": total_backtests,
-            "successful_starts": successful_starts,
-            "failed_starts": total_backtests - successful_starts,
+            "successful_starts": successful_count,
+            "failed_starts": failed_count,
             "trading_days": len(trading_days),
             "symbols": len(symbols),
             "date_range": {
@@ -616,6 +652,8 @@ async def start_screener_backtests(
     This endpoint queries the screener results database for symbols found
     on each day within the date range, then runs backtests for each
     symbol on its respective screening day.
+    
+    Uses BacktestQueueManager for parallel execution and database storage.
     """
     try:
         # Query screener results within date range
@@ -644,52 +682,89 @@ async def start_screener_backtests(
                 symbols_by_date[date_str] = []
             symbols_by_date[date_str].append(row['symbol'])
         
-        # Create backtests for each symbol on its screening day
-        backtest_tasks = []
+        # Create cache service for database storage
+        cache_service = CacheService(
+            screener_ttl_hours=24,
+            backtest_ttl_days=7
+        )
+        
+        # Create queue manager with same settings as pipeline
+        queue_manager = BacktestQueueManager(
+            max_parallel=5,
+            startup_delay=15.0,
+            cache_service=cache_service,
+            enable_storage=True,
+            enable_cleanup=True
+        )
+        
+        # Create backtest requests for queue manager
+        backtest_requests = []
         total_backtests = sum(len(symbols) for symbols in symbols_by_date.values())
         
         logger.info(f"Starting screener-based backtests: {len(symbols_by_date)} days, {total_backtests} total backtests")
         
         for date_str, symbols in symbols_by_date.items():
-            trading_day = date.fromisoformat(date_str)
-            
             for symbol in symbols:
-                # Create request for this symbol on this specific day
-                single_request = BacktestRequest(
-                    strategy_name=strategy_name,
-                    initial_cash=initial_cash,
-                    start_date=trading_day,
-                    end_date=trading_day,
-                    symbols=[symbol],
-                    resolution=resolution,
-                    parameters=parameters or {}
-                )
-                
-                try:
-                    run_info = await backtest_manager.start_backtest(single_request)
-                    backtest_tasks.append({
-                        "backtest_id": run_info.backtest_id,
-                        "symbol": symbol,
-                        "screening_date": date_str,
-                        "status": run_info.status.value
-                    })
-                except Exception as e:
-                    logger.error(f"Failed to start backtest for {symbol} on {trading_day}: {e}")
-                    backtest_tasks.append({
-                        "backtest_id": None,
-                        "symbol": symbol,
-                        "screening_date": date_str,
-                        "status": "failed",
-                        "error": str(e)
-                    })
+                # Create request in the format expected by queue manager
+                backtest_request = {
+                    'symbol': symbol,
+                    'strategy': strategy_name,
+                    'start_date': date_str,
+                    'end_date': date_str,
+                    'initial_cash': float(initial_cash),
+                    'resolution': resolution,
+                    'parameters': parameters or {}
+                }
+                backtest_requests.append(backtest_request)
+        
+        # Run backtests through queue manager (parallel execution)
+        results = await queue_manager.run_batch(
+            backtest_requests,
+            timeout_per_backtest=300,
+            retry_attempts=2,
+            continue_on_error=True
+        )
+        
+        # Process results
+        backtest_tasks = []
+        successful_count = 0
+        failed_count = 0
+        
+        for symbol, result in results.items():
+            if result.get('status') == 'completed':
+                successful_count += 1
+                status = 'completed'
+            else:
+                failed_count += 1
+                status = 'failed'
+            
+            # Extract date from symbol key
+            parts = symbol.split('_')
+            if len(parts) > 1:
+                date_str = parts[-1]
+                symbol_name = '_'.join(parts[:-1])
+            else:
+                # Find the date for this symbol from our original data
+                symbol_name = symbol
+                date_str = None
+                for date_key, syms in symbols_by_date.items():
+                    if symbol_name in syms:
+                        date_str = date_key
+                        break
+            
+            backtest_tasks.append({
+                "backtest_id": result.get('backtest_id'),
+                "symbol": symbol_name,
+                "screening_date": date_str,
+                "status": status,
+                "error": result.get('error') if status == 'failed' else None
+            })
         
         # Return summary
-        successful_starts = sum(1 for task in backtest_tasks if task["backtest_id"] is not None)
-        
         return {
             "total_backtests": total_backtests,
-            "successful_starts": successful_starts,
-            "failed_starts": total_backtests - successful_starts,
+            "successful_starts": successful_count,
+            "failed_starts": failed_count,
             "screening_days": len(symbols_by_date),
             "date_range": {
                 "start": start_date.isoformat(),
