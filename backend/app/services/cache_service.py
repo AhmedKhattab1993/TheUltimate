@@ -173,7 +173,8 @@ class CacheService:
     async def save_screener_results(
         self, 
         request: CachedScreenerRequest,
-        results: List[CachedScreenerResult]
+        results: List[CachedScreenerResult],
+        source: str = 'ui'
     ) -> bool:
         """
         Save screener results to cache.
@@ -181,6 +182,7 @@ class CacheService:
         Args:
             request: Screener request parameters
             results: List of screener results to save
+            source: Source of the screener run ('ui' or 'pipeline')
             
         Returns:
             True if saved successfully, False otherwise
@@ -203,10 +205,10 @@ class CacheService:
                     filter_prev_day_dollar_volume_enabled, filter_prev_day_dollar_volume,
                     filter_relative_volume_enabled, filter_relative_volume_recent_days,
                     filter_relative_volume_lookback_days, filter_relative_volume_min_ratio,
-                    session_id, created_at
+                    session_id, created_at, source
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-                    $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
+                    $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26
                 )
             """
             
@@ -238,7 +240,8 @@ class CacheService:
                     request.relative_volume_lookback_days,
                     self._convert_decimal_to_float(request.relative_volume_min_ratio),
                     session_id,
-                    result.created_at
+                    result.created_at,
+                    source
                 ))
             
             # Execute batch insert

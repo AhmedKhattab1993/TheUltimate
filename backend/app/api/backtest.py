@@ -700,42 +700,143 @@ async def get_screener_results_grouped():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/run-screener-backtests")
-async def start_screener_backtests(
-    start_date: date = Query(..., description="Start date for screener results"),
-    end_date: date = Query(..., description="End date for screener results"),
-    strategy_name: str = Query(..., description="Strategy to use"),
-    initial_cash: float = Query(100000, description="Initial cash amount"),
-    resolution: str = Query("Minute", description="Data resolution"),
-    parameters: Optional[Dict[str, Any]] = None
-):
+@router.get("/screener-results/latest-ui-session")
+async def get_latest_ui_screener_session():
     """
-    Start backtests for screener results within a date range.
+    Get the latest screener session from UI runs only.
     
-    This endpoint queries the screener results database for symbols found
-    on each day within the date range, then runs backtests for each
-    symbol on its respective screening day.
-    
-    Uses BacktestQueueManager for parallel execution and database storage.
+    Returns the most recent screener session that was run from the UI,
+    with all symbols and their respective screening dates.
     """
     try:
-        # Query screener results within date range
+        # Query for the latest UI session
         query = """
-        SELECT DISTINCT
-            data_date,
-            symbol
-        FROM screener_results
-        WHERE data_date >= $1 AND data_date <= $2
-        ORDER BY data_date DESC, symbol
+        WITH latest_session AS (
+            SELECT session_id, MAX(created_at) as latest_created
+            FROM screener_results
+            WHERE source = 'ui'
+            GROUP BY session_id
+            ORDER BY latest_created DESC
+            LIMIT 1
+        )
+        SELECT 
+            sr.data_date,
+            sr.symbol,
+            sr.session_id,
+            sr.created_at
+        FROM screener_results sr
+        JOIN latest_session ls ON sr.session_id = ls.session_id
+        WHERE sr.source = 'ui'
+        ORDER BY sr.data_date DESC, sr.symbol
         """
         
-        rows = await db_pool.fetch(query, start_date, end_date)
+        rows = await db_pool.fetch(query)
         
         if not rows:
             raise HTTPException(
                 status_code=404,
-                detail=f"No screener results found between {start_date} and {end_date}"
+                detail="No UI screener sessions found"
             )
+        
+        # Group symbols by date
+        session_id = rows[0]['session_id']
+        created_at = rows[0]['created_at']
+        symbols_by_date = {}
+        all_symbols = set()
+        
+        for row in rows:
+            date_str = row['data_date'].isoformat()
+            if date_str not in symbols_by_date:
+                symbols_by_date[date_str] = []
+            symbols_by_date[date_str].append(row['symbol'])
+            all_symbols.add(row['symbol'])
+        
+        # Get date range
+        dates = sorted(symbols_by_date.keys())
+        
+        return {
+            "session_id": session_id,
+            "created_at": created_at.isoformat(),
+            "date_range": {
+                "start": dates[-1] if dates else None,  # Earliest date
+                "end": dates[0] if dates else None      # Latest date
+            },
+            "total_days": len(symbols_by_date),
+            "total_symbols": len(all_symbols),
+            "symbols_by_date": symbols_by_date,
+            "all_symbols": sorted(list(all_symbols))
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting latest UI screener session: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/run-screener-backtests")
+async def start_screener_backtests(
+    start_date: Optional[date] = Query(None, description="Start date for screener results"),
+    end_date: Optional[date] = Query(None, description="End date for screener results"),
+    strategy_name: str = Query(..., description="Strategy to use"),
+    initial_cash: float = Query(100000, description="Initial cash amount"),
+    resolution: str = Query("Minute", description="Data resolution"),
+    parameters: Optional[Dict[str, Any]] = None,
+    use_latest_ui_session: bool = Query(False, description="Use latest UI screener session instead of date range")
+):
+    """
+    Start backtests for screener results.
+    
+    If use_latest_ui_session is True, uses the most recent UI screener session.
+    Otherwise, queries screener results within the provided date range.
+    
+    Runs backtests for each symbol on its respective screening day.
+    Uses BacktestQueueManager for parallel execution and database storage.
+    """
+    try:
+        if use_latest_ui_session:
+            # Query for the latest UI session
+            query = """
+            WITH latest_session AS (
+                SELECT session_id
+                FROM screener_results
+                WHERE source = 'ui'
+                GROUP BY session_id
+                ORDER BY MAX(created_at) DESC
+                LIMIT 1
+            )
+            SELECT DISTINCT
+                data_date,
+                symbol
+            FROM screener_results
+            WHERE session_id = (SELECT session_id FROM latest_session)
+            ORDER BY data_date DESC, symbol
+            """
+            rows = await db_pool.fetch(query)
+        else:
+            # Original behavior - query by date range
+            if not start_date or not end_date:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Either provide start_date and end_date, or set use_latest_ui_session=true"
+                )
+            
+            query = """
+            SELECT DISTINCT
+                data_date,
+                symbol
+            FROM screener_results
+            WHERE data_date >= $1 AND data_date <= $2
+            ORDER BY data_date DESC, symbol
+            """
+            rows = await db_pool.fetch(query, start_date, end_date)
+        
+        if not rows:
+            if use_latest_ui_session:
+                detail = "No UI screener results found in the latest session"
+            else:
+                detail = f"No screener results found between {start_date} and {end_date}"
+            raise HTTPException(status_code=404, detail=detail)
         
         # Group symbols by date
         symbols_by_date = {}

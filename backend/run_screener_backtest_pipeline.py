@@ -250,10 +250,10 @@ class ScreenerBacktestPipeline:
                     )
                     cache_results.append(cache_result)
                 
-                # Save all results
-                success = await self.cache_service.save_screener_results(cache_request, cache_results)
+                # Save all results with 'pipeline' as source
+                success = await self.cache_service.save_screener_results(cache_request, cache_results, source='pipeline')
                 if success:
-                    logger.info(f"Saved {len(cache_results)} screener results to cache")
+                    logger.info(f"Saved {len(cache_results)} screener results to cache with source='pipeline'")
                 else:
                     logger.warning("Failed to save screener results to cache")
             

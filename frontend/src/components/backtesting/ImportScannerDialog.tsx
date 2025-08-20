@@ -15,14 +15,16 @@ import { Calendar, FileSearch, AlertCircle } from 'lucide-react'
 import { format } from 'date-fns'
 import { getApiUrl } from '@/services/api'
 
-interface ScreenerResultGroup {
-  date: string
-  sessions: Array<{
-    session_id: string
-    symbol_count: number
-    symbols: string[]
-  }>
+interface LatestUISession {
+  session_id: string
+  created_at: string
+  date_range: {
+    start: string
+    end: string
+  }
+  total_days: number
   total_symbols: number
+  symbols_by_date: Record<string, string[]>
   all_symbols: string[]
 }
 
@@ -45,92 +47,54 @@ export function ImportScannerDialog({
 }: ImportScannerDialogProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [screenerResults, setScreenerResults] = useState<ScreenerResultGroup[]>([])
-  const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set())
-  const [totalSymbols, setTotalSymbols] = useState(0)
+  const [latestSession, setLatestSession] = useState<LatestUISession | null>(null)
 
   useEffect(() => {
     if (open) {
-      fetchScreenerResults()
+      fetchLatestUISession()
     }
   }, [open])
 
-  const fetchScreenerResults = async () => {
+  const fetchLatestUISession = async () => {
     setLoading(true)
     setError(null)
     
     try {
-      const response = await fetch(`${getApiUrl()}/api/v2/backtest/screener-results/grouped`)
+      const response = await fetch(`${getApiUrl()}/api/v2/backtest/screener-results/latest-ui-session`)
       if (!response.ok) {
-        throw new Error('Failed to fetch screener results')
+        if (response.status === 404) {
+          throw new Error('No screener results found. Please run a screener first.')
+        }
+        throw new Error('Failed to fetch latest screener session')
       }
       
       const data = await response.json()
-      setScreenerResults(data.results || [])
-      
-      // Select all dates by default
-      const allDates = new Set(data.results.map((r: ScreenerResultGroup) => r.date))
-      setSelectedDates(allDates)
-      
-      // Calculate total symbols
-      const total = data.results.reduce((sum: number, group: ScreenerResultGroup) => {
-        return sum + group.total_symbols
-      }, 0)
-      setTotalSymbols(total)
+      setLatestSession(data)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load screener results')
+      setError(err instanceof Error ? err.message : 'Failed to load latest screener session')
     } finally {
       setLoading(false)
     }
   }
 
-  const handleDateToggle = (date: string) => {
-    const newSelected = new Set(selectedDates)
-    if (newSelected.has(date)) {
-      newSelected.delete(date)
-    } else {
-      newSelected.add(date)
-    }
-    setSelectedDates(newSelected)
-  }
-
-  const handleSelectAll = () => {
-    if (selectedDates.size === screenerResults.length) {
-      setSelectedDates(new Set())
-    } else {
-      const allDates = new Set(screenerResults.map(r => r.date))
-      setSelectedDates(allDates)
-    }
-  }
-
-  const calculateSelectedBacktests = () => {
-    return screenerResults
-      .filter(group => selectedDates.has(group.date))
-      .reduce((sum, group) => sum + group.total_symbols, 0)
-  }
 
   const handleImport = async () => {
-    if (selectedDates.size === 0) {
-      setError('Please select at least one date')
+    if (!latestSession) {
+      setError('No session data available')
       return
     }
 
-    const sortedDates = Array.from(selectedDates).sort()
-    const dateRange = {
-      start: sortedDates[sortedDates.length - 1], // Earliest date
-      end: sortedDates[0] // Latest date
-    }
+    const dateRange = latestSession.date_range
 
     setLoading(true)
     setError(null)
 
     try {
-      // Start backtests for screener results
+      // Start backtests for latest UI screener session
       const response = await fetch(
         `${getApiUrl()}/api/v2/backtest/run-screener-backtests?` + 
         new URLSearchParams({
-          start_date: dateRange.start,
-          end_date: dateRange.end,
+          use_latest_ui_session: 'true',
           strategy_name: parameters.strategy,
           initial_cash: parameters.initialCash.toString(),
           resolution: 'Minute',
@@ -164,10 +128,10 @@ export function ImportScannerDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileSearch className="h-5 w-5" />
-            Import Scanner Results
+            Import Latest Scanner Results
           </DialogTitle>
           <DialogDescription>
-            Select screening dates to import. Backtests will run for each symbol on its screening day.
+            Import symbols from your most recent screening session. Backtests will run for each symbol on its screening day.
           </DialogDescription>
         </DialogHeader>
 
@@ -180,103 +144,91 @@ export function ImportScannerDialog({
 
         <div className="space-y-4">
           {/* Summary */}
-          <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
-            <div className="flex items-center gap-4">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleSelectAll}
-                disabled={loading}
-              >
-                {selectedDates.size === screenerResults.length ? 'Deselect All' : 'Select All'}
-              </Button>
-              <span className="text-sm text-muted-foreground">
-                {selectedDates.size} of {screenerResults.length} dates selected
-              </span>
+          {latestSession && (
+            <div className="p-4 bg-muted rounded-lg space-y-3">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Session Date</p>
+                  <p className="font-medium">
+                    {format(new Date(latestSession.created_at), 'MMMM d, yyyy h:mm a')}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Date Range</p>
+                  <p className="font-medium">
+                    {format(new Date(latestSession.date_range.start), 'MMM d')} - 
+                    {format(new Date(latestSession.date_range.end), 'MMM d, yyyy')}
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Trading Days</p>
+                  <p className="font-medium">{latestSession.total_days}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Total Backtests</p>
+                  <p className="font-medium">{latestSession.total_symbols}</p>
+                </div>
+              </div>
             </div>
-            <div className="text-sm">
-              <span className="font-medium">{calculateSelectedBacktests()}</span>
-              <span className="text-muted-foreground"> backtests will be created</span>
-            </div>
-          </div>
+          )}
 
-          {/* Results list */}
+          {/* Symbols by date */}
           <div className="h-[400px] overflow-y-auto pr-4">
             {loading ? (
               <div className="flex items-center justify-center py-8">
-                <div className="text-muted-foreground">Loading screener results...</div>
+                <div className="text-muted-foreground">Loading latest screener session...</div>
               </div>
-            ) : screenerResults.length === 0 ? (
+            ) : !latestSession ? (
               <div className="flex flex-col items-center justify-center py-8 text-center">
                 <FileSearch className="h-12 w-12 text-muted-foreground mb-4" />
-                <p className="text-muted-foreground">No screener results found in database</p>
+                <p className="text-muted-foreground">No screener results found</p>
                 <p className="text-sm text-muted-foreground mt-2">
                   Run a screening first to generate results
                 </p>
               </div>
             ) : (
               <div className="space-y-3">
-                {screenerResults.map((group) => (
-                  <div
-                    key={group.date}
-                    className={`p-4 border rounded-lg transition-colors ${
-                      selectedDates.has(group.date) 
-                        ? 'bg-accent/50 border-accent' 
-                        : 'hover:bg-muted/50'
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <Checkbox
-                        checked={selectedDates.has(group.date)}
-                        onCheckedChange={() => handleDateToggle(group.date)}
-                        className="mt-1"
-                      />
-                      <div className="flex-1 space-y-2">
+                {Object.entries(latestSession.symbols_by_date)
+                  .sort(([a], [b]) => b.localeCompare(a))
+                  .map(([date, symbols]) => (
+                    <div key={date} className="p-4 border rounded-lg bg-muted/50">
+                      <div className="space-y-2">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <Calendar className="h-4 w-4 text-muted-foreground" />
                             <span className="font-medium">
-                              {format(new Date(group.date), 'EEEE, MMMM d, yyyy')}
+                              {format(new Date(date), 'EEEE, MMMM d, yyyy')}
                             </span>
                           </div>
                           <Badge variant="secondary">
-                            {group.total_symbols} symbols
+                            {symbols.length} symbols
                           </Badge>
                         </div>
                         
-                        {/* Sessions */}
-                        {group.sessions.map((session) => (
-                          <div key={session.session_id} className="ml-6 text-sm">
-                            <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                              <span>Session {session.session_id.slice(0, 8)}</span>
-                              <span>•</span>
-                              <span>{session.symbol_count} symbols</span>
-                            </div>
-                            <div className="flex flex-wrap gap-1">
-                              {session.symbols.slice(0, 10).map((symbol) => (
-                                <Badge 
-                                  key={symbol} 
-                                  variant="outline" 
-                                  className="text-xs py-0 h-5"
-                                >
-                                  {symbol}
-                                </Badge>
-                              ))}
-                              {session.symbols.length > 10 && (
-                                <Badge 
-                                  variant="outline" 
-                                  className="text-xs py-0 h-5 text-muted-foreground"
-                                >
-                                  +{session.symbols.length - 10} more
-                                </Badge>
-                              )}
-                            </div>
-                          </div>
-                        ))}
+                        <div className="flex flex-wrap gap-1 ml-6">
+                          {symbols.slice(0, 15).map((symbol) => (
+                            <Badge 
+                              key={symbol} 
+                              variant="outline" 
+                              className="text-xs py-0 h-5"
+                            >
+                              {symbol}
+                            </Badge>
+                          ))}
+                          {symbols.length > 15 && (
+                            <Badge 
+                              variant="outline" 
+                              className="text-xs py-0 h-5 text-muted-foreground"
+                            >
+                              +{symbols.length - 15} more
+                            </Badge>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
               </div>
             )}
           </div>
@@ -288,9 +240,9 @@ export function ImportScannerDialog({
           </Button>
           <Button 
             onClick={handleImport} 
-            disabled={loading || selectedDates.size === 0}
+            disabled={loading || !latestSession}
           >
-            {loading ? 'Starting Backtests...' : `Import ${calculateSelectedBacktests()} Backtests`}
+            {loading ? 'Starting Backtests...' : `Import ${latestSession?.total_symbols || 0} Backtests`}
           </Button>
         </DialogFooter>
       </DialogContent>

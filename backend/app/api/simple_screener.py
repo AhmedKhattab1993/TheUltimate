@@ -293,10 +293,10 @@ async def _process_single_day(
                 )
                 cache_results.append(cache_result)
             
-            # Save to database
-            success = await cache_service.save_screener_results(cache_request, cache_results)
+            # Save to database with 'ui' as source since this is called from frontend
+            success = await cache_service.save_screener_results(cache_request, cache_results, source='ui')
             if success:
-                logger.info(f"[{trading_date}] Saved {len(cache_results)} results to database")
+                logger.info(f"[{trading_date}] Saved {len(cache_results)} results to database with source='ui'")
             else:
                 logger.warning(f"[{trading_date}] Failed to save results to database")
             
