@@ -9,6 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { useBacktestContext } from '@/contexts/BacktestContext'
 import { DollarSign, Plus, X, Upload, FileSearch } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { ScreenerResultsPreviewDialog } from './ScreenerResultsPreviewDialog'
 
 interface BacktestFormProps {
   screenerSymbols?: string[]
@@ -18,6 +19,7 @@ export function BacktestForm({ screenerSymbols = [] }: BacktestFormProps) {
   const { state, dispatch } = useBacktestContext()
   const { parameters } = state
   const [symbolInput, setSymbolInput] = useState('')
+  const [showPreviewDialog, setShowPreviewDialog] = useState(false)
 
   const handleCashChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseFloat(e.target.value) || 0
@@ -52,8 +54,9 @@ export function BacktestForm({ screenerSymbols = [] }: BacktestFormProps) {
   }
 
   return (
-    <Card>
-      <CardHeader>
+    <>
+      <Card>
+        <CardHeader>
         <CardTitle>Backtest Parameters</CardTitle>
         <CardDescription>
           Configure your backtest settings
@@ -118,11 +121,17 @@ export function BacktestForm({ screenerSymbols = [] }: BacktestFormProps) {
             id="use-screener"
             checked={parameters.useScreenerResults || false}
             onCheckedChange={(checked) => {
-              dispatch({ 
-                type: 'SET_PARAMETER', 
-                field: 'useScreenerResults', 
-                value: checked === true 
-              })
+              if (checked === true) {
+                // Show preview dialog when checking
+                setShowPreviewDialog(true)
+              } else {
+                // Uncheck directly
+                dispatch({ 
+                  type: 'SET_PARAMETER', 
+                  field: 'useScreenerResults', 
+                  value: false 
+                })
+              }
             }}
           />
           <div className="flex-1">
@@ -207,17 +216,25 @@ export function BacktestForm({ screenerSymbols = [] }: BacktestFormProps) {
               </AlertDescription>
             </Alert>
           )}
-          
-          {parameters.useScreenerResults && (
-            <Alert className="mt-3">
-              <AlertDescription className="text-xs">
-                <FileSearch className="h-3 w-3 inline mr-1" />
-                Will use symbols from the latest UI screener session. Each symbol will be backtested on its respective screening day.
-              </AlertDescription>
-            </Alert>
-          )}
         </div>
       </CardContent>
-    </Card>
+      </Card>
+
+      {/* Screener Results Preview Dialog */}
+      <ScreenerResultsPreviewDialog
+        open={showPreviewDialog}
+        onConfirm={() => {
+          dispatch({ 
+            type: 'SET_PARAMETER', 
+            field: 'useScreenerResults', 
+            value: true 
+          })
+          setShowPreviewDialog(false)
+        }}
+        onCancel={() => {
+          setShowPreviewDialog(false)
+        }}
+      />
+    </>
   )
 }

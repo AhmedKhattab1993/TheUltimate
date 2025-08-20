@@ -8,7 +8,7 @@ import { BacktestResultsView } from '../results/BacktestResultsView'
 import { MarketStructureForm } from './MarketStructureForm'
 import { useBacktestContext } from '@/contexts/BacktestContext'
 import { useResultsContext } from '@/contexts/ResultsContext'
-import { Play, RefreshCw, AlertCircle, FileSearch } from 'lucide-react'
+import { Play, RefreshCw, AlertCircle } from 'lucide-react'
 import { format } from 'date-fns'
 import { getApiUrl } from '@/services/api'
 
