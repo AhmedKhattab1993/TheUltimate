@@ -569,7 +569,7 @@ class GapFilter(EnhancedBaseFilter):
     Gap percentage = ((today_open - yesterday_close) / yesterday_close) * 100
     """
     
-    def __init__(self, gap_threshold: float = 2.0, direction: str = "both", 
+    def __init__(self, gap_threshold: float = 2.0, direction: str = "any", 
                  name: str = "GapFilter"):
         """
         Initialize gap filter.

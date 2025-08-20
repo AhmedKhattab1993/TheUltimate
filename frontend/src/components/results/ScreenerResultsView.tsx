@@ -191,11 +191,14 @@ export function ScreenerResultsView() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-48">Date</TableHead>
-                  <TableHead className="w-96">Filters</TableHead>
-                  <TableHead className="text-center w-32">Symbols Found</TableHead>
-                  <TableHead className="text-center w-32">Total Screened</TableHead>
-                  <TableHead className="text-center w-32">Execution Time</TableHead>
+                  <TableHead className="w-32">Created Date</TableHead>
+                  <TableHead className="w-32">Screening Date</TableHead>
+                  <TableHead className="w-24">Price Range</TableHead>
+                  <TableHead className="w-24">Price vs MA</TableHead>
+                  <TableHead className="w-20">RSI</TableHead>
+                  <TableHead className="w-20">Gap</TableHead>
+                  <TableHead className="w-24">Volume</TableHead>
+                  <TableHead className="w-20">Rel Vol</TableHead>
                   <TableHead className="text-right w-24">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -203,33 +206,95 @@ export function ScreenerResultsView() {
                 {state.screenerResults.data.map((result) => (
                   <TableRow key={result.id}>
                     <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Clock className="h-4 w-4 text-muted-foreground" />
+                      {/* Show created date from timestamp/created_at */}
+                      <div className="text-sm">
                         {result.timestamp || result.created_at ? 
-                          format(parseISO(result.timestamp || result.created_at), 'PPp') : 
+                          format(parseISO(result.timestamp || result.created_at), 'MMM d, yyyy HH:mm') : 
                           'N/A'
                         }
                       </div>
                     </TableCell>
+                    
                     <TableCell>
-                      <div className="text-sm leading-relaxed">
-                        <span className="break-words">{formatFilters(result.filters)}</span>
+                      {/* Show screening date from filters */}
+                      <div className="text-sm">
+                        {result.filters.start_date && result.filters.end_date ? (
+                          result.filters.start_date === result.filters.end_date ? 
+                            format(parseISO(result.filters.start_date), 'MMM d, yyyy') :
+                            `${format(parseISO(result.filters.start_date), 'MMM d')} - ${format(parseISO(result.filters.end_date), 'MMM d, yyyy')}`
+                        ) : result.filters.start_date ? 
+                          `From ${format(parseISO(result.filters.start_date), 'MMM d, yyyy')}` :
+                          result.filters.end_date ?
+                          `Until ${format(parseISO(result.filters.end_date), 'MMM d, yyyy')}` :
+                          'N/A'
+                        }
                       </div>
                     </TableCell>
-                    <TableCell className="text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <Hash className="h-4 w-4 text-muted-foreground" />
-                        <span className="font-medium">{result.symbol_count}</span>
+                    
+                    {/* Price Range */}
+                    <TableCell>
+                      <div className="text-xs">
+                        {result.filters.min_price !== undefined || result.filters.max_price !== undefined ? (
+                          result.filters.min_price !== undefined && result.filters.max_price !== undefined ? 
+                            `$${result.filters.min_price.toFixed(0)}-${result.filters.max_price.toFixed(0)}` :
+                            result.filters.min_price !== undefined ? 
+                              `≥$${result.filters.min_price.toFixed(0)}` :
+                              `≤$${result.filters.max_price.toFixed(0)}`
+                        ) : '-'}
                       </div>
                     </TableCell>
-                    <TableCell className="text-center">
-                      {result.total_symbols_screened ? result.total_symbols_screened.toLocaleString() : '0'}
+                    
+                    {/* Price vs MA */}
+                    <TableCell>
+                      <div className="text-xs">
+                        {result.filters.price_vs_ma?.enabled ? 
+                          `${result.filters.price_vs_ma.condition === 'above' ? '>' : '<'} SMA${result.filters.price_vs_ma.ma_period || 20}` : 
+                          '-'
+                        }
+                      </div>
                     </TableCell>
-                    <TableCell className="text-center">
-                      {result.execution_time_ms !== undefined && result.execution_time_ms !== null ? 
-                        `${result.execution_time_ms.toFixed(0)}ms` : '0ms'
-                      }
+                    
+                    {/* RSI */}
+                    <TableCell>
+                      <div className="text-xs">
+                        {result.filters.rsi?.enabled ? 
+                          `${result.filters.rsi.condition === 'above' ? '>' : '<'}${result.filters.rsi.threshold}` : 
+                          '-'
+                        }
+                      </div>
                     </TableCell>
+                    
+                    {/* Gap */}
+                    <TableCell>
+                      <div className="text-xs">
+                        {result.filters.gap?.enabled ? 
+                          `${result.filters.gap.direction !== 'any' ? result.filters.gap.direction + ' ' : ''}≥${result.filters.gap.gap_threshold}%` : 
+                          '-'
+                        }
+                      </div>
+                    </TableCell>
+                    
+                    {/* Volume */}
+                    <TableCell>
+                      <div className="text-xs">
+                        {result.filters.prev_day_dollar_volume?.enabled ? (
+                          result.filters.prev_day_dollar_volume.min_dollar_volume >= 1_000_000 ? 
+                            `≥$${(result.filters.prev_day_dollar_volume.min_dollar_volume / 1_000_000).toFixed(1)}M` :
+                            `≥$${(result.filters.prev_day_dollar_volume.min_dollar_volume / 1_000).toFixed(0)}K`
+                        ) : '-'}
+                      </div>
+                    </TableCell>
+                    
+                    {/* Relative Volume */}
+                    <TableCell>
+                      <div className="text-xs">
+                        {result.filters.relative_volume?.enabled ? 
+                          `≥${result.filters.relative_volume.min_ratio}x` : 
+                          '-'
+                        }
+                      </div>
+                    </TableCell>
+                    
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
                         <Button
