@@ -804,11 +804,12 @@ async def start_screener_backtests(request: ScreenerBacktestRequest):
                 LIMIT 1
             )
             SELECT DISTINCT
-                data_date,
-                symbol
-            FROM screener_results
-            WHERE session_id = (SELECT session_id FROM latest_session)
-            ORDER BY data_date DESC, symbol
+                sr.session_id,
+                sr.data_date,
+                sr.symbol
+            FROM screener_results sr
+            WHERE sr.session_id = (SELECT session_id FROM latest_session)
+            ORDER BY sr.data_date DESC, sr.symbol
             """
             rows = await db_pool.fetch(query)
         else:
@@ -836,9 +837,14 @@ async def start_screener_backtests(request: ScreenerBacktestRequest):
                 detail = f"No screener results found between {request.start_date} and {request.end_date}"
             raise HTTPException(status_code=404, detail=detail)
         
-        # Group symbols by date
+        # Extract session_id and group symbols by date
+        screener_session_id = None
         symbols_by_date = {}
         for row in rows:
+            # Get session_id if available (from latest UI session query)
+            if 'session_id' in row and screener_session_id is None:
+                screener_session_id = row['session_id']
+            
             date_str = row['data_date'].isoformat()
             if date_str not in symbols_by_date:
                 symbols_by_date[date_str] = []
@@ -856,7 +862,8 @@ async def start_screener_backtests(request: ScreenerBacktestRequest):
             startup_delay=15.0,
             cache_service=cache_service,
             enable_storage=True,
-            enable_cleanup=True
+            enable_cleanup=True,
+            screener_session_id=screener_session_id  # Pass session_id if available
         )
         
         # Create backtest requests for queue manager
@@ -875,7 +882,8 @@ async def start_screener_backtests(request: ScreenerBacktestRequest):
                     'end_date': date_str,
                     'initial_cash': float(request.initial_cash),
                     'resolution': request.resolution,
-                    'parameters': request.parameters or {}
+                    'parameters': request.parameters or {},
+                    'screening_date': date_str  # Track which screening date triggered this backtest
                 }
                 backtest_requests.append(backtest_request)
         

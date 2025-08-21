@@ -4,6 +4,7 @@ import { useResultsContext } from '@/contexts/ResultsContext'
 import { useResults } from '@/hooks/useResults'
 import { ScreenerResultsView } from './ScreenerResultsView'
 import { BacktestResultsView } from './BacktestResultsView'
+import { CombinedResultsView } from './CombinedResultsView'
 
 export function ResultsTab() {
   const { state, dispatch } = useResultsContext()
@@ -13,9 +14,10 @@ export function ResultsTab() {
   useEffect(() => {
     if (state.activeTab === 'screener') {
       fetchScreenerResults()
-    } else {
+    } else if (state.activeTab === 'backtest') {
       fetchBacktestResults()
     }
+    // Combined tab fetches its own data
   }, [state.activeTab, state.screenerResults.page, state.backtestResults.page, fetchScreenerResults, fetchBacktestResults])
 
   return (
@@ -31,9 +33,9 @@ export function ResultsTab() {
       {/* Results Tabs */}
       <Tabs
         value={state.activeTab}
-        onValueChange={(value) => dispatch({ type: 'SET_ACTIVE_TAB', tab: value as 'screener' | 'backtest' })}
+        onValueChange={(value) => dispatch({ type: 'SET_ACTIVE_TAB', tab: value as 'screener' | 'backtest' | 'combined' })}
       >
-        <TabsList className="grid w-full grid-cols-2">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="screener">
             Screener Results
             {state.screenerResults.totalCount > 0 && (
@@ -50,6 +52,9 @@ export function ResultsTab() {
               </span>
             )}
           </TabsTrigger>
+          <TabsTrigger value="combined">
+            Combined Results
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="screener" className="mt-6">
@@ -58,6 +63,10 @@ export function ResultsTab() {
 
         <TabsContent value="backtest" className="mt-6">
           <BacktestResultsView />
+        </TabsContent>
+        
+        <TabsContent value="combined" className="mt-6">
+          <CombinedResultsView />
         </TabsContent>
       </Tabs>
     </div>

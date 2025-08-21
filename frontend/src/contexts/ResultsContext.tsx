@@ -75,7 +75,7 @@ export interface BacktestResultSummary {
 }
 
 export interface ResultsState {
-  activeTab: 'screener' | 'backtest'
+  activeTab: 'screener' | 'backtest' | 'combined'
   screenerResults: {
     data: ScreenerResultSummary[]
     loading: boolean
@@ -100,7 +100,7 @@ export interface ResultsState {
 
 // Action types
 type ResultsAction =
-  | { type: 'SET_ACTIVE_TAB'; tab: 'screener' | 'backtest' }
+  | { type: 'SET_ACTIVE_TAB'; tab: 'screener' | 'backtest' | 'combined' }
   | { type: 'SET_SCREENER_RESULTS'; data: ScreenerResultSummary[]; totalCount: number }
   | { type: 'SET_BACKTEST_RESULTS'; data: BacktestResultSummary[]; totalCount: number }
   | { type: 'SET_SCREENER_LOADING'; loading: boolean }

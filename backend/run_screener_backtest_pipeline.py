@@ -266,12 +266,14 @@ class ScreenerBacktestPipeline:
             logger.error(f"Screening failed: {e}")
             raise
     
-    async def run_backtests(self, symbols: List[str], date_range: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    async def run_backtests(self, symbols: List[str], date_range: Optional[Dict[str, str]] = None, 
+                           screening_date: Optional[str] = None) -> Dict[str, Any]:
         """Run backtests for all symbols and collect results.
         
         Args:
             symbols: List of symbols to backtest
             date_range: Optional date range override. If not provided, uses config.
+            screening_date: Optional date when screening was performed that triggered these backtests
         """
         logger.info(f"Starting backtests for {len(symbols)} symbols...")
         
@@ -396,6 +398,9 @@ class ScreenerBacktestPipeline:
                 'resolution': backtest_config.get('resolution', 'Daily'),
                 'parameters': backtest_config['parameters']
             }
+            # Add screening date if provided
+            if screening_date:
+                request['screening_date'] = screening_date
             backtest_requests.append(request)
         
         # Apply max_backtests limit if set
@@ -558,7 +563,8 @@ class ScreenerBacktestPipeline:
                 'start': date_str,
                 'end': date_str
             }
-            backtest_results = await self.run_backtests(symbols, backtest_date_range)
+            # Pass the screening date to track which day's screening triggered these backtests
+            backtest_results = await self.run_backtests(symbols, backtest_date_range, screening_date=date_str)
             
             return {
                 'date': date_str,
@@ -593,6 +599,9 @@ class ScreenerBacktestPipeline:
             # Generate a session ID for this pipeline run
             self.pipeline_session_id = uuid4()
             logger.info(f"Pipeline session ID: {self.pipeline_session_id}")
+            
+            # Update queue manager with the session ID
+            self.queue_manager.screener_session_id = self.pipeline_session_id
             
             # Clean expired cache if configured
             if self.cache_enabled and self.config.get('caching', {}).get('cleanup_on_startup', True):

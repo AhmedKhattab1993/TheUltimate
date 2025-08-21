@@ -51,7 +51,8 @@ class BacktestQueueManager:
     def __init__(self, max_parallel: int = 5, startup_delay: float = 15.0, 
                  cache_service: Optional[CacheService] = None,
                  enable_storage: bool = True,
-                 enable_cleanup: bool = True):
+                 enable_cleanup: bool = True,
+                 screener_session_id: Optional[uuid.UUID] = None):
         """
         Initialize the queue manager.
         
@@ -61,6 +62,7 @@ class BacktestQueueManager:
             cache_service: Optional cache service for checking/storing results
             enable_storage: Whether to store results to database
             enable_cleanup: Whether to cleanup files after storage
+            screener_session_id: Optional screener session ID for linking results
         """
         self.max_parallel = max_parallel
         self.startup_delay = startup_delay
@@ -74,6 +76,7 @@ class BacktestQueueManager:
         self.enable_storage = enable_storage
         self.enable_cleanup = enable_cleanup
         self.backtest_storage = BacktestStorage() if enable_storage else None
+        self.screener_session_id = screener_session_id
         
     def set_completion_callback(self, callback: Callable):
         """Set a callback function for completion notification."""
@@ -563,6 +566,15 @@ class BacktestQueueManager:
             # Database save is already handled by cache_service.save_backtest_results() above
             # Removed duplicate database save operation to prevent duplicate entries
             
+            # Save link to screener_backtest_links if we have a screener_session_id
+            if self.screener_session_id and 'screening_date' in task.request_data:
+                await self._save_screener_backtest_link(
+                    screener_session_id=self.screener_session_id,
+                    backtest_id=cache_hash,
+                    symbol=task.symbol,
+                    data_date=task.request_data['screening_date']
+                )
+            
             # Add statistics to task result for immediate use
             task.result['statistics'] = statistics
             
@@ -809,4 +821,50 @@ class BacktestQueueManager:
         except Exception as e:
             logger.error(f"Error cleaning up backtest files at {result_path}: {e}")
             # Don't raise - cleanup failures shouldn't affect the pipeline
+    
+    async def _save_screener_backtest_link(self, screener_session_id: uuid.UUID, 
+                                          backtest_id: str, symbol: str, 
+                                          data_date: str) -> None:
+        """
+        Save link between screener session and backtest result.
+        
+        Args:
+            screener_session_id: UUID of the screener session
+            backtest_id: Cache hash/ID of the backtest
+            symbol: Stock symbol
+            data_date: Date of screening that triggered this backtest
+        """
+        try:
+            # Get database connection
+            from ..services.database import db_pool
+            
+            # Convert date string to date object if needed
+            from datetime import datetime
+            if isinstance(data_date, str):
+                date_obj = datetime.strptime(data_date, '%Y-%m-%d').date()
+            else:
+                date_obj = data_date
+            
+            # Insert link
+            query = """
+            INSERT INTO screener_backtest_links 
+                (screener_session_id, backtest_id, symbol, data_date)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (screener_session_id, backtest_id, symbol, data_date) 
+            DO NOTHING
+            """
+            
+            await db_pool.execute(
+                query, 
+                screener_session_id, 
+                backtest_id, 
+                symbol, 
+                date_obj
+            )
+            
+            logger.info(f"Saved screener-backtest link for {symbol} on {data_date}")
+            
+        except Exception as e:
+            logger.error(f"Error saving screener-backtest link: {e}")
+            # Don't raise - link save failures shouldn't fail the backtest
     

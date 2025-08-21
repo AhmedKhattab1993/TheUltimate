@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.api import simple_screener, backtest, screener_results
+from app.api import simple_screener, backtest, screener_results, combined_results
 from app.services.polygon_client import PolygonAPIError
 from app.services.database import db_pool
 
@@ -198,6 +198,13 @@ app.include_router(
     screener_results.router,
     # No prefix needed - router already has /api/v2/screener/results
     tags=["screener-results"]
+)
+
+# Include combined results router
+app.include_router(
+    combined_results.router,
+    # No prefix needed - router already has /api/v2/combined-results
+    tags=["combined-results"]
 )
 
 
