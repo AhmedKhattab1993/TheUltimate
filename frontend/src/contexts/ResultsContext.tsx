@@ -92,6 +92,10 @@ export interface ResultsState {
     page: number
     pageSize: number
   }
+  combinedResults: {
+    page: number
+    pageSize: number
+  }
   dateFilter: {
     startDate: Date | null
     endDate: Date | null
@@ -109,6 +113,7 @@ type ResultsAction =
   | { type: 'SET_BACKTEST_ERROR'; error: string | null }
   | { type: 'SET_SCREENER_PAGE'; page: number }
   | { type: 'SET_BACKTEST_PAGE'; page: number }
+  | { type: 'SET_COMBINED_PAGE'; page: number }
   | { type: 'SET_DATE_FILTER'; startDate: Date | null; endDate: Date | null }
   | { type: 'RESET_FILTERS' }
 
@@ -128,6 +133,10 @@ const initialState: ResultsState = {
     loading: false,
     error: null,
     totalCount: 0,
+    page: 1,
+    pageSize: 20
+  },
+  combinedResults: {
     page: 1,
     pageSize: 20
   },
@@ -209,6 +218,12 @@ function resultsReducer(state: ResultsState, action: ResultsAction): ResultsStat
       return {
         ...state,
         backtestResults: { ...state.backtestResults, page: action.page }
+      }
+    
+    case 'SET_COMBINED_PAGE':
+      return {
+        ...state,
+        combinedResults: { ...state.combinedResults, page: action.page }
       }
     
     case 'SET_DATE_FILTER':

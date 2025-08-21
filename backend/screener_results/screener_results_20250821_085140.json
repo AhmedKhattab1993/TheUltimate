@@ -1,0 +1,92 @@
+{
+  "timestamp": "2025-08-21T08:51:40.891286",
+  "symbols": [
+    "AMSC",
+    "APLD",
+    "ATAI",
+    "ATEC",
+    "ATFV",
+    "AVTX",
+    "BBNX",
+    "BE",
+    "CECO",
+    "COCP",
+    "COMP",
+    "CPOP",
+    "EBAY",
+    "ENLV",
+    "FDMT",
+    "FGF",
+    "FHI",
+    "FLGV",
+    "FOXX",
+    "GCI",
+    "GENI",
+    "HKIT",
+    "HTCO",
+    "JOUT",
+    "LBTYA",
+    "LC",
+    "LNC",
+    "NCLH",
+    "NEGG",
+    "NVT",
+    "PAPL",
+    "PRLB",
+    "RDTL",
+    "RILYT",
+    "RMBS",
+    "RSI",
+    "SBB",
+    "SGD",
+    "SMHX",
+    "SMN",
+    "SNGX",
+    "SPRX",
+    "SRTS",
+    "TNGX",
+    "UFG",
+    "UPB",
+    "VIVK",
+    "VRME",
+    "VRTL",
+    "VSAT",
+    "WDC",
+    "WGS",
+    "XGN"
+  ],
+  "filters": {
+    "price_range": {
+      "min_price": 1.0,
+      "max_price": 100.0
+    },
+    "price_vs_ma": {
+      "ma_period": 50,
+      "condition": "above"
+    },
+    "rsi": {
+      "rsi_period": 14,
+      "condition": "above",
+      "threshold": 60.0
+    },
+    "min_avg_volume": null,
+    "min_avg_dollar_volume": null,
+    "gap": {
+      "gap_threshold": 2.0,
+      "direction": "both"
+    },
+    "prev_day_dollar_volume": null,
+    "relative_volume": {
+      "recent_days": 2,
+      "lookback_days": 20,
+      "min_ratio": 1.5
+    }
+  },
+  "metadata": {
+    "screening_date": "2025-08-01",
+    "total_symbols_screened": 8528,
+    "total_qualifying_stocks": 53,
+    "execution_time_ms": 26095.686435699463
+  },
+  "count": 53
+}

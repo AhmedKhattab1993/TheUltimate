@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { format, parseISO } from 'date-fns'
-import { Eye, Download, Filter, BarChart } from 'lucide-react'
+import { Eye, Download, Filter, BarChart, Activity } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -8,6 +8,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useResultsContext } from '@/contexts/ResultsContext'
 import { Pagination } from '@/components/ui/pagination'
 import { cn } from '@/lib/utils'
@@ -63,14 +64,24 @@ export function CombinedResultsView() {
   const [error, setError] = useState<string | null>(null)
   const [totalCount, setTotalCount] = useState(0)
   
+  // Trades dialog state
+  const [showTradesDialog, setShowTradesDialog] = useState(false)
+  const [selectedBacktestId, setSelectedBacktestId] = useState<string | null>(null)
+  const [trades, setTrades] = useState<any[]>([])
+  const [loadingTrades, setLoadingTrades] = useState(false)
+  
   // Filters
-  const [sessionFilter, setSessionFilter] = useState<string>('')
   const [symbolFilter, setSymbolFilter] = useState<string>('')
   const [sourceFilter, setSourceFilter] = useState<string>('all')
   
-  // Pagination
-  const [currentPage, setCurrentPage] = useState(1)
-  const limit = 50
+  // Use pagination from context
+  const currentPage = state.combinedResults.page
+  const limit = state.combinedResults.pageSize
+  
+  // Reset page when filters change
+  useEffect(() => {
+    dispatch({ type: 'SET_COMBINED_PAGE', page: 1 })
+  }, [symbolFilter, sourceFilter, dispatch])
 
   // Fetch combined results
   const fetchResults = async () => {
@@ -83,7 +94,6 @@ export function CombinedResultsView() {
         offset: ((currentPage - 1) * limit).toString()
       })
       
-      if (sessionFilter) params.append('session_id', sessionFilter)
       if (symbolFilter) params.append('symbol', symbolFilter)
       if (sourceFilter !== 'all') params.append('source', sourceFilter)
       
@@ -96,6 +106,12 @@ export function CombinedResultsView() {
       const data = await response.json()
       setResults(data.results)
       setTotalCount(data.total_count)
+      console.log('Combined results:', { 
+        totalCount: data.total_count, 
+        resultsLength: data.results.length, 
+        limit, 
+        totalPages: Math.ceil(data.total_count / limit) 
+      })
     } catch (err) {
       console.error('Error fetching combined results:', err)
       setError(err instanceof Error ? err.message : 'Failed to fetch results')
@@ -107,7 +123,32 @@ export function CombinedResultsView() {
   // Fetch on mount and when filters change
   useEffect(() => {
     fetchResults()
-  }, [currentPage, sessionFilter, symbolFilter, sourceFilter])
+  }, [currentPage, symbolFilter, sourceFilter, limit])
+  
+  // Function to view trades
+  const handleViewTrades = async (backtestId: string) => {
+    if (!backtestId) return
+    
+    setSelectedBacktestId(backtestId)
+    setShowTradesDialog(true)
+    setLoadingTrades(true)
+    
+    try {
+      const response = await fetch(`${getApiUrl()}/api/v2/backtest/db/results/${backtestId}/trades?limit=50`)
+      if (response.ok) {
+        const tradesData = await response.json()
+        setTrades(tradesData)
+      } else {
+        console.error('Failed to fetch trades')
+        setTrades([])
+      }
+    } catch (error) {
+      console.error('Error fetching trades:', error)
+      setTrades([])
+    } finally {
+      setLoadingTrades(false)
+    }
+  }
 
   // Calculate summary statistics
   const summaryStats = useMemo(() => {
@@ -138,7 +179,7 @@ export function CombinedResultsView() {
       'Created Date', 'Screening Date', 'Symbol', 'Source',
       'Price Range', 'Price vs MA', 'RSI', 'Gap', 'Volume', 'Rel Vol',
       // Backtest columns
-      'Date', 'Strategy', 'Period', 'Pivots', 'Lower TF',
+      'Strategy', 'Pivots', 'Lower TF',
       'Return', 'Sharpe', 'Max DD', 'Win Rate', 
       'Trades', 'Final Value'
     ]
@@ -156,10 +197,7 @@ export function CombinedResultsView() {
       r.filter_prev_day_dollar_volume_enabled ? `$${(r.filter_prev_day_dollar_volume || 0) / 1000000}M` : '',
       r.filter_relative_volume_enabled ? `${r.filter_relative_volume_min_ratio || ''}x` : '',
       // Backtest data
-      r.backtest_created_at || '',
       r.strategy_name || '',
-      r.backtest_start_date && r.backtest_end_date ? 
-        `${r.backtest_start_date} - ${r.backtest_end_date}` : '',
       r.pivot_bars || '',
       r.lower_timeframe || '',
       r.total_return?.toFixed(2) || '',
@@ -250,7 +288,7 @@ export function CombinedResultsView() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="text-sm font-medium mb-1 block">Source</label>
               <Select value={sourceFilter} onValueChange={setSourceFilter}>
@@ -270,14 +308,6 @@ export function CombinedResultsView() {
                 placeholder="Filter by symbol..."
                 value={symbolFilter}
                 onChange={(e) => setSymbolFilter(e.target.value.toUpperCase())}
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-1 block">Session ID</label>
-              <Input
-                placeholder="Filter by session ID..."
-                value={sessionFilter}
-                onChange={(e) => setSessionFilter(e.target.value)}
               />
             </div>
           </div>
@@ -320,9 +350,7 @@ export function CombinedResultsView() {
                     <TableHead className="w-24">Volume</TableHead>
                     <TableHead className="w-20">Rel Vol</TableHead>
                     {/* Backtest columns - exactly as in BacktestResultsView */}
-                    <TableHead>Date</TableHead>
                     <TableHead>Strategy</TableHead>
-                    <TableHead>Period</TableHead>
                     <TableHead className="text-center">Pivots</TableHead>
                     <TableHead className="text-center">Lower TF</TableHead>
                     <TableHead className="text-center">Return</TableHead>
@@ -331,6 +359,7 @@ export function CombinedResultsView() {
                     <TableHead className="text-center">Win Rate</TableHead>
                     <TableHead className="text-center">Trades</TableHead>
                     <TableHead className="text-center">Final Value</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -374,14 +403,7 @@ export function CombinedResultsView() {
                           `${result.filter_relative_volume_min_ratio || ''}x` : '-'}
                       </TableCell>
                       {/* Backtest columns */}
-                      <TableCell>
-                        {result.backtest_created_at ? format(parseISO(result.backtest_created_at), 'MMM dd, yyyy') : '-'}
-                      </TableCell>
                       <TableCell>{result.strategy_name || '-'}</TableCell>
-                      <TableCell>
-                        {result.backtest_start_date && result.backtest_end_date ? 
-                          `${format(parseISO(result.backtest_start_date), 'MMM dd')} - ${format(parseISO(result.backtest_end_date), 'MMM dd, yyyy')}` : '-'}
-                      </TableCell>
                       <TableCell className="text-center">{result.pivot_bars || '-'}</TableCell>
                       <TableCell className="text-center">{result.lower_timeframe || '-'}</TableCell>
                       <TableCell className={cn(
@@ -405,6 +427,18 @@ export function CombinedResultsView() {
                       <TableCell className="text-center">
                         {result.final_value ? `$${result.final_value.toLocaleString()}` : '-'}
                       </TableCell>
+                      <TableCell className="text-right">
+                        {result.backtest_id && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleViewTrades(result.backtest_id!)}
+                            disabled={!result.backtest_id}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -413,17 +447,113 @@ export function CombinedResultsView() {
           )}
           
           {/* Pagination */}
-          {totalPages > 1 && (
+          {results.length > 0 && (
             <div className="mt-4 flex justify-center">
               <Pagination
                 currentPage={currentPage}
                 totalPages={totalPages}
-                onPageChange={setCurrentPage}
+                onPageChange={(page) => dispatch({ type: 'SET_COMBINED_PAGE', page })}
               />
+              <div className="ml-4 text-sm text-muted-foreground">
+                Page {currentPage} of {totalPages} • Total: {totalCount} results
+              </div>
             </div>
           )}
         </CardContent>
       </Card>
+
+      {/* Trades Dialog */}
+      <Dialog open={showTradesDialog} onOpenChange={(open) => {
+        setShowTradesDialog(open)
+        if (!open) {
+          setTrades([])
+          setSelectedBacktestId(null)
+        }
+      }}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Trade History</DialogTitle>
+            <DialogDescription>
+              {selectedBacktestId && trades.length > 0 && (
+                <span>Showing {trades.length} trades</span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <Card>
+            <CardContent className="p-0">
+              {loadingTrades ? (
+                <div className="p-8 text-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                  <p className="text-muted-foreground">Loading trades...</p>
+                </div>
+              ) : trades.length === 0 ? (
+                <div className="p-8 text-center text-muted-foreground">
+                  No trades available for this backtest
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-12">#</TableHead>
+                        <TableHead>Time (ET)</TableHead>
+                        <TableHead>Symbol</TableHead>
+                        <TableHead className="text-center">Direction</TableHead>
+                        <TableHead className="text-right">Quantity</TableHead>
+                        <TableHead className="text-right">Fill Price</TableHead>
+                        <TableHead className="text-right">Value</TableHead>
+                        <TableHead className="text-right">Fee</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {trades.map((trade, index) => {
+                        const tradeValue = trade.fillQuantity * trade.fillPrice
+                        return (
+                          <TableRow key={index}>
+                            <TableCell className="font-mono text-xs text-muted-foreground">
+                              {index + 1}
+                            </TableCell>
+                            <TableCell className="font-mono text-sm">
+                              {format(parseISO(trade.tradeTime), 'HH:mm:ss')}
+                            </TableCell>
+                            <TableCell className="font-medium">
+                              {trade.symbol}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <Badge 
+                                variant={trade.direction === 'buy' ? 'default' : 'secondary'}
+                                className={cn(
+                                  "text-xs",
+                                  trade.direction === 'buy' ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                                )}
+                              >
+                                {trade.direction.toUpperCase()}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {trade.quantity.toLocaleString()}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              ${trade.fillPrice.toFixed(2)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              ${tradeValue.toFixed(2)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-muted-foreground">
+                              ${trade.orderFee.toFixed(2)}
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

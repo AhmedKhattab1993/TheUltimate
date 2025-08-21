@@ -98,10 +98,6 @@ class CombinedScreenerBacktestRow(BaseModel):
     initial_cash: Optional[float]
     pivot_bars: Optional[int]
     lower_timeframe: Optional[str]
-    strategy_name: Optional[str]
-    
-    # Timestamps
-    backtest_created_at: Optional[str]
     
     class Config:
         from_attributes = True

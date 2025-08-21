@@ -250,11 +250,7 @@ async def get_combined_results(
                 # Algorithm parameters
                 initial_cash=float(row['initial_cash']) if row['initial_cash'] else None,
                 pivot_bars=row['pivot_bars'],
-                lower_timeframe=row['lower_timeframe'],
-                strategy_name=row['strategy_name'],
-                
-                # Timestamps
-                backtest_created_at=row['backtest_created_at'].isoformat() if row['backtest_created_at'] else None
+                lower_timeframe=row['lower_timeframe']
             )
             results.append(result)
         
