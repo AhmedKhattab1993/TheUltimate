@@ -3,7 +3,144 @@
 > vite
 
 
-  VITE v7.0.6  ready in 177 ms
+  VITE v7.0.6  ready in 166 ms
 
   ➜  Local:   http://localhost:5173/
   ➜  Network: http://10.182.0.2:5173/
+12:00:02 PM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
+12:00:02 PM [vite] Internal server error: /home/ahmed/TheUltimate/frontend/src/components/results/CombinedResultsView.tsx: Unexpected token (205:6)
+
+  203 |         effectiveFilters
+  204 |       })
+> 205 |     } catch (err) {
+      |       ^
+  206 |       console.error('Error fetching combined results:', err)
+  207 |       setError(err instanceof Error ? err.message : 'Failed to fetch results')
+  208 |     } finally {
+  Plugin: vite:react-babel
+  File: /home/ahmed/TheUltimate/frontend/src/components/results/CombinedResultsView.tsx:205:6
+  203|          effectiveFilters
+  204|        })
+  205|      } catch (err) {
+     |        ^
+  206|        console.error('Error fetching combined results:', err)
+  207|        setError(err instanceof Error ? err.message : 'Failed to fetch results')
+      at constructor (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:367:19)
+      at TypeScriptParserMixin.raise (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:6627:19)
+      at TypeScriptParserMixin.unexpected (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:6647:16)
+      at TypeScriptParserMixin.parseExprAtom (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:11442:16)
+      at TypeScriptParserMixin.parseExprAtom (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:4794:20)
+      at TypeScriptParserMixin.parseExprSubscripts (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:11076:23)
+      at TypeScriptParserMixin.parseUpdate (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:11061:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:11041:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:9852:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:10894:61)
+      at TypeScriptParserMixin.parseExprOps (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:10899:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:10876:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:10826:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:9801:20)
+      at TypeScriptParserMixin.parseExpressionBase (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:10779:23)
+      at /home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:10775:39
+      at TypeScriptParserMixin.allowInAnd (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:12422:16)
+      at TypeScriptParserMixin.parseExpression (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:10775:17)
+      at TypeScriptParserMixin.parseStatementContent (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:12895:23)
+      at TypeScriptParserMixin.parseStatementContent (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:9527:18)
+      at TypeScriptParserMixin.parseStatementLike (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:12767:17)
+      at TypeScriptParserMixin.parseStatementListItem (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:12747:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:13316:61)
+      at TypeScriptParserMixin.parseBlockBody (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:13309:10)
+      at TypeScriptParserMixin.parseBlock (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:13297:10)
+      at TypeScriptParserMixin.parseTryStatement (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:13205:23)
+      at TypeScriptParserMixin.parseStatementContent (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:12804:21)
+      at TypeScriptParserMixin.parseStatementContent (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:9527:18)
+      at TypeScriptParserMixin.parseStatementLike (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:12767:17)
+      at TypeScriptParserMixin.parseStatementListItem (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:12747:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:13316:61)
+      at TypeScriptParserMixin.parseBlockBody (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:13309:10)
+      at TypeScriptParserMixin.parseBlock (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:13297:10)
+      at TypeScriptParserMixin.parseFunctionBody (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:12101:24)
+      at TypeScriptParserMixin.parseArrowExpression (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:12076:10)
+      at TypeScriptParserMixin.parseAsyncArrowFromCallExpression (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:11259:10)
+      at TypeScriptParserMixin.parseAsyncArrowFromCallExpression (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:9781:18)
+      at TypeScriptParserMixin.parseCoverCallAndAsyncArrowHead (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:11189:27)
+      at TypeScriptParserMixin.parseSubscript (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:11115:19)
+      at TypeScriptParserMixin.parseSubscript (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:9353:18)
+      at TypeScriptParserMixin.parseSubscripts (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:11089:19)
+      at TypeScriptParserMixin.parseExprSubscripts (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:11080:17)
+      at TypeScriptParserMixin.parseUpdate (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:11061:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:11041:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:9852:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:10894:61)
+      at TypeScriptParserMixin.parseExprOps (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:10899:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:10876:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:10826:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:9801:20)
+12:00:03 PM [vite] Internal server error: /home/ahmed/TheUltimate/frontend/src/components/results/CombinedResultsView.tsx: Unexpected token (205:6)
+
+  203 |         effectiveFilters
+  204 |       })
+> 205 |     } catch (err) {
+      |       ^
+  206 |       console.error('Error fetching combined results:', err)
+  207 |       setError(err instanceof Error ? err.message : 'Failed to fetch results')
+  208 |     } finally {
+  Plugin: vite:react-babel
+  File: /home/ahmed/TheUltimate/frontend/src/components/results/CombinedResultsView.tsx:205:6
+  203|          effectiveFilters
+  204|        })
+  205|      } catch (err) {
+     |        ^
+  206|        console.error('Error fetching combined results:', err)
+  207|        setError(err instanceof Error ? err.message : 'Failed to fetch results')
+      at constructor (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:367:19)
+      at TypeScriptParserMixin.raise (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:6627:19)
+      at TypeScriptParserMixin.unexpected (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:6647:16)
+      at TypeScriptParserMixin.parseExprAtom (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:11442:16)
+      at TypeScriptParserMixin.parseExprAtom (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:4794:20)
+      at TypeScriptParserMixin.parseExprSubscripts (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:11076:23)
+      at TypeScriptParserMixin.parseUpdate (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:11061:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:11041:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:9852:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:10894:61)
+      at TypeScriptParserMixin.parseExprOps (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:10899:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:10876:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:10826:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:9801:20)
+      at TypeScriptParserMixin.parseExpressionBase (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:10779:23)
+      at /home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:10775:39
+      at TypeScriptParserMixin.allowInAnd (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:12422:16)
+      at TypeScriptParserMixin.parseExpression (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:10775:17)
+      at TypeScriptParserMixin.parseStatementContent (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:12895:23)
+      at TypeScriptParserMixin.parseStatementContent (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:9527:18)
+      at TypeScriptParserMixin.parseStatementLike (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:12767:17)
+      at TypeScriptParserMixin.parseStatementListItem (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:12747:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:13316:61)
+      at TypeScriptParserMixin.parseBlockBody (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:13309:10)
+      at TypeScriptParserMixin.parseBlock (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:13297:10)
+      at TypeScriptParserMixin.parseTryStatement (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:13205:23)
+      at TypeScriptParserMixin.parseStatementContent (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:12804:21)
+      at TypeScriptParserMixin.parseStatementContent (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:9527:18)
+      at TypeScriptParserMixin.parseStatementLike (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:12767:17)
+      at TypeScriptParserMixin.parseStatementListItem (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:12747:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:13316:61)
+      at TypeScriptParserMixin.parseBlockBody (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:13309:10)
+      at TypeScriptParserMixin.parseBlock (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:13297:10)
+      at TypeScriptParserMixin.parseFunctionBody (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:12101:24)
+      at TypeScriptParserMixin.parseArrowExpression (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:12076:10)
+      at TypeScriptParserMixin.parseAsyncArrowFromCallExpression (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:11259:10)
+      at TypeScriptParserMixin.parseAsyncArrowFromCallExpression (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:9781:18)
+      at TypeScriptParserMixin.parseCoverCallAndAsyncArrowHead (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:11189:27)
+      at TypeScriptParserMixin.parseSubscript (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:11115:19)
+      at TypeScriptParserMixin.parseSubscript (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:9353:18)
+      at TypeScriptParserMixin.parseSubscripts (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:11089:19)
+      at TypeScriptParserMixin.parseExprSubscripts (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:11080:17)
+      at TypeScriptParserMixin.parseUpdate (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:11061:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:11041:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:9852:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:10894:61)
+      at TypeScriptParserMixin.parseExprOps (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:10899:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:10876:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:10826:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/ahmed/TheUltimate/frontend/node_modules/@babel/parser/lib/index.js:9801:20)
+12:00:20 PM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
+12:00:37 PM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css

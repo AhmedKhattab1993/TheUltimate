@@ -188,12 +188,18 @@ export function CombinedResultsView({
       }
       
       setResults(filteredResults)
-      setTotalCount(filteredResults.length)
+      
+      // Use total_count from API when not filtering, otherwise use filtered length
+      if (effectiveFilters.symbols || effectiveFilters.createdAfter) {
+        setTotalCount(filteredResults.length)
+      } else {
+        setTotalCount(data.total_count || filteredResults.length)
+      }
       console.log('Combined results:', { 
-        totalCount: filteredResults.length, 
+        totalCount: effectiveFilters.symbols || effectiveFilters.createdAfter ? filteredResults.length : (data.total_count || filteredResults.length), 
         resultsLength: filteredResults.length, 
         limit, 
-        totalPages: Math.ceil(filteredResults.length / limit),
+        totalPages: Math.ceil((effectiveFilters.symbols || effectiveFilters.createdAfter ? filteredResults.length : (data.total_count || filteredResults.length)) / limit),
         filterByLatestRun,
         effectiveFilters
       })
