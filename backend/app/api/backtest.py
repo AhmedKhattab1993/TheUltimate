@@ -938,6 +938,16 @@ async def start_screener_backtests(request: ScreenerBacktestRequest):
                 "error": result.get('error') if status == 'failed' else None
             })
         
+        # Get date range from the collected data
+        if symbols_by_date:
+            dates = sorted(symbols_by_date.keys())
+            start_date = dates[0]
+            end_date = dates[-1]
+        else:
+            # Fallback if no dates found
+            start_date = date.today().isoformat()
+            end_date = date.today().isoformat()
+        
         # Return summary
         return {
             "total_backtests": total_backtests,
@@ -945,8 +955,8 @@ async def start_screener_backtests(request: ScreenerBacktestRequest):
             "failed_starts": failed_count,
             "screening_days": len(symbols_by_date),
             "date_range": {
-                "start": start_date.isoformat(),
-                "end": end_date.isoformat()
+                "start": start_date,
+                "end": end_date
             },
             "backtests_by_date": symbols_by_date,
             "backtests": backtest_tasks

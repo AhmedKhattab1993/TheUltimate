@@ -4,7 +4,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { StrategySelector } from './StrategySelector'
 import { BacktestForm } from './BacktestForm'
 import { BacktestMonitor } from './BacktestMonitor'
-import { BacktestResultsView } from '../results/BacktestResultsView'
+import { CombinedResultsView } from '../results/CombinedResultsView'
 import { MarketStructureForm } from './MarketStructureForm'
 import { useBacktestContext } from '@/contexts/BacktestContext'
 import { useResultsContext } from '@/contexts/ResultsContext'
@@ -136,11 +136,14 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
     dispatch({ type: 'START_BACKTESTS' })
     dispatch({ type: 'CLEAR_ERROR' })
 
+    // Track the symbols being run
+    let runSymbols: string[] = []
+
     try {
       let response
       
       if (parameters.useScreenerResults) {
-        // Use latest UI screener session from database
+        // For screener results, we'll get the symbols from the response
         const strategyName = strategies.find(s => s.file_path === parameters.strategy)?.name || 'main'
         const requestBody = {
           strategy_name: strategyName,
@@ -158,6 +161,7 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
         })
       } else {
         // Use regular bulk backtest endpoint
+        runSymbols = parameters.symbols
         // Extract lower_timeframe and pivot_bars from strategyParameters for root level
         const { lower_timeframe, pivot_bars, ...otherParams } = parameters.strategyParameters || {};
         
@@ -184,6 +188,21 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
       }
 
       const data = await response.json()
+
+      // Extract symbols from response if using screener results
+      if (parameters.useScreenerResults && data.symbols) {
+        runSymbols = data.symbols
+      }
+
+      // Store last run details
+      dispatch({ 
+        type: 'SET_LAST_RUN_DETAILS', 
+        details: {
+          symbols: runSymbols,
+          startTime: new Date(),
+          bulkId: data.bulk_id
+        }
+      })
 
       // Connect to simplified WebSocket endpoint
       if (data.bulk_id) {
@@ -350,9 +369,14 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
         </Button>
       </div>
 
-      {/* Results */}
+      {/* Results - Show combined view filtered for last run */}
       <div className="mt-6">
-        <BacktestResultsView />
+        {state.lastRunDetails && (
+          <CombinedResultsView 
+            filterByLatestRun={true} 
+            hideFilters={true} 
+          />
+        )}
       </div>
     </div>
   )

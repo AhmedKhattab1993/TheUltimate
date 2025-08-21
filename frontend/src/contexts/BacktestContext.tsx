@@ -99,6 +99,12 @@ export interface BacktestResult {
   final_value?: number
 }
 
+export interface LastRunDetails {
+  symbols: string[]
+  startTime: Date
+  bulkId?: string
+}
+
 export interface BacktestState {
   strategies: Strategy[]
   parameters: BacktestParameters
@@ -107,6 +113,7 @@ export interface BacktestState {
   historicalResults: BacktestResult[]
   error: string | null
   websocket: WebSocket | null
+  lastRunDetails: LastRunDetails | null
 }
 
 // Action types
@@ -122,6 +129,7 @@ export type BacktestAction =
   | { type: 'SET_ERROR'; error: string }
   | { type: 'CLEAR_ERROR' }
   | { type: 'SET_WEBSOCKET'; websocket: WebSocket | null }
+  | { type: 'SET_LAST_RUN_DETAILS'; details: LastRunDetails }
   | { type: 'RESET' }
 
 // Initial state
@@ -138,7 +146,8 @@ const initialState: BacktestState = {
   currentResult: null,
   historicalResults: [],
   error: null,
-  websocket: null
+  websocket: null,
+  lastRunDetails: null
 }
 
 // Reducer
@@ -210,11 +219,15 @@ function backtestReducer(state: BacktestState, action: BacktestAction): Backtest
     case 'SET_WEBSOCKET':
       return { ...state, websocket: action.websocket }
 
+    case 'SET_LAST_RUN_DETAILS':
+      return { ...state, lastRunDetails: action.details }
+
     case 'RESET':
       return {
         ...initialState,
         strategies: state.strategies,
         historicalResults: state.historicalResults,
+        lastRunDetails: state.lastRunDetails,
         parameters: {
           ...initialState.parameters,
           startDate: new Date(new Date().getFullYear() - 1, 0, 1),

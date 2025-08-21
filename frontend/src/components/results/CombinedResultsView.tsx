@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useResultsContext } from '@/contexts/ResultsContext'
+import { useBacktestContext } from '@/contexts/BacktestContext'
 import { Pagination } from '@/components/ui/pagination'
 import { cn } from '@/lib/utils'
 import { getApiUrl } from '@/services/api'
@@ -57,8 +58,24 @@ interface CombinedResult {
   final_value?: number
 }
 
-export function CombinedResultsView() {
+interface CombinedResultsViewProps {
+  // Filter by the latest backtest run
+  filterByLatestRun?: boolean
+  // Or filter by specific criteria
+  filterSymbols?: string[]
+  filterCreatedAfter?: Date
+  // Hide filters UI when showing filtered view
+  hideFilters?: boolean
+}
+
+export function CombinedResultsView({
+  filterByLatestRun = false,
+  filterSymbols,
+  filterCreatedAfter,
+  hideFilters = false
+}: CombinedResultsViewProps = {}) {
   const { state, dispatch } = useResultsContext()
+  const { state: backtestState } = useBacktestContext()
   const [results, setResults] = useState<CombinedResult[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -84,6 +101,20 @@ export function CombinedResultsView() {
     dispatch({ type: 'SET_COMBINED_PAGE', page: 1 })
   }, [symbolFilter, sourceFilter, dispatch])
 
+  // Determine effective filters based on props
+  const effectiveFilters = useMemo(() => {
+    if (filterByLatestRun && backtestState.lastRunDetails) {
+      return {
+        symbols: backtestState.lastRunDetails.symbols,
+        createdAfter: backtestState.lastRunDetails.startTime
+      }
+    }
+    return {
+      symbols: filterSymbols,
+      createdAfter: filterCreatedAfter
+    }
+  }, [filterByLatestRun, backtestState.lastRunDetails, filterSymbols, filterCreatedAfter])
+
   // Fetch combined results
   const fetchResults = async () => {
     setLoading(true)
@@ -95,8 +126,23 @@ export function CombinedResultsView() {
         offset: ((currentPage - 1) * limit).toString()
       })
       
-      if (symbolFilter) params.append('symbol', symbolFilter)
-      if (sourceFilter !== 'all') params.append('source', sourceFilter)
+      // Apply symbol filter from UI or from props
+      if (symbolFilter && !effectiveFilters.symbols) {
+        params.append('symbol', symbolFilter)
+      }
+      
+      // Apply source filter only if not filtering by latest run
+      if (sourceFilter !== 'all' && !filterByLatestRun) {
+        params.append('source', sourceFilter)
+      }
+      
+      // Apply effective filters
+      if (effectiveFilters.symbols && effectiveFilters.symbols.length > 0) {
+        // For latest run, we need to fetch more results to ensure we get the filtered ones
+        // Override the limit to fetch more results
+        params.set('limit', '1000')  // Fetch up to 1000 results for filtering
+        params.set('offset', '0')     // Always start from beginning when filtering
+      }
       
       const response = await fetch(`${getApiUrl()}/api/v2/combined-results/?${params}`)
       
@@ -105,13 +151,51 @@ export function CombinedResultsView() {
       }
       
       const data = await response.json()
-      setResults(data.results)
-      setTotalCount(data.total_count)
+      
+      // Apply client-side filtering if needed
+      let filteredResults = data.results
+      console.log('Before filtering:', {
+        totalResults: data.results.length,
+        effectiveFilters,
+        sampleResults: data.results.slice(0, 5).map((r: CombinedResult) => ({
+          symbol: r.symbol,
+          backtest_created_at: r.backtest_created_at,
+          parsed_date: r.backtest_created_at ? new Date(r.backtest_created_at) : null
+        }))
+      })
+      
+      if (effectiveFilters.symbols && effectiveFilters.symbols.length > 0) {
+        filteredResults = data.results.filter((r: CombinedResult) => 
+          effectiveFilters.symbols!.includes(r.symbol)
+        )
+        console.log('After symbol filtering:', filteredResults.length)
+      }
+      
+      if (effectiveFilters.createdAfter) {
+        // Subtract 5 minutes from the filter time to account for any delays
+        const adjustedTime = new Date(effectiveFilters.createdAfter.getTime() - 5 * 60 * 1000)
+        const cutoffTime = adjustedTime.toISOString()
+        console.log('Filtering by createdAfter (adjusted -5min):', cutoffTime)
+        filteredResults = filteredResults.filter((r: CombinedResult) => {
+          if (!r.backtest_created_at) return false
+          const isAfter = r.backtest_created_at >= cutoffTime
+          if (!isAfter && filteredResults.length < 5) {
+            console.log(`Filtered out: ${r.symbol} - ${r.backtest_created_at} < ${cutoffTime}`)
+          }
+          return isAfter
+        })
+        console.log('After date filtering:', filteredResults.length)
+      }
+      
+      setResults(filteredResults)
+      setTotalCount(filteredResults.length)
       console.log('Combined results:', { 
-        totalCount: data.total_count, 
-        resultsLength: data.results.length, 
+        totalCount: filteredResults.length, 
+        resultsLength: filteredResults.length, 
         limit, 
-        totalPages: Math.ceil(data.total_count / limit) 
+        totalPages: Math.ceil(filteredResults.length / limit),
+        filterByLatestRun,
+        effectiveFilters
       })
     } catch (err) {
       console.error('Error fetching combined results:', err)
@@ -143,7 +227,7 @@ export function CombinedResultsView() {
   useEffect(() => {
     fetchResults()
     fetchStats()
-  }, [currentPage, symbolFilter, sourceFilter, limit])
+  }, [currentPage, symbolFilter, sourceFilter, limit, filterByLatestRun, backtestState.lastRunDetails])
   
   // Function to view trades
   const handleViewTrades = async (backtestId: string) => {
@@ -283,8 +367,8 @@ export function CombinedResultsView() {
 
   return (
     <div className="space-y-6">
-      {/* Summary Statistics */}
-      {summaryStats && (
+      {/* Summary Statistics - hide when filters are hidden (backtest tab) */}
+      {!hideFilters && summaryStats && (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <Card>
             <CardContent className="p-4">
@@ -331,45 +415,47 @@ export function CombinedResultsView() {
       )}
 
       {/* Filters */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Filter className="h-5 w-5" />
-              Filters
-            </CardTitle>
-            <Button onClick={exportToCSV} variant="outline" size="sm">
-              <Download className="h-4 w-4 mr-2" />
-              Export CSV
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm font-medium mb-1 block">Source</label>
-              <Select value={sourceFilter} onValueChange={setSourceFilter}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Sources</SelectItem>
-                  <SelectItem value="ui">UI</SelectItem>
-                  <SelectItem value="pipeline">Pipeline</SelectItem>
-                </SelectContent>
-              </Select>
+      {!hideFilters && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Filter className="h-5 w-5" />
+                Filters
+              </CardTitle>
+              <Button onClick={exportToCSV} variant="outline" size="sm">
+                <Download className="h-4 w-4 mr-2" />
+                Export CSV
+              </Button>
             </div>
-            <div>
-              <label className="text-sm font-medium mb-1 block">Symbol</label>
-              <Input
-                placeholder="Filter by symbol..."
-                value={symbolFilter}
-                onChange={(e) => setSymbolFilter(e.target.value.toUpperCase())}
-              />
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium mb-1 block">Source</label>
+                <Select value={sourceFilter} onValueChange={setSourceFilter}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Sources</SelectItem>
+                    <SelectItem value="ui">UI</SelectItem>
+                    <SelectItem value="pipeline">Pipeline</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-1 block">Symbol</label>
+                <Input
+                  placeholder="Filter by symbol..."
+                  value={symbolFilter}
+                  onChange={(e) => setSymbolFilter(e.target.value.toUpperCase())}
+                />
+              </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Results Table */}
       <Card>
