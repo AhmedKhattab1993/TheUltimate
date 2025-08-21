@@ -547,6 +547,14 @@ async def start_bulk_backtests(request: BacktestRequest):
                 backtest_id = str(uuid.uuid4())
                 
                 # Create request in the format expected by queue manager
+                # Merge root-level parameters with nested parameters
+                merged_parameters = request.parameters.copy() if request.parameters else {}
+                # Add pivot_bars and lower_timeframe from root level if they exist
+                if hasattr(request, 'pivot_bars') and request.pivot_bars is not None:
+                    merged_parameters['pivot_bars'] = request.pivot_bars
+                if hasattr(request, 'lower_timeframe') and request.lower_timeframe is not None:
+                    merged_parameters['lower_timeframe'] = request.lower_timeframe
+                
                 backtest_request = {
                     'symbol': symbol,
                     'strategy': request.strategy_name,
@@ -554,7 +562,7 @@ async def start_bulk_backtests(request: BacktestRequest):
                     'end_date': trading_day.strftime('%Y-%m-%d'),
                     'initial_cash': float(request.initial_cash),
                     'resolution': request.resolution,
-                    'parameters': request.parameters or {},
+                    'parameters': merged_parameters,
                     'task_id': backtest_id  # Pass the pre-generated ID
                 }
                 backtest_requests.append(backtest_request)

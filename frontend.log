@@ -3,48 +3,7 @@
 > vite
 
 
-  VITE v7.0.6  ready in 325 ms
+  VITE v7.0.6  ready in 178 ms
 
   ➜  Local:   http://localhost:5173/
   ➜  Network: http://10.182.0.2:5173/
-8:09:45 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-8:10:09 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-8:11:13 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-8:11:58 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-8:13:56 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-8:15:10 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-8:15:49 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-8:18:17 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-8:18:50 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-8:19:12 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-8:19:27 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-8:19:47 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-8:20:20 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-8:57:58 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-8:58:15 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-8:58:32 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-8:58:43 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-9:02:20 AM [vite] (client) hmr update /src/contexts/ResultsContext.tsx, /src/index.css
-9:02:20 AM [vite] (client) hmr invalidate /src/contexts/ResultsContext.tsx Could not Fast Refresh ("useResultsContext" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
-9:02:20 AM [vite] (client) hmr update /src/index.css, /src/components/SimpleStockScreener.tsx, /src/components/results/ResultsTab.tsx, /src/components/backtesting/BacktestingTab.tsx, /src/components/results/ScreenerResultsView.tsx, /src/components/results/BacktestResultsView.tsx, /src/components/results/CombinedResultsView.tsx
-9:02:39 AM [vite] (client) hmr update /src/contexts/ResultsContext.tsx, /src/index.css
-9:02:39 AM [vite] (client) hmr invalidate /src/contexts/ResultsContext.tsx Could not Fast Refresh ("useResultsContext" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
-9:02:39 AM [vite] (client) hmr update /src/index.css, /src/components/SimpleStockScreener.tsx, /src/components/results/ResultsTab.tsx, /src/components/backtesting/BacktestingTab.tsx, /src/components/results/ScreenerResultsView.tsx, /src/components/results/BacktestResultsView.tsx, /src/components/results/CombinedResultsView.tsx
-9:02:59 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-9:03:14 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-9:04:49 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-9:05:03 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-9:05:20 AM [vite] (client) hmr update /src/contexts/ResultsContext.tsx, /src/index.css
-9:05:21 AM [vite] (client) hmr invalidate /src/contexts/ResultsContext.tsx Could not Fast Refresh ("useResultsContext" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
-9:05:21 AM [vite] (client) hmr update /src/index.css, /src/components/SimpleStockScreener.tsx, /src/components/results/ResultsTab.tsx, /src/components/backtesting/BacktestingTab.tsx, /src/components/results/ScreenerResultsView.tsx, /src/components/results/BacktestResultsView.tsx, /src/components/results/CombinedResultsView.tsx
-9:11:22 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-9:11:38 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-9:11:56 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-9:12:08 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-9:12:23 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-9:13:07 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-9:30:26 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-9:30:38 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-9:30:47 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-9:30:56 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css
-9:31:19 AM [vite] (client) hmr update /src/components/results/CombinedResultsView.tsx, /src/index.css

@@ -97,7 +97,7 @@ export function CombinedResultsView() {
       if (symbolFilter) params.append('symbol', symbolFilter)
       if (sourceFilter !== 'all') params.append('source', sourceFilter)
       
-      const response = await fetch(`${getApiUrl()}/api/v2/combined-results?${params}`)
+      const response = await fetch(`${getApiUrl()}/api/v2/combined-results/?${params}`)
       
       if (!response.ok) {
         throw new Error(`Failed to fetch combined results: ${response.statusText}`)

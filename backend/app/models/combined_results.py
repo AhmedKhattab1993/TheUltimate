@@ -21,19 +21,19 @@ class CombinedScreenerBacktestRow(BaseModel):
     # All screener filter parameters
     filter_min_price: Optional[float]
     filter_max_price: Optional[float]
-    filter_price_vs_ma_enabled: bool = False
+    filter_price_vs_ma_enabled: Optional[bool] = False
     filter_price_vs_ma_period: Optional[int]
     filter_price_vs_ma_condition: Optional[str]
-    filter_rsi_enabled: bool = False
+    filter_rsi_enabled: Optional[bool] = False
     filter_rsi_period: Optional[int]
     filter_rsi_threshold: Optional[float]
     filter_rsi_condition: Optional[str]
-    filter_gap_enabled: bool = False
+    filter_gap_enabled: Optional[bool] = False
     filter_gap_threshold: Optional[float]
     filter_gap_direction: Optional[str]
-    filter_prev_day_dollar_volume_enabled: bool = False
+    filter_prev_day_dollar_volume_enabled: Optional[bool] = False
     filter_prev_day_dollar_volume: Optional[float]
-    filter_relative_volume_enabled: bool = False
+    filter_relative_volume_enabled: Optional[bool] = False
     filter_relative_volume_recent_days: Optional[int]
     filter_relative_volume_lookback_days: Optional[int]
     filter_relative_volume_min_ratio: Optional[float]
