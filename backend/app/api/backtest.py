@@ -11,7 +11,7 @@ import json
 from ..models.backtest import (
     BacktestRequest, BacktestRunInfo, BacktestResult,
     BacktestListResponse, StrategyInfo, BacktestProgress, BacktestStatus,
-    BacktestStatistics
+    BacktestStatistics, ScreenerBacktestRequest
 )
 from ..services.backtest_manager import backtest_manager
 from ..services.lean_runner import LeanRunner
@@ -775,15 +775,7 @@ async def get_latest_ui_screener_session():
 
 
 @router.post("/run-screener-backtests")
-async def start_screener_backtests(
-    start_date: Optional[date] = Query(None, description="Start date for screener results"),
-    end_date: Optional[date] = Query(None, description="End date for screener results"),
-    strategy_name: str = Query(..., description="Strategy to use"),
-    initial_cash: float = Query(100000, description="Initial cash amount"),
-    resolution: str = Query("Minute", description="Data resolution"),
-    parameters: Optional[Dict[str, Any]] = None,
-    use_latest_ui_session: bool = Query(False, description="Use latest UI screener session instead of date range")
-):
+async def start_screener_backtests(request: ScreenerBacktestRequest):
     """
     Start backtests for screener results.
     
@@ -793,8 +785,14 @@ async def start_screener_backtests(
     Runs backtests for each symbol on its respective screening day.
     Uses BacktestQueueManager for parallel execution and database storage.
     """
+    # Log the incoming request parameters
+    logger.info(f"Screener backtest request received: strategy={request.strategy_name}, "
+                f"initial_cash={request.initial_cash}, resolution={request.resolution}, "
+                f"use_latest_ui_session={request.use_latest_ui_session}, "
+                f"parameters={request.parameters}")
+    
     try:
-        if use_latest_ui_session:
+        if request.use_latest_ui_session:
             # Query for the latest UI session
             query = """
             WITH latest_session AS (
@@ -815,7 +813,7 @@ async def start_screener_backtests(
             rows = await db_pool.fetch(query)
         else:
             # Original behavior - query by date range
-            if not start_date or not end_date:
+            if not request.start_date or not request.end_date:
                 raise HTTPException(
                     status_code=400,
                     detail="Either provide start_date and end_date, or set use_latest_ui_session=true"
@@ -829,13 +827,13 @@ async def start_screener_backtests(
             WHERE data_date >= $1 AND data_date <= $2
             ORDER BY data_date DESC, symbol
             """
-            rows = await db_pool.fetch(query, start_date, end_date)
+            rows = await db_pool.fetch(query, request.start_date, request.end_date)
         
         if not rows:
-            if use_latest_ui_session:
+            if request.use_latest_ui_session:
                 detail = "No UI screener results found in the latest session"
             else:
-                detail = f"No screener results found between {start_date} and {end_date}"
+                detail = f"No screener results found between {request.start_date} and {request.end_date}"
             raise HTTPException(status_code=404, detail=detail)
         
         # Group symbols by date
@@ -872,12 +870,12 @@ async def start_screener_backtests(
                 # Create request in the format expected by queue manager
                 backtest_request = {
                     'symbol': symbol,
-                    'strategy': strategy_name,
+                    'strategy': request.strategy_name,
                     'start_date': date_str,
                     'end_date': date_str,
-                    'initial_cash': float(initial_cash),
-                    'resolution': resolution,
-                    'parameters': parameters or {}
+                    'initial_cash': float(request.initial_cash),
+                    'resolution': request.resolution,
+                    'parameters': request.parameters or {}
                 }
                 backtest_requests.append(backtest_request)
         

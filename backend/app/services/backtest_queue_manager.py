@@ -289,6 +289,10 @@ class BacktestQueueManager:
             # Not in cache, create task
             # Use provided task_id if available
             task_id = request_data.get('task_id')
+            
+            # Log the request data for debugging
+            logger.info(f"Creating backtest task for {symbol} with parameters: {request_data.get('parameters', {})}")
+            
             task = BacktestTask(symbol, request_data, task_id)
             self.active_tasks[task.id] = task
             tasks.append(task)

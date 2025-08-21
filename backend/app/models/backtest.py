@@ -73,6 +73,23 @@ class BacktestRequest(BaseModel):
         return v.lower()
 
 
+class ScreenerBacktestRequest(BaseModel):
+    """Request to run backtests for screener results."""
+    strategy_name: str = Field(..., description="Name of the strategy to backtest")
+    initial_cash: Decimal = Field(100000.0, gt=0, description="Initial cash amount")
+    resolution: Literal["Tick", "Second", "Minute", "Hour", "Daily"] = Field("Minute", description="Data resolution")
+    parameters: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Strategy parameters including pivot_bars")
+    use_latest_ui_session: bool = Field(True, description="Use latest UI screener session")
+    start_date: Optional[date] = Field(None, description="Start date for screener results (if not using latest session)")
+    end_date: Optional[date] = Field(None, description="End date for screener results (if not using latest session)")
+    
+    @validator('initial_cash')
+    def validate_initial_cash(cls, v):
+        if v <= 0:
+            raise ValueError('initial_cash must be greater than 0')
+        return v
+
+
 class BacktestRunInfo(BaseModel):
     """Information about a running or queued backtest with enhanced metadata."""
     backtest_id: str = Field(..., description="Unique backtest identifier")
