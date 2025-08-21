@@ -10,7 +10,12 @@ export function ResultsTab() {
   const { state, dispatch } = useResultsContext()
   const { fetchScreenerResults, fetchBacktestResults } = useResults()
 
-  // Fetch results when tab changes or page changes
+  // Set default tab to combined on mount
+  useEffect(() => {
+    dispatch({ type: 'SET_ACTIVE_TAB', tab: 'combined' })
+  }, [dispatch])
+
+  // Fetch results when tab changes or page changes (kept for future reference)
   useEffect(() => {
     if (state.activeTab === 'screener') {
       fetchScreenerResults()
@@ -30,45 +35,50 @@ export function ResultsTab() {
         </p>
       </div>
 
-      {/* Results Tabs */}
-      <Tabs
-        value={state.activeTab}
-        onValueChange={(value) => dispatch({ type: 'SET_ACTIVE_TAB', tab: value as 'screener' | 'backtest' | 'combined' })}
-      >
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="screener">
-            Screener Results
-            {state.screenerResults.totalCount > 0 && (
-              <span className="ml-2 text-xs bg-muted px-2 py-0.5 rounded-full">
-                {state.screenerResults.totalCount}
-              </span>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="backtest">
-            Backtest Results
-            {state.backtestResults.totalCount > 0 && (
-              <span className="ml-2 text-xs bg-muted px-2 py-0.5 rounded-full">
-                {state.backtestResults.totalCount}
-              </span>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="combined">
-            Combined Results
-          </TabsTrigger>
-        </TabsList>
+      {/* Show Combined Results directly without tabs */}
+      <CombinedResultsView />
 
-        <TabsContent value="screener" className="mt-6">
-          <ScreenerResultsView />
-        </TabsContent>
+      {/* Hidden Tabs - kept for future reference */}
+      <div style={{ display: 'none' }}>
+        <Tabs
+          value={state.activeTab}
+          onValueChange={(value) => dispatch({ type: 'SET_ACTIVE_TAB', tab: value as 'screener' | 'backtest' | 'combined' })}
+        >
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="screener">
+              Screener Results
+              {state.screenerResults.totalCount > 0 && (
+                <span className="ml-2 text-xs bg-muted px-2 py-0.5 rounded-full">
+                  {state.screenerResults.totalCount}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="backtest">
+              Backtest Results
+              {state.backtestResults.totalCount > 0 && (
+                <span className="ml-2 text-xs bg-muted px-2 py-0.5 rounded-full">
+                  {state.backtestResults.totalCount}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="combined">
+              Combined Results
+            </TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="backtest" className="mt-6">
-          <BacktestResultsView />
-        </TabsContent>
-        
-        <TabsContent value="combined" className="mt-6">
-          <CombinedResultsView />
-        </TabsContent>
-      </Tabs>
+          <TabsContent value="screener" className="mt-6">
+            <ScreenerResultsView />
+          </TabsContent>
+
+          <TabsContent value="backtest" className="mt-6">
+            <BacktestResultsView />
+          </TabsContent>
+          
+          <TabsContent value="combined" className="mt-6">
+            <CombinedResultsView />
+          </TabsContent>
+        </Tabs>
+      </div>
     </div>
   )
 }

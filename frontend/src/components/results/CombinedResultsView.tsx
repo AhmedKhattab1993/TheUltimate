@@ -63,6 +63,7 @@ export function CombinedResultsView() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [totalCount, setTotalCount] = useState(0)
+  const [allStats, setAllStats] = useState<any>(null)
   
   // Trades dialog state
   const [showTradesDialog, setShowTradesDialog] = useState(false)
@@ -120,9 +121,28 @@ export function CombinedResultsView() {
     }
   }
 
+  // Fetch statistics for all results
+  const fetchStats = async () => {
+    try {
+      const params = new URLSearchParams()
+      if (symbolFilter) params.append('symbol', symbolFilter)
+      if (sourceFilter !== 'all') params.append('source', sourceFilter)
+      
+      const response = await fetch(`${getApiUrl()}/api/v2/combined-results/stats?${params}`)
+      
+      if (response.ok) {
+        const stats = await response.json()
+        setAllStats(stats)
+      }
+    } catch (err) {
+      console.error('Error fetching stats:', err)
+    }
+  }
+
   // Fetch on mount and when filters change
   useEffect(() => {
     fetchResults()
+    fetchStats()
   }, [currentPage, symbolFilter, sourceFilter, limit])
   
   // Function to view trades
@@ -150,8 +170,19 @@ export function CombinedResultsView() {
     }
   }
 
-  // Calculate summary statistics
+  // Use stats from backend or calculate from current page
   const summaryStats = useMemo(() => {
+    if (allStats) {
+      return {
+        totalSymbols: allStats.totalSymbols,
+        totalBacktests: allStats.totalBacktests,
+        avgReturn: allStats.avgReturn.toFixed(2),
+        winRate: allStats.winRate.toFixed(1),
+        bestReturn: allStats.bestReturn.toFixed(2),
+        worstReturn: allStats.worstReturn.toFixed(2)
+      }
+    }
+    
     if (!results.length) return null
     
     const withBacktests = results.filter(r => r.total_return !== null && r.total_return !== undefined)
@@ -170,10 +201,34 @@ export function CombinedResultsView() {
       bestReturn: Math.max(...returns).toFixed(2),
       worstReturn: Math.min(...returns).toFixed(2)
     }
-  }, [results])
+  }, [results, allStats])
 
   // Export to CSV
-  const exportToCSV = () => {
+  const exportToCSV = async () => {
+    try {
+      const params = new URLSearchParams()
+      if (symbolFilter) params.append('symbol', symbolFilter)
+      if (sourceFilter !== 'all') params.append('source', sourceFilter)
+      
+      const response = await fetch(`${getApiUrl()}/api/v2/combined-results/export?${params}`)
+      
+      if (!response.ok) {
+        throw new Error(`Failed to export results: ${response.statusText}`)
+      }
+      
+      const data = await response.json()
+      const exportResults = data.results
+      
+      // Now generate CSV from all results
+      exportToCSVFromData(exportResults)
+    } catch (err) {
+      console.error('Error exporting results:', err)
+      alert('Failed to export results. Please try again.')
+    }
+  }
+  
+  // Generate CSV from data
+  const exportToCSVFromData = (exportResults: CombinedResult[]) => {
     const headers = [
       // Screener columns
       'Created Date', 'Screening Date', 'Backtest Date', 'Symbol', 'Source',
@@ -184,14 +239,14 @@ export function CombinedResultsView() {
       'Trades', 'Final Value'
     ]
     
-    const csvData = results.map(r => [
+    const csvData = exportResults.map(r => [
       // Screener data
       r.backtest_created_at || '',
       r.screening_date || '',
       r.backtest_start_date && r.backtest_end_date ? 
         `${format(parseISO(r.backtest_start_date), 'MMM dd, yyyy')} - ${format(parseISO(r.backtest_end_date), 'MMM dd, yyyy')}` : '',
       r.symbol,
-      r.source || '',
+      r.source === 'manual' ? 'UI' : (r.source || ''),
       r.filter_min_price && r.filter_max_price ? `$${r.filter_min_price}-${r.filter_max_price}` : '',
       r.filter_price_vs_ma_enabled ? `${r.filter_price_vs_ma_condition || ''} MA${r.filter_price_vs_ma_period || ''}` : '',
       r.filter_rsi_enabled ? `${r.filter_rsi_condition || ''} ${r.filter_rsi_threshold || ''}` : '',
@@ -381,8 +436,8 @@ export function CombinedResultsView() {
                       </TableCell>
                       <TableCell className="font-medium">{result.symbol}</TableCell>
                       <TableCell>
-                        <Badge variant={result.source === 'ui' ? 'default' : 'secondary'}>
-                          {result.source || '-'}
+                        <Badge variant={result.source === 'ui' || result.source === 'manual' ? 'default' : 'secondary'}>
+                          {result.source === 'manual' ? 'UI' : (result.source || '-')}
                         </Badge>
                       </TableCell>
                       <TableCell>
