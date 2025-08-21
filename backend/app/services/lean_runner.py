@@ -98,6 +98,12 @@ class LeanRunner:
                 config_data["parameters"]["symbols"] = ",".join(request.symbols)
                 logger.info(f"Setting symbols parameter for {backtest_id}: {','.join(request.symbols)}")
             
+            # Add lower_timeframe and pivot_bars from direct fields
+            config_data["parameters"]["lower_timeframe"] = request.lower_timeframe
+            config_data["parameters"]["pivot_bars"] = str(request.pivot_bars)
+            logger.info(f"Setting lower_timeframe = {request.lower_timeframe} for {backtest_id}")
+            logger.info(f"Setting pivot_bars = {request.pivot_bars} for {backtest_id}")
+            
             # Add any custom parameters from the request
             logger.info(f"Request parameters for {backtest_id}: {request.parameters}")
             logger.info(f"Existing config parameters before update: {config_data['parameters']}")
