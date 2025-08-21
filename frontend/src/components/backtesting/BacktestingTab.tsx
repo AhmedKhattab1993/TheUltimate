@@ -158,6 +158,9 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
         })
       } else {
         // Use regular bulk backtest endpoint
+        // Extract lower_timeframe and pivot_bars from strategyParameters for root level
+        const { lower_timeframe, pivot_bars, ...otherParams } = parameters.strategyParameters || {};
+        
         response = await fetch(`${getApiUrl()}/api/v2/backtest/run-bulk`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -168,7 +171,9 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
             end_date: format(parameters.endDate!, 'yyyy-MM-dd'),
             symbols: parameters.symbols,
             use_screener_results: false,
-            parameters: parameters.strategyParameters || {}
+            lower_timeframe: lower_timeframe || '5min',
+            pivot_bars: pivot_bars || 20,
+            parameters: otherParams
           })
         })
       }
