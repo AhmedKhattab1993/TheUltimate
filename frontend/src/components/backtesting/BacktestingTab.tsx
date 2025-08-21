@@ -142,16 +142,19 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
       if (parameters.useScreenerResults) {
         // Use latest UI screener session from database
         const strategyName = strategies.find(s => s.file_path === parameters.strategy)?.name || 'main'
+        const requestBody = {
+          strategy_name: strategyName,
+          initial_cash: parameters.initialCash,
+          resolution: 'Minute',
+          use_latest_ui_session: true,
+          parameters: parameters.strategyParameters || {}
+        }
+        console.log('Screener backtest request:', requestBody)
+        console.log('Strategy parameters:', parameters.strategyParameters)
         response = await fetch(`${getApiUrl()}/api/v2/backtest/run-screener-backtests`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            strategy_name: strategyName,
-            initial_cash: parameters.initialCash,
-            resolution: 'Minute',
-            use_latest_ui_session: true,
-            parameters: parameters.strategyParameters || {}
-          })
+          body: JSON.stringify(requestBody)
         })
       } else {
         // Use regular bulk backtest endpoint

@@ -1,0 +1,74 @@
+{
+  "timestamp": "2025-08-20T13:20:19.760700",
+  "symbols": [
+    "ABAT",
+    "ABSI",
+    "AMPX",
+    "BZAI",
+    "CETH",
+    "CRSP",
+    "CTNM",
+    "DGXX",
+    "EETH",
+    "ETHA",
+    "ETHT",
+    "ETHU",
+    "ETHV",
+    "EZET",
+    "FETH",
+    "KRMN",
+    "LMFA",
+    "MEIP",
+    "OPEN",
+    "PGY",
+    "PTHL",
+    "QS",
+    "REMX",
+    "REPL",
+    "SLDB",
+    "SLDP",
+    "SOLT",
+    "SOLZ",
+    "SPCE",
+    "STEM",
+    "WWR",
+    "XPON",
+    "XXRP"
+  ],
+  "filters": {
+    "price_range": {
+      "min_price": 1.0,
+      "max_price": 500.0
+    },
+    "price_vs_ma": {
+      "ma_period": 50,
+      "condition": "above"
+    },
+    "rsi": {
+      "rsi_period": 14,
+      "condition": "above",
+      "threshold": 70.0
+    },
+    "min_avg_volume": null,
+    "min_avg_dollar_volume": null,
+    "gap": {
+      "gap_threshold": 2.0,
+      "direction": "both"
+    },
+    "prev_day_dollar_volume": {
+      "min_dollar_volume": 10000000.0
+    },
+    "relative_volume": {
+      "recent_days": 2,
+      "lookback_days": 20,
+      "min_ratio": 1.5
+    }
+  },
+  "metadata": {
+    "screening_date": "2025-07-21",
+    "total_symbols_screened": 9086,
+    "total_qualifying_stocks": 33,
+    "execution_time_ms": 23263.075351715088
+  },
+  "count": 33
+}

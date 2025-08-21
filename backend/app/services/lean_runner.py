@@ -100,9 +100,11 @@ class LeanRunner:
             
             # Add any custom parameters from the request
             logger.info(f"Request parameters for {backtest_id}: {request.parameters}")
+            logger.info(f"Existing config parameters before update: {config_data['parameters']}")
             for key, value in request.parameters.items():
                 config_data["parameters"][key] = str(value)
                 logger.info(f"Setting parameter {key} = {value} for {backtest_id}")
+            logger.info(f"Final config parameters after update: {config_data['parameters']}")
             
             # Write the temporary config file
             with open(temp_config_path, 'w') as f:

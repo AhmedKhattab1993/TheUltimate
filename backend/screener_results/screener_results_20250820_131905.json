@@ -1,0 +1,60 @@
+{
+  "timestamp": "2025-08-20T13:19:05.785944",
+  "symbols": [
+    "AGH",
+    "ALLE",
+    "ANEB",
+    "CCI",
+    "CRL",
+    "DNA",
+    "DNUT",
+    "DYNX",
+    "GGLL",
+    "GOOX",
+    "GPRO",
+    "ICLR",
+    "LHX",
+    "MXL",
+    "PAPL",
+    "UAVS",
+    "WEX",
+    "YYAI",
+    "ZOOZ"
+  ],
+  "filters": {
+    "price_range": {
+      "min_price": 1.0,
+      "max_price": 500.0
+    },
+    "price_vs_ma": {
+      "ma_period": 50,
+      "condition": "above"
+    },
+    "rsi": {
+      "rsi_period": 14,
+      "condition": "above",
+      "threshold": 70.0
+    },
+    "min_avg_volume": null,
+    "min_avg_dollar_volume": null,
+    "gap": {
+      "gap_threshold": 2.0,
+      "direction": "both"
+    },
+    "prev_day_dollar_volume": {
+      "min_dollar_volume": 10000000.0
+    },
+    "relative_volume": {
+      "recent_days": 2,
+      "lookback_days": 20,
+      "min_ratio": 1.5
+    }
+  },
+  "metadata": {
+    "screening_date": "2025-07-24",
+    "total_symbols_screened": 9160,
+    "total_qualifying_stocks": 19,
+    "execution_time_ms": 25540.834665298462
+  },
+  "count": 19
+}

@@ -102,6 +102,14 @@ class BacktestQueueManager:
             
             try:
                 # Create BacktestRequest from task data
+                parameters = task.request_data.get('parameters', {})
+                
+                # Extract fields that should be direct attributes on BacktestRequest
+                lower_timeframe = parameters.pop('lower_timeframe', '5min')
+                pivot_bars = parameters.pop('pivot_bars', 20)
+                
+                logger.info(f"Extracted parameters for {task.symbol}: lower_timeframe={lower_timeframe}, pivot_bars={pivot_bars}, remaining_params={parameters}")
+                
                 request = BacktestRequest(
                     strategy_name=task.request_data['strategy'],
                     start_date=task.request_data['start_date'],
@@ -109,7 +117,9 @@ class BacktestQueueManager:
                     initial_cash=task.request_data['initial_cash'],
                     symbols=[task.symbol],
                     resolution=task.request_data.get('resolution', 'Daily'),
-                    parameters=task.request_data.get('parameters', {})
+                    lower_timeframe=lower_timeframe,
+                    pivot_bars=pivot_bars,
+                    parameters=parameters  # Remaining parameters
                 )
                 
                 logger.info(f"Created backtest request for symbol: {task.symbol} with symbols list: {request.symbols}")

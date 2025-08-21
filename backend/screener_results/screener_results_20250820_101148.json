@@ -1,0 +1,86 @@
+{
+  "timestamp": "2025-08-20T10:11:48.129527",
+  "symbols": [
+    "AEP",
+    "AMSC",
+    "APPF",
+    "ATAI",
+    "ATEC",
+    "AUPH",
+    "BE",
+    "BELFB",
+    "CECO",
+    "CELC",
+    "CLS",
+    "COUR",
+    "EBAY",
+    "FDMT",
+    "FHI",
+    "FIG",
+    "GIC",
+    "GLW",
+    "GNRC",
+    "IDCC",
+    "IRTC",
+    "LC",
+    "LECO",
+    "MOD",
+    "MTRN",
+    "NMRK",
+    "NVT",
+    "PI",
+    "PTC",
+    "RDDT",
+    "RDTL",
+    "RMD",
+    "RRR",
+    "RSI",
+    "SNGX",
+    "SPXC",
+    "SXI",
+    "TEL",
+    "TREE",
+    "UTES",
+    "VRME",
+    "W",
+    "WDC",
+    "WK",
+    "ZWS"
+  ],
+  "filters": {
+    "price_range": {
+      "min_price": 1.0,
+      "max_price": 500.0
+    },
+    "price_vs_ma": {
+      "ma_period": 50,
+      "condition": "above"
+    },
+    "rsi": {
+      "rsi_period": 14,
+      "condition": "above",
+      "threshold": 70.0
+    },
+    "min_avg_volume": null,
+    "min_avg_dollar_volume": null,
+    "gap": {
+      "gap_threshold": 1.0,
+      "direction": "both"
+    },
+    "prev_day_dollar_volume": {
+      "min_dollar_volume": 10000000.0
+    },
+    "relative_volume": {
+      "recent_days": 2,
+      "lookback_days": 20,
+      "min_ratio": 1.0
+    }
+  },
+  "metadata": {
+    "screening_date": "2025-08-01",
+    "total_symbols_screened": 9133,
+    "total_qualifying_stocks": 45,
+    "execution_time_ms": 24644.639015197754
+  },
+  "count": 45
+}
