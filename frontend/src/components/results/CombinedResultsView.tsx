@@ -176,7 +176,7 @@ export function CombinedResultsView() {
   const exportToCSV = () => {
     const headers = [
       // Screener columns
-      'Created Date', 'Screening Date', 'Symbol', 'Source',
+      'Created Date', 'Screening Date', 'Backtest Date', 'Symbol', 'Source',
       'Price Range', 'Price vs MA', 'RSI', 'Gap', 'Volume', 'Rel Vol',
       // Backtest columns
       'Strategy', 'Pivots', 'Lower TF',
@@ -186,8 +186,10 @@ export function CombinedResultsView() {
     
     const csvData = results.map(r => [
       // Screener data
-      r.screened_at || '',
+      r.backtest_created_at || '',
       r.screening_date || '',
+      r.backtest_start_date && r.backtest_end_date ? 
+        `${format(parseISO(r.backtest_start_date), 'MMM dd, yyyy')} - ${format(parseISO(r.backtest_end_date), 'MMM dd, yyyy')}` : '',
       r.symbol,
       r.source || '',
       r.filter_min_price && r.filter_max_price ? `$${r.filter_min_price}-${r.filter_max_price}` : '',
@@ -341,6 +343,7 @@ export function CombinedResultsView() {
                     {/* Screener columns - exactly as in ScreenerResultsView */}
                     <TableHead className="w-32">Created Date</TableHead>
                     <TableHead className="w-32">Screening Date</TableHead>
+                    <TableHead className="w-32">Backtest Date</TableHead>
                     <TableHead>Symbol</TableHead>
                     <TableHead>Source</TableHead>
                     <TableHead className="w-24">Price Range</TableHead>
@@ -367,10 +370,14 @@ export function CombinedResultsView() {
                     <TableRow key={index}>
                       {/* Screener columns */}
                       <TableCell>
-                        {result.screened_at ? format(parseISO(result.screened_at), 'MMM dd, yyyy HH:mm') : '-'}
+                        {result.backtest_created_at ? format(parseISO(result.backtest_created_at), 'MMM dd, yyyy HH:mm') : '-'}
                       </TableCell>
                       <TableCell>
                         {result.screening_date ? format(parseISO(result.screening_date), 'MMM dd, yyyy') : '-'}
+                      </TableCell>
+                      <TableCell>
+                        {result.backtest_start_date && result.backtest_end_date ? 
+                          `${format(parseISO(result.backtest_start_date), 'MMM dd, yyyy')} - ${format(parseISO(result.backtest_end_date), 'MMM dd, yyyy')}` : '-'}
                       </TableCell>
                       <TableCell className="font-medium">{result.symbol}</TableCell>
                       <TableCell>
