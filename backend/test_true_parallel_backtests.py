@@ -24,15 +24,15 @@ logger = logging.getLogger(__name__)
 
 
 async def run_true_parallel_backtests():
-    """Run 5 backtests in true parallel using isolated directories."""
+    """Run 20 backtests in true parallel using isolated directories."""
     
     logger.info("=" * 80)
     logger.info("TRUE PARALLEL BACKTEST TEST - Using Isolated Directories")
     logger.info("=" * 80)
     
-    # Create parallel queue manager
+    # Create parallel queue manager with max_parallel=20
     queue_manager = ParallelBacktestQueueManager(
-        max_parallel=5,
+        max_parallel=20,  # Run all 20 in parallel
         template_project_path="/home/ahmed/TheUltimate/backend/lean/MarketStructure",
         temp_dir_base=None,  # Use default: lean/isolated_backtests
         cleanup_after_run=False,  # Keep directories for inspection
@@ -40,12 +40,17 @@ async def run_true_parallel_backtests():
         enable_storage=True
     )
     
-    # Define 5 backtest requests - same date range for simplicity
-    backtest_requests = [
-        {
-            'symbol': 'AAPL',
+    # Define 20 backtest requests with diverse symbols
+    symbols = [
+        'AAPL'
+    ] * 20
+    
+    backtest_requests = []
+    for symbol in symbols:
+        backtest_requests.append({
+            'symbol': symbol,
             'strategy': 'MarketStructure',
-            'start_date': '2025-01-01',
+            'start_date': '2024-01-01',
             'end_date': '2025-01-31',
             'initial_cash': 100000,
             'resolution': 'Daily',
@@ -53,56 +58,7 @@ async def run_true_parallel_backtests():
                 'pivot_bars': 20,
                 'lower_timeframe': '5min'
             }
-        },
-        {
-            'symbol': 'GOOGL',
-            'strategy': 'MarketStructure',
-            'start_date': '2025-01-01',
-            'end_date': '2025-01-31',
-            'initial_cash': 100000,
-            'resolution': 'Daily',
-            'parameters': {
-                'pivot_bars': 20,
-                'lower_timeframe': '5min'
-            }
-        },
-        {
-            'symbol': 'MSFT',
-            'strategy': 'MarketStructure',
-            'start_date': '2025-01-01',
-            'end_date': '2025-01-31',
-            'initial_cash': 100000,
-            'resolution': 'Daily',
-            'parameters': {
-                'pivot_bars': 20,
-                'lower_timeframe': '5min'
-            }
-        },
-        {
-            'symbol': 'AMZN',
-            'strategy': 'MarketStructure',
-            'start_date': '2025-01-01',
-            'end_date': '2025-01-31',
-            'initial_cash': 100000,
-            'resolution': 'Daily',
-            'parameters': {
-                'pivot_bars': 20,
-                'lower_timeframe': '5min'
-            }
-        },
-        {
-            'symbol': 'META',
-            'strategy': 'MarketStructure',
-            'start_date': '2025-01-01',
-            'end_date': '2025-01-31',
-            'initial_cash': 100000,
-            'resolution': 'Daily',
-            'parameters': {
-                'pivot_bars': 20,
-                'lower_timeframe': '5min'
-            }
-        }
-    ]
+        })
     
     logger.info(f"Starting {len(backtest_requests)} backtests in TRUE parallel...")
     logger.info("Each backtest will have its own isolated project directory")
@@ -113,7 +69,7 @@ async def run_true_parallel_backtests():
     # Run all backtests in parallel
     results = await queue_manager.run_batch(
         backtest_requests,
-        timeout_per_backtest=300,  # 5 minutes timeout
+        timeout_per_backtest=30000,  # 5 minutes timeout
         retry_attempts=1,
         continue_on_error=True
     )

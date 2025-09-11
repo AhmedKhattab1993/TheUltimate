@@ -191,3 +191,9 @@ lean/
 
 # Data collection scripts
 load_*.py
+
+# Screener results
+screener_results/
+
+# Pipeline results
+pipeline_results/
