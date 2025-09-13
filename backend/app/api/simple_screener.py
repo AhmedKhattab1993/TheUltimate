@@ -217,7 +217,7 @@ async def _process_single_day(
         
         # Apply filters and collect all filter results
         filter_results = []
-        passes_all = True
+        skip_symbol = False
         
         for filter_obj in filters_list:
             filter_name = filter_obj.__class__.__name__
@@ -227,19 +227,16 @@ async def _process_single_day(
                 filter_time = (time.time() - filter_start) * 1000
                 timing_breakdown['filter_timings'][filter_name]['total_ms'] += filter_time
                 timing_breakdown['filter_timings'][filter_name]['symbols_processed'] += 1
-                # Check if any days qualify - if not, filter failed
-                if filter_result.num_qualifying_days == 0:
-                    passes_all = False
-                    break
+                # Collect result even if no days qualify - we'll combine later
                 filter_results.append(filter_result)
             except ValueError as e:
                 # Skip stocks that don't have enough data
                 logger.debug(f"[{trading_date}] Skipping {symbol}: {str(e)}")
-                passes_all = False
+                skip_symbol = True
                 break
         
-        # Only include in results if all filters pass
-        if passes_all and filter_results:
+        # Only include in results if we have all filter results
+        if not skip_symbol and filter_results:
             # Combine all filter results to get dates where ALL filters passed
             combined_result = filter_results[0]
             for fr in filter_results[1:]:
