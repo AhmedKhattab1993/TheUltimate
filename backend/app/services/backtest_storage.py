@@ -40,7 +40,10 @@ class BacktestStorage:
                          start_date: date,
                          end_date: date,
                          initial_cash: float,
-                         result_path: str) -> Optional[BacktestResult]:
+                         result_path: str,
+                         resolution: str = "Daily",
+                         pivot_bars: int = 20,
+                         lower_timeframe: str = "5min") -> Optional[BacktestResult]:
         """
         Save a completed backtest result.
         
@@ -201,9 +204,9 @@ class BacktestStorage:
                 start_date=start_date,
                 end_date=end_date,
                 initial_cash=initial_cash,
-                resolution="Daily",  # Default resolution
-                pivot_bars=20,  # Default pivot bars
-                lower_timeframe="5min",  # Default lower timeframe
+                resolution=resolution,
+                pivot_bars=pivot_bars,
+                lower_timeframe=lower_timeframe,
                 final_value=final_value,
                 statistics=statistics,
                 orders=orders,
@@ -254,6 +257,24 @@ class BacktestStorage:
                 data['start_date'] = datetime.fromisoformat(data['start_date']).date()
                 data['end_date'] = datetime.fromisoformat(data['end_date']).date()
                 data['created_at'] = datetime.fromisoformat(data['created_at'])
+                
+                # Add default values for fields that might be missing in old files
+                if 'symbol' not in data:
+                    data['symbol'] = 'UNKNOWN'
+                if 'resolution' not in data:
+                    data['resolution'] = 'Daily'
+                if 'pivot_bars' not in data:
+                    data['pivot_bars'] = 20
+                if 'lower_timeframe' not in data:
+                    data['lower_timeframe'] = '5min'
+                
+                # Ensure statistics has required fields
+                if 'statistics' in data:
+                    stats = data['statistics']
+                    if 'net_profit_currency' not in stats and 'netProfitCurrency' not in stats:
+                        stats['net_profit_currency'] = stats.get('net_profit', 0) * 1000  # Estimate
+                    if 'final_value' not in stats and 'finalValue' not in stats:
+                        stats['final_value'] = data.get('final_value', 100000)
                 
                 return BacktestResult(**data)
             

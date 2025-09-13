@@ -548,7 +548,10 @@ class BacktestManager:
                                             start_date=run_info.request.start_date,
                                             end_date=run_info.request.end_date,
                                             initial_cash=run_info.request.initial_cash,
-                                            result_path=run_info.result_path
+                                            result_path=run_info.result_path,
+                                            resolution=run_info.request.resolution,
+                                            pivot_bars=run_info.request.pivot_bars,
+                                            lower_timeframe=run_info.request.lower_timeframe
                                         )
                                     except Exception as e:
                                         logger.warning(f"Failed to save backtest result to storage: {e}")

@@ -556,7 +556,10 @@ class BacktestQueueManager:
                     start_date=datetime.strptime(task.request_data['start_date'], '%Y-%m-%d').date(),
                     end_date=datetime.strptime(task.request_data['end_date'], '%Y-%m-%d').date(),
                     initial_cash=task.request_data.get('initial_cash', 100000),
-                    result_path=result_path
+                    result_path=result_path,
+                    resolution=task.request_data.get('resolution', 'Daily'),
+                    pivot_bars=task.request_data.get('pivot_bars', 20),
+                    lower_timeframe=task.request_data.get('lower_timeframe', '5min')
                 )
                 if backtest_result:
                     logger.info(f"Stored backtest result for {task.symbol} in file storage")

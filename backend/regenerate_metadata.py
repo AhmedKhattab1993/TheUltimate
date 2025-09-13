@@ -46,6 +46,7 @@ async def regenerate_metadata():
             # Regenerate the result
             result = await storage.save_result(
                 backtest_id=backtest_dir.name,
+                symbol=params.get("symbols", "UNKNOWN"),
                 strategy_name="MarketStructure",
                 start_date=start_date,
                 end_date=end_date,
