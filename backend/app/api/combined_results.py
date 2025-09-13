@@ -145,8 +145,8 @@ async def get_combined_results(
             query += f" AND symbol = ${param_count}"
             params.append(symbol.upper())
         
-        # Add ordering
-        query += " ORDER BY screening_date DESC, screened_at DESC, total_return DESC NULLS LAST"
+        # Add ordering - prioritize results with backtest data
+        query += " ORDER BY CASE WHEN backtest_id IS NOT NULL THEN 0 ELSE 1 END, screening_date DESC, screened_at DESC, total_return DESC NULLS LAST"
         
         # Get total count for pagination
         count_query = f"SELECT COUNT(*) FROM ({query}) as t"
@@ -536,8 +536,8 @@ async def export_combined_results(
             query += f" AND symbol = ${param_count}"
             params.append(symbol.upper())
         
-        # Add ordering
-        query += " ORDER BY screening_date DESC, screened_at DESC, total_return DESC NULLS LAST"
+        # Add ordering - prioritize results with backtest data
+        query += " ORDER BY CASE WHEN backtest_id IS NOT NULL THEN 0 ELSE 1 END, screening_date DESC, screened_at DESC, total_return DESC NULLS LAST"
         
         # Execute query
         rows = await db_pool.fetch(query, *params)
