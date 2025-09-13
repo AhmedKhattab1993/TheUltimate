@@ -148,8 +148,8 @@ async def _process_single_day(
     
     # Smart date calculation: Convert trading days to calendar days
     # Approximate: 252 trading days per year = ~21 trading days per month
-    # Add 40% buffer for weekends/holidays
-    calendar_days_needed = int(max_lookback_days * 1.4)
+    # Add 40% buffer for weekends/holidays plus 5 extra days for safety
+    calendar_days_needed = int((max_lookback_days + 5) * 1.4)
     data_start_date = trading_date - timedelta(days=calendar_days_needed)
     
     # Ensure we don't request data before what's available (we have data from 2025-01-02)
