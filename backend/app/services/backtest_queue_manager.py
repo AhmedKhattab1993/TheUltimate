@@ -568,6 +568,12 @@ class BacktestQueueManager:
             
             # Save link to screener_backtest_links if we have a screener_session_id
             if self.screener_session_id and 'screening_date' in task.request_data:
+                # DIAGNOSTIC LOGGING
+                logger.info(f"[DIAGNOSTIC] Saving backtest link for {task.symbol}:")
+                logger.info(f"  - Screener session ID: {self.screener_session_id}")
+                logger.info(f"  - Backtest ID: {cache_hash}")
+                logger.info(f"  - Screening date: {task.request_data['screening_date']}")
+                
                 await self._save_screener_backtest_link(
                     screener_session_id=self.screener_session_id,
                     backtest_id=cache_hash,
@@ -862,7 +868,11 @@ class BacktestQueueManager:
                 date_obj
             )
             
-            logger.info(f"Saved screener-backtest link for {symbol} on {data_date}")
+            logger.info(f"[DIAGNOSTIC] Successfully saved screener-backtest link:")
+            logger.info(f"  - Symbol: {symbol}")
+            logger.info(f"  - Date: {data_date}") 
+            logger.info(f"  - Session: {screener_session_id}")
+            logger.info(f"  - Backtest ID: {backtest_id}")
             
         except Exception as e:
             logger.error(f"Error saving screener-backtest link: {e}")

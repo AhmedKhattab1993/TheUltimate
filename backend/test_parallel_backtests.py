@@ -22,80 +22,39 @@ logger = logging.getLogger(__name__)
 
 
 async def run_parallel_backtests():
-    """Run 5 backtests in parallel without delay or caching."""
+    """Run 20 backtests in parallel without delay or caching."""
     
     # Create queue manager with no startup delay and no caching
     queue_manager = BacktestQueueManager(
-        max_parallel=5,
+        max_parallel=20,  # Set to 20 to match the number of backtests
         startup_delay=0.0,  # No delay
         cache_service=None,  # No caching
         enable_storage=True,
         enable_cleanup=False
     )
     
-    # Define 5 simple backtest requests
-    backtest_requests = [
-        {
-            'symbol': 'AAPL',
-            'strategy': 'MarketStructure',
-            'start_date': '2025-01-01',
-            'end_date': '2025-01-31',
-            'initial_cash': 100000,
-            'resolution': 'Daily',
-            'parameters': {
-                'pivot_bars': 20,
-                'lower_timeframe': '5min'
-            }
-        },
-        {
-            'symbol': 'GOOGL',
-            'strategy': 'MarketStructure',
-            'start_date': '2025-01-01',
-            'end_date': '2025-01-31',
-            'initial_cash': 100000,
-            'resolution': 'Daily',
-            'parameters': {
-                'pivot_bars': 20,
-                'lower_timeframe': '5min'
-            }
-        },
-        {
-            'symbol': 'MSFT',
-            'strategy': 'MarketStructure',
-            'start_date': '2025-01-01',
-            'end_date': '2025-01-31',
-            'initial_cash': 100000,
-            'resolution': 'Daily',
-            'parameters': {
-                'pivot_bars': 20,
-                'lower_timeframe': '5min'
-            }
-        },
-        {
-            'symbol': 'AMZN',
-            'strategy': 'MarketStructure',
-            'start_date': '2025-01-01',
-            'end_date': '2025-01-31',
-            'initial_cash': 100000,
-            'resolution': 'Daily',
-            'parameters': {
-                'pivot_bars': 20,
-                'lower_timeframe': '5min'
-            }
-        },
-        {
-            'symbol': 'META',
-            'strategy': 'MarketStructure',
-            'start_date': '2025-01-01',
-            'end_date': '2025-01-31',
-            'initial_cash': 100000,
-            'resolution': 'Daily',
-            'parameters': {
-                'pivot_bars': 20,
-                'lower_timeframe': '5min'
-            }
-        }
+    # Define 20 backtest requests with diverse symbols
+    symbols = [
+        'AAPL', 'GOOGL', 'MSFT', 'AMZN', 'META',
+        'NVDA', 'TSLA', 'BRK.B', 'JPM', 'JNJ',
+        'V', 'PG', 'UNH', 'HD', 'DIS',
+        'MA', 'PYPL', 'BAC', 'NFLX', 'ADBE'
     ]
+    
+    backtest_requests = []
+    for symbol in symbols:
+        backtest_requests.append({
+            'symbol': symbol,
+            'strategy': 'MarketStructure',
+            'start_date': '2025-01-01',
+            'end_date': '2025-01-31',
+            'initial_cash': 100000,
+            'resolution': 'Daily',
+            'parameters': {
+                'pivot_bars': 20,
+                'lower_timeframe': '5min'
+            }
+        })
     
     logger.info(f"Starting {len(backtest_requests)} backtests in parallel...")
     

@@ -1,0 +1,75 @@
+advanced:
+  database_table: pipeline_results
+  log_file: ./pipeline.log
+  log_level: INFO
+  max_cpu_percent: 90
+  max_memory_percent: 80
+  save_to_database: true
+backtesting:
+  initial_cash: 100000
+  parameters:
+    lower_timeframe: 1min
+    pivot_bars: 3
+  resolution: Daily
+  strategy: MarketStructure
+caching:
+  backtest_ttl_days: 7
+  cleanup_on_startup: false
+  enabled: true
+  screener_ttl_hours: 24
+  show_stats_on_completion: false
+execution:
+  continue_on_error: true
+  max_backtests: 0
+  parallel_backtests: 5
+  retry_attempts: 2
+  startup_delay: 10
+  timeout_per_backtest: 300
+output:
+  archive_before_cleanup: false
+  archive_format: tar.gz
+  cleanup_logs: false
+  directory: ./pipeline_results
+  formats:
+  - json
+  - csv
+  - html
+  print_to_console: true
+screening:
+  date_range:
+    end: '2025-08-05'
+    start: '2025-08-05'
+  filters:
+    gap:
+      direction: down
+      enabled: true
+      gap_threshold: 4
+    prev_day_dollar_volume:
+      enabled: true
+      min_dollar_volume: 1000000000
+    price_range:
+      enabled: true
+      max_price: 20
+      min_price: 1
+    price_vs_ma:
+      condition: above
+      enabled: false
+      ma_period: 20
+    relative_volume:
+      enabled: true
+      lookback_days: 10
+      min_ratio: 3
+      recent_days: 1
+    rsi:
+      condition: above
+      enabled: true
+      period: 14
+      rsi_period: 14
+      threshold: 50
+  use_all_us_stocks: true
+storage:
+  archive_before_cleanup: false
+  cleanup_after_storage: true
+  enabled: true
+  store_immediately: true
+  table_name: market_structure_results

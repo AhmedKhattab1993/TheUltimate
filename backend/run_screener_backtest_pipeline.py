@@ -221,10 +221,18 @@ class ScreenerBacktestPipeline:
                 # Create cache models for each result
                 cache_results = []
                 for result in response.results:
+                    # DIAGNOSTIC LOGGING
+                    actual_data_date = getattr(self, 'current_processing_date', request.end_date)
+                    logger.info(f"[DIAGNOSTIC] Saving screener result for {result.symbol}:")
+                    logger.info(f"  - Pipeline session ID: {self.pipeline_session_id}")
+                    logger.info(f"  - Data date: {actual_data_date}")
+                    logger.info(f"  - Current processing date attr exists: {hasattr(self, 'current_processing_date')}")
+                    logger.info(f"  - Request end date: {request.end_date}")
+                    
                     cache_result = CachedScreenerResult(
                         symbol=result.symbol,
                         company_name=None,  # SimpleScreenResult doesn't have company_name
-                        data_date=request.end_date,  # Use end date as the data date
+                        data_date=actual_data_date,  # Use current processing date if available, otherwise end date
                         # Copy filter parameters from request
                         # Price filters
                         filter_min_price=request.filters.price_range.min_price if request.filters.price_range else None,
@@ -537,6 +545,11 @@ class ScreenerBacktestPipeline:
         logger.info(f"Processing date: {date_str}")
         logger.info(f"{'='*60}")
         
+        # Store the current processing date for screener results
+        self.current_processing_date = date_str
+        logger.info(f"[DIAGNOSTIC] Set current_processing_date to: {self.current_processing_date}")
+        logger.info(f"[DIAGNOSTIC] Pipeline session ID in run_single_day: {self.pipeline_session_id}")
+        
         # Update screening config for this specific date
         original_start = self.config['screening']['date_range']['start']
         original_end = self.config['screening']['date_range']['end']
@@ -596,12 +609,18 @@ class ScreenerBacktestPipeline:
             logger.info(f"Cache enabled: {self.cache_enabled}")
             logger.info("=" * 80)
             
-            # Generate a session ID for this pipeline run
-            self.pipeline_session_id = uuid4()
-            logger.info(f"Pipeline session ID: {self.pipeline_session_id}")
+            # Generate a session ID for this pipeline run if not already set
+            if not hasattr(self, 'pipeline_session_id') or self.pipeline_session_id is None:
+                self.pipeline_session_id = uuid4()
+                logger.info(f"Generated new pipeline session ID: {self.pipeline_session_id}")
+            else:
+                logger.info(f"Using existing pipeline session ID: {self.pipeline_session_id}")
+            logger.info(f"[DIAGNOSTIC] Pipeline instance created at: {datetime.now()}")
+            logger.info(f"[DIAGNOSTIC] Script name: {sys.argv[0] if sys.argv else 'Unknown'}")
             
-            # Update queue manager with the session ID
+            # Always sync queue manager with the pipeline session ID
             self.queue_manager.screener_session_id = self.pipeline_session_id
+            logger.info(f"[DIAGNOSTIC] Queue manager session ID synced with pipeline: {self.queue_manager.screener_session_id}")
             
             # Clean expired cache if configured
             if self.cache_enabled and self.config.get('caching', {}).get('cleanup_on_startup', True):

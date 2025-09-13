@@ -75,7 +75,7 @@ execution:
   # Maximum number of backtests to execute (not counting cache hits)
   # Set to 0 or omit to run all backtests
   # Set to 1 for testing single backtest execution
-  max_backtests: 100
+  max_backtests: 0
   
   # Delay between starting different backtests (in seconds)
   # This prevents LEAN CLI module installation conflicts

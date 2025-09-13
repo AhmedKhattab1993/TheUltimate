@@ -58,6 +58,10 @@ For 5 backtests of 30 seconds each:
 - **Original**: ~150 seconds (sequential due to locking)
 - **Isolated**: ~30 seconds (true parallel)
 
+For 20 backtests of 30 seconds each:
+- **Original**: ~600 seconds (10 minutes - sequential due to locking)
+- **Isolated**: ~30-40 seconds (true parallel, limited only by system resources)
+
 ## Usage
 
 ### Original (problematic):
