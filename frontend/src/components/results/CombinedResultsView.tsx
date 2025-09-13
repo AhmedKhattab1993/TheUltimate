@@ -109,13 +109,15 @@ export function CombinedResultsView({
         // Don't filter by date when showing backtest results in the Backtesting tab
         // as cached results would be filtered out
         createdAfter: undefined,
-        screenerSessionId: backtestState.lastRunDetails.screenerSessionId
+        screenerSessionId: backtestState.lastRunDetails.screenerSessionId,
+        bulkId: backtestState.lastRunDetails.bulkId
       }
     }
     return {
       symbols: filterSymbols,
       createdAfter: filterCreatedAfter,
-      screenerSessionId: undefined
+      screenerSessionId: undefined,
+      bulkId: undefined
     }
   }, [filterByLatestRun, backtestState.lastRunDetails, filterSymbols, filterCreatedAfter])
 
@@ -141,7 +143,10 @@ export function CombinedResultsView({
       }
       
       // Apply effective filters
-      if (effectiveFilters.screenerSessionId) {
+      if (effectiveFilters.bulkId) {
+        // Use bulk ID for precise filtering of a specific run
+        params.append('bulk_id', effectiveFilters.bulkId)
+      } else if (effectiveFilters.screenerSessionId) {
         // Use session ID for precise filtering
         params.append('session_id', effectiveFilters.screenerSessionId)
       } else if (effectiveFilters.symbols && effectiveFilters.symbols.length > 0) {
@@ -171,8 +176,8 @@ export function CombinedResultsView({
         }))
       })
       
-      // Only apply client-side filtering if not using session ID
-      if (!effectiveFilters.screenerSessionId && effectiveFilters.symbols && effectiveFilters.symbols.length > 0) {
+      // Only apply client-side filtering if not using bulk ID or session ID
+      if (!effectiveFilters.bulkId && !effectiveFilters.screenerSessionId && effectiveFilters.symbols && effectiveFilters.symbols.length > 0) {
         filteredResults = data.results.filter((r: CombinedResult) => 
           effectiveFilters.symbols!.includes(r.symbol)
         )
@@ -198,7 +203,7 @@ export function CombinedResultsView({
       setResults(filteredResults)
       
       // Use total_count from API when not filtering, otherwise use filtered length
-      if (!effectiveFilters.screenerSessionId && (effectiveFilters.symbols || effectiveFilters.createdAfter)) {
+      if (!effectiveFilters.bulkId && !effectiveFilters.screenerSessionId && (effectiveFilters.symbols || effectiveFilters.createdAfter)) {
         setTotalCount(filteredResults.length)
       } else {
         setTotalCount(data.total_count || filteredResults.length)
@@ -241,7 +246,7 @@ export function CombinedResultsView({
   useEffect(() => {
     fetchResults()
     fetchStats()
-  }, [currentPage, symbolFilter, sourceFilter, limit, filterByLatestRun, backtestState.lastRunDetails])
+  }, [currentPage, symbolFilter, sourceFilter, limit, filterByLatestRun, backtestState.lastRunDetails, backtestState.completedAt])
   
   // Function to view trades
   const handleViewTrades = async (backtestId: string) => {

@@ -900,7 +900,8 @@ async def start_screener_backtests(request: ScreenerBacktestRequest):
             cache_service=cache_service,
             enable_storage=True,
             enable_cleanup=True,
-            screener_session_id=screener_session_id  # Pass session_id if available
+            screener_session_id=screener_session_id,  # Pass session_id if available
+            bulk_id=bulk_id  # Pass bulk_id to track this specific run
         )
         
         # Set up completion callback for WebSocket notification

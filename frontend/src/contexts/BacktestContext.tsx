@@ -115,6 +115,7 @@ export interface BacktestState {
   error: string | null
   websocket: WebSocket | null
   lastRunDetails: LastRunDetails | null
+  completedAt: number | null  // Timestamp when backtests completed
 }
 
 // Action types
@@ -148,7 +149,8 @@ const initialState: BacktestState = {
   historicalResults: [],
   error: null,
   websocket: null,
-  lastRunDetails: null
+  lastRunDetails: null,
+  completedAt: null
 }
 
 // Reducer
@@ -186,7 +188,8 @@ function backtestReducer(state: BacktestState, action: BacktestAction): Backtest
     case 'COMPLETE_BACKTESTS':
       return {
         ...state,
-        isRunning: false
+        isRunning: false,
+        completedAt: Date.now()  // Set timestamp when backtests complete
       }
 
     case 'SET_RESULT':

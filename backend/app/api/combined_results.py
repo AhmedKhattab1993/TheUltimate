@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 @router.get("/", response_model=CombinedScreenerBacktestResponse)
 async def get_combined_results(
     session_id: Optional[UUID] = Query(None, description="Filter by specific screener session ID"),
+    bulk_id: Optional[str] = Query(None, description="Filter by specific bulk run ID"),
     start_date: Optional[date] = Query(None, description="Filter by screening date start"),
     end_date: Optional[date] = Query(None, description="Filter by screening date end"),
     source: Optional[str] = Query(None, description="Filter by source (ui/pipeline)"),
@@ -115,7 +116,11 @@ async def get_combined_results(
         param_count = 0
         
         # Add filters
-        if session_id:
+        if bulk_id:
+            param_count += 1
+            query += f" AND bulk_id = ${param_count}"
+            params.append(bulk_id)
+        elif session_id:
             param_count += 1
             query += f" AND screener_session_id = ${param_count}"
             params.append(session_id)
@@ -328,6 +333,7 @@ async def get_screener_sessions(
 @router.get("/stats", response_model=Dict[str, Any])
 async def get_combined_stats(
     session_id: Optional[UUID] = Query(None, description="Filter by specific screener session ID"),
+    bulk_id: Optional[str] = Query(None, description="Filter by specific bulk run ID"),
     start_date: Optional[date] = Query(None, description="Filter by screening date start"),
     end_date: Optional[date] = Query(None, description="Filter by screening date end"),
     source: Optional[str] = Query(None, description="Filter by source (ui/pipeline)"),
@@ -355,7 +361,11 @@ async def get_combined_stats(
         param_count = 0
         
         # Add filters
-        if session_id:
+        if bulk_id:
+            param_count += 1
+            query += f" AND bulk_id = ${param_count}"
+            params.append(bulk_id)
+        elif session_id:
             param_count += 1
             query += f" AND screener_session_id = ${param_count}"
             params.append(session_id)
@@ -405,6 +415,7 @@ async def get_combined_stats(
 @router.get("/export", response_model=CombinedScreenerBacktestResponse)
 async def export_combined_results(
     session_id: Optional[UUID] = Query(None, description="Filter by specific screener session ID"),
+    bulk_id: Optional[str] = Query(None, description="Filter by specific bulk run ID"),
     start_date: Optional[date] = Query(None, description="Filter by screening date start"),
     end_date: Optional[date] = Query(None, description="Filter by screening date end"),
     source: Optional[str] = Query(None, description="Filter by source (ui/pipeline)"),
@@ -496,7 +507,11 @@ async def export_combined_results(
         param_count = 0
         
         # Add filters
-        if session_id:
+        if bulk_id:
+            param_count += 1
+            query += f" AND bulk_id = ${param_count}"
+            params.append(bulk_id)
+        elif session_id:
             param_count += 1
             query += f" AND screener_session_id = ${param_count}"
             params.append(session_id)

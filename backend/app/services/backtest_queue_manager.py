@@ -52,7 +52,8 @@ class BacktestQueueManager:
                  cache_service: Optional[CacheService] = None,
                  enable_storage: bool = True,
                  enable_cleanup: bool = True,
-                 screener_session_id: Optional[uuid.UUID] = None):
+                 screener_session_id: Optional[uuid.UUID] = None,
+                 bulk_id: Optional[str] = None):
         """
         Initialize the queue manager.
         
@@ -63,6 +64,7 @@ class BacktestQueueManager:
             enable_storage: Whether to store results to database
             enable_cleanup: Whether to cleanup files after storage
             screener_session_id: Optional screener session ID for linking results
+            bulk_id: Optional bulk ID for this batch of backtests
         """
         self.max_parallel = max_parallel
         self.startup_delay = startup_delay
@@ -77,6 +79,7 @@ class BacktestQueueManager:
         self.enable_cleanup = enable_cleanup
         self.backtest_storage = BacktestStorage() if enable_storage else None
         self.screener_session_id = screener_session_id
+        self.bulk_id = bulk_id
         
     def set_completion_callback(self, callback: Callable):
         """Set a callback function for completion notification."""
@@ -877,13 +880,13 @@ class BacktestQueueManager:
             else:
                 date_obj = data_date
             
-            # Insert link
+            # Insert link with bulk_id
             query = """
             INSERT INTO screener_backtest_links 
-                (screener_session_id, backtest_id, symbol, data_date)
-            VALUES ($1, $2, $3, $4)
+                (screener_session_id, backtest_id, symbol, data_date, bulk_id)
+            VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT (screener_session_id, backtest_id, symbol, data_date) 
-            DO NOTHING
+            DO UPDATE SET bulk_id = EXCLUDED.bulk_id
             """
             
             await db_pool.execute(
@@ -891,7 +894,8 @@ class BacktestQueueManager:
                 screener_session_id, 
                 backtest_id, 
                 symbol, 
-                date_obj
+                date_obj,
+                self.bulk_id
             )
             
             logger.info(f"[DIAGNOSTIC] Successfully saved screener-backtest link:")
