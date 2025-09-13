@@ -205,6 +205,7 @@ class BacktestQueueManager:
         # Create tasks and check cache
         tasks = []
         cached_results = {}
+        cache_hit_count = 0
         
         for request_data in backtest_requests:
             symbol = request_data['symbol']
@@ -236,6 +237,7 @@ class BacktestQueueManager:
                 
                 if cached_result is not None:
                     logger.info(f"Cache hit for {symbol} - skipping backtest")
+                    cache_hit_count += 1
                     # Convert cached result to expected format with comprehensive metrics
                     cached_results[symbol] = {
                         'status': 'completed',
@@ -298,6 +300,20 @@ class BacktestQueueManager:
                         'from_cache': True,
                         'cache_hit': True
                     }
+                    
+                    # Save screener_backtest_links for cache hits too
+                    if self.screener_session_id and 'screening_date' in request_data:
+                        try:
+                            await self._save_screener_backtest_link(
+                                self.screener_session_id,
+                                cached_result.backtest_id,
+                                symbol,
+                                request_data['screening_date']
+                            )
+                            logger.info(f"Saved screener link for cached result: {symbol}")
+                        except Exception as e:
+                            logger.error(f"Failed to save screener link for cached {symbol}: {e}")
+                    
                     continue
             
             # Not in cache, create task
@@ -368,13 +384,20 @@ class BacktestQueueManager:
         
         # Log summary
         total_requests = len(backtest_requests)
-        cached_count = len(cached_results)
         successful = sum(1 for r in all_results.values() if r.get('status') != 'failed')
-        logger.info(f"Batch completed: {successful}/{total_requests} successful backtests ({cached_count} from cache)")
+        logger.info(f"Batch completed: {successful}/{total_requests} successful backtests ({cache_hit_count} from cache)")
         
         if failed_tasks:
             failed_symbols = [t.symbol for t in failed_tasks]
             logger.warning(f"Failed backtests: {', '.join(failed_symbols)}")
+        
+        # If all results were from cache and we have a completion callback, call it
+        if cache_hit_count == total_requests and self.completion_callback:
+            logger.info("All backtests were cache hits, calling completion callback")
+            if asyncio.iscoroutinefunction(self.completion_callback):
+                await self.completion_callback()
+            else:
+                self.completion_callback()
         
         return all_results
     

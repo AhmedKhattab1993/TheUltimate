@@ -22,6 +22,7 @@ from ..services.screener_results import screener_results_manager
 from ..services.database import db_pool
 from .bulk_backtest_websocket import bulk_websocket_manager
 import uuid
+import asyncio
 
 
 router = APIRouter(prefix="/api/v2/backtest", tags=["backtest"])
@@ -387,6 +388,31 @@ async def monitor_backtest(websocket: WebSocket, backtest_id: str):
     finally:
         # Remove WebSocket from manager
         await backtest_manager.remove_websocket_connection(backtest_id, websocket)
+
+
+@router.get("/bulk/{bulk_id}/status")
+async def get_bulk_backtest_status(bulk_id: str):
+    """Get the status of a bulk backtest operation."""
+    try:
+        # Check if the bulk operation is registered
+        is_complete = bulk_websocket_manager.bulk_status.get(bulk_id, None)
+        
+        if is_complete is None:
+            raise HTTPException(status_code=404, detail=f"Bulk backtest {bulk_id} not found")
+        
+        # Get active connections count for debugging
+        active_connections = len(bulk_websocket_manager.active_connections.get(bulk_id, []))
+        
+        return {
+            "bulk_id": bulk_id,
+            "is_complete": is_complete,
+            "active_websocket_connections": active_connections
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting bulk status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.websocket("/monitor/bulk/{bulk_id}")
@@ -858,6 +884,9 @@ async def start_screener_backtests(request: ScreenerBacktestRequest):
                 symbols_by_date[date_str] = []
             symbols_by_date[date_str].append(row['symbol'])
         
+        # Create bulk ID for WebSocket monitoring
+        bulk_id = f"screener_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+        
         # Create cache service for database storage
         cache_service = CacheService(
             screener_ttl_hours=24,
@@ -874,11 +903,22 @@ async def start_screener_backtests(request: ScreenerBacktestRequest):
             screener_session_id=screener_session_id  # Pass session_id if available
         )
         
+        # Set up completion callback for WebSocket notification
+        async def completion_callback():
+            logger.info(f"[ScreenerBacktest] All backtests completed for bulk_id: {bulk_id}")
+            # Notify WebSocket clients that all backtests are complete
+            await bulk_websocket_manager.notify_completion(bulk_id)
+        
+        queue_manager.set_completion_callback(completion_callback)
+        
+        # Register bulk backtest with WebSocket manager
+        bulk_websocket_manager.register_bulk_backtest(bulk_id)
+        
         # Create backtest requests for queue manager
         backtest_requests = []
         total_backtests = sum(len(symbols) for symbols in symbols_by_date.values())
         
-        logger.info(f"Starting screener-based backtests: {len(symbols_by_date)} days, {total_backtests} total backtests")
+        logger.info(f"Starting screener-based backtests: {len(symbols_by_date)} days, {total_backtests} total backtests, bulk_id: {bulk_id}")
         
         for date_str, symbols in symbols_by_date.items():
             for symbol in symbols:
@@ -895,48 +935,13 @@ async def start_screener_backtests(request: ScreenerBacktestRequest):
                 }
                 backtest_requests.append(backtest_request)
         
-        # Run backtests through queue manager (parallel execution)
-        results = await queue_manager.run_batch(
+        # Run backtests asynchronously - don't await
+        asyncio.create_task(queue_manager.run_batch(
             backtest_requests,
             timeout_per_backtest=300,
             retry_attempts=2,
             continue_on_error=True
-        )
-        
-        # Process results
-        backtest_tasks = []
-        successful_count = 0
-        failed_count = 0
-        
-        for symbol, result in results.items():
-            if result.get('status') == 'completed':
-                successful_count += 1
-                status = 'completed'
-            else:
-                failed_count += 1
-                status = 'failed'
-            
-            # Extract date from symbol key
-            parts = symbol.split('_')
-            if len(parts) > 1:
-                date_str = parts[-1]
-                symbol_name = '_'.join(parts[:-1])
-            else:
-                # Find the date for this symbol from our original data
-                symbol_name = symbol
-                date_str = None
-                for date_key, syms in symbols_by_date.items():
-                    if symbol_name in syms:
-                        date_str = date_key
-                        break
-            
-            backtest_tasks.append({
-                "backtest_id": result.get('backtest_id'),
-                "symbol": symbol_name,
-                "screening_date": date_str,
-                "status": status,
-                "error": result.get('error') if status == 'failed' else None
-            })
+        ))
         
         # Get date range from the collected data
         if symbols_by_date:
@@ -948,18 +953,26 @@ async def start_screener_backtests(request: ScreenerBacktestRequest):
             start_date = date.today().isoformat()
             end_date = date.today().isoformat()
         
-        # Return summary
+        # Collect all symbols for the response
+        all_symbols = []
+        for symbols in symbols_by_date.values():
+            all_symbols.extend(symbols)
+        
+        # Return summary with bulk_id for WebSocket connection
         return {
+            "bulk_id": bulk_id,  # Frontend uses this to connect WebSocket
+            "screener_session_id": str(screener_session_id) if screener_session_id else None,  # Include session ID for filtering
             "total_backtests": total_backtests,
-            "successful_starts": successful_count,
-            "failed_starts": failed_count,
+            "successful_starts": total_backtests,  # All are started
+            "failed_starts": 0,  # Failures will be tracked via WebSocket
             "screening_days": len(symbols_by_date),
             "date_range": {
                 "start": start_date,
                 "end": end_date
             },
             "backtests_by_date": symbols_by_date,
-            "backtests": backtest_tasks
+            "symbols": all_symbols,  # Include symbols for frontend tracking
+            "message": f"Started {total_backtests} backtests across {len(symbols_by_date)} screening days"
         }
         
     except HTTPException:

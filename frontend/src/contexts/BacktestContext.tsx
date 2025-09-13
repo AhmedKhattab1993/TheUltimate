@@ -103,6 +103,7 @@ export interface LastRunDetails {
   symbols: string[]
   startTime: Date
   bulkId?: string
+  screenerSessionId?: string
 }
 
 export interface BacktestState {

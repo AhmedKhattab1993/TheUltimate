@@ -106,12 +106,16 @@ export function CombinedResultsView({
     if (filterByLatestRun && backtestState.lastRunDetails) {
       return {
         symbols: backtestState.lastRunDetails.symbols,
-        createdAfter: backtestState.lastRunDetails.startTime
+        // Don't filter by date when showing backtest results in the Backtesting tab
+        // as cached results would be filtered out
+        createdAfter: undefined,
+        screenerSessionId: backtestState.lastRunDetails.screenerSessionId
       }
     }
     return {
       symbols: filterSymbols,
-      createdAfter: filterCreatedAfter
+      createdAfter: filterCreatedAfter,
+      screenerSessionId: undefined
     }
   }, [filterByLatestRun, backtestState.lastRunDetails, filterSymbols, filterCreatedAfter])
 
@@ -137,7 +141,10 @@ export function CombinedResultsView({
       }
       
       // Apply effective filters
-      if (effectiveFilters.symbols && effectiveFilters.symbols.length > 0) {
+      if (effectiveFilters.screenerSessionId) {
+        // Use session ID for precise filtering
+        params.append('session_id', effectiveFilters.screenerSessionId)
+      } else if (effectiveFilters.symbols && effectiveFilters.symbols.length > 0) {
         // For latest run, we need to fetch more results to ensure we get the filtered ones
         // Override the limit to fetch more results
         params.set('limit', '1000')  // Fetch up to 1000 results for filtering
@@ -164,7 +171,8 @@ export function CombinedResultsView({
         }))
       })
       
-      if (effectiveFilters.symbols && effectiveFilters.symbols.length > 0) {
+      // Only apply client-side filtering if not using session ID
+      if (!effectiveFilters.screenerSessionId && effectiveFilters.symbols && effectiveFilters.symbols.length > 0) {
         filteredResults = data.results.filter((r: CombinedResult) => 
           effectiveFilters.symbols!.includes(r.symbol)
         )
@@ -190,7 +198,7 @@ export function CombinedResultsView({
       setResults(filteredResults)
       
       // Use total_count from API when not filtering, otherwise use filtered length
-      if (effectiveFilters.symbols || effectiveFilters.createdAfter) {
+      if (!effectiveFilters.screenerSessionId && (effectiveFilters.symbols || effectiveFilters.createdAfter)) {
         setTotalCount(filteredResults.length)
       } else {
         setTotalCount(data.total_count || filteredResults.length)

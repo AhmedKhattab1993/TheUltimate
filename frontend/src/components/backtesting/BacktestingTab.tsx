@@ -200,7 +200,8 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
         details: {
           symbols: runSymbols,
           startTime: new Date(),
-          bulkId: data.bulk_id
+          bulkId: data.bulk_id,
+          screenerSessionId: data.screener_session_id
         }
       })
 
