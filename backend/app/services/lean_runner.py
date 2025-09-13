@@ -154,23 +154,17 @@ class LeanRunner:
             # Use LEAN CLI from lean_venv (direct command)
             lean_bin = "/home/ahmed/TheUltimate/backend/lean_venv/bin/lean"
             
-            # Get Polygon API key from config
-            from ..config import settings
-            polygon_api_key = settings.polygon_api_key
-            
             # Create a unique output directory for this backtest
             timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
             unique_suffix = backtest_id[:8]  # Use first 8 chars of UUID
             output_dir = self.lean_project_path / project_name / "backtests" / f"{timestamp}_{unique_suffix}"
             
-            # Build LEAN command with Polygon data provider and output directory
+            # Build LEAN command for local data (no data provider needed)
             lean_cmd = [
                 lean_bin, 
                 "backtest", 
                 project_name,
-                "--output", str(output_dir),
-                "--data-provider-historical", "polygon",
-                "--polygon-api-key", polygon_api_key
+                "--output", str(output_dir)
             ]
             
             # Run the backtest command
