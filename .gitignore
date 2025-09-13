@@ -1,0 +1,9 @@
+# PID files
+.pids/
+
+# Log files
+frontend.log
+backend.log
+
+# Checkpoint files
+*checkpoint.json
