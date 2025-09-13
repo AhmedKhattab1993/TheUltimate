@@ -248,7 +248,8 @@ class PriceVsMAFilter(EnhancedBaseFilter):
     
     def get_required_lookback_days(self) -> int:
         """Return number of historical days needed for MA calculation."""
-        return self.period
+        # Add 5-day buffer to account for weekends/holidays
+        return self.period + 5
 
 
 class RSIFilter(EnhancedBaseFilter):
