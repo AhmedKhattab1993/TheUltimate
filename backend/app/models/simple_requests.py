@@ -4,7 +4,7 @@ Simplified request models for the 3 basic trading filters.
 
 from pydantic import BaseModel, Field, validator
 from datetime import date
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Dict, Any
 from enum import Enum
 
 
@@ -157,6 +157,17 @@ class SimpleScreenResult(BaseModel):
         }
 
 
+class TimingBreakdown(BaseModel):
+    """Detailed timing breakdown for screening operations."""
+    symbol_fetch_ms: float = Field(description="Time to fetch active symbols from database")
+    data_loading_ms: float = Field(description="Time to load historical data")
+    filter_timings: Dict[str, Dict[str, float]] = Field(
+        default_factory=dict,
+        description="Timing for each filter (total_ms and symbols_processed)"
+    )
+    result_saving_ms: float = Field(description="Time to save results")
+
+
 class SimpleScreenResponse(BaseModel):
     """Response from simplified screening endpoint."""
     request: SimpleScreenRequest
@@ -168,6 +179,12 @@ class SimpleScreenResponse(BaseModel):
     # Performance metrics
     db_prefiltering_used: bool = Field(False, description="Whether database pre-filtering was used")
     symbols_filtered_by_db: int = Field(0, description="Number of symbols eliminated by DB pre-filtering")
+    
+    # Timing breakdown (optional - only included when available)
+    timing_breakdown: Optional[Dict[str, TimingBreakdown]] = Field(
+        None,
+        description="Detailed timing breakdown by date (date -> timing details)"
+    )
     
     class Config:
         json_encoders = {

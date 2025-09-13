@@ -29,8 +29,9 @@ from ..core.simple_filters import (
     RelativeVolumeFilter
 )
 from ..services.polygon_client import PolygonClient
-from ..services.db_prefilter import OptimizedDataLoader
+from ..services.db_prefilter_optimized import OptimizedDataLoader
 from ..models.stock import StockData
+from ..services.fast_data_converter import rows_to_numpy
 from ..config import settings
 from ..services.screener_results import screener_results_manager
 from ..services.cache_service import CacheService
@@ -100,6 +101,12 @@ async def _process_single_day(
         Dict with results for this day including symbols and qualifying dates
     """
     single_day_start_time = time.time()
+    timing_breakdown = {
+        'symbol_fetch_ms': 0,
+        'data_loading_ms': 0,
+        'filter_timings': {},
+        'result_saving_ms': 0
+    }
     logger.info(f"[{trading_date}] Starting screening for date")
     
     # Always fetch all active symbols from the database
@@ -109,6 +116,7 @@ async def _process_single_day(
             detail="Database connection not available for fetching all US stocks"
         )
     
+    symbol_fetch_start = time.time()
     try:
         loader = OptimizedDataLoader(polygon_client.db_pool)
         symbols = await loader.get_all_active_symbols(
@@ -117,6 +125,8 @@ async def _process_single_day(
             symbol_types=['CS', 'ETF']  # Common stocks and ETFs
         )
         
+        timing_breakdown['symbol_fetch_ms'] = (time.time() - symbol_fetch_start) * 1000
+        
         if not symbols:
             logger.info(f"[{trading_date}] No active symbols found for this date")
             return {
@@ -124,10 +134,11 @@ async def _process_single_day(
                 'symbol_results': {},
                 'total_qualifying': 0,
                 'total_screened': 0,
-                'execution_time_ms': (time.time() - single_day_start_time) * 1000
+                'execution_time_ms': (time.time() - single_day_start_time) * 1000,
+                'timing_breakdown': timing_breakdown
             }
         
-        logger.info(f"[{trading_date}] Found {len(symbols)} active symbols")
+        logger.info(f"[{trading_date}] Found {len(symbols)} active symbols (took {timing_breakdown['symbol_fetch_ms']:.1f}ms)")
     except Exception as e:
         logger.error(f"[{trading_date}] Error fetching symbols: {e}")
         raise
@@ -135,9 +146,11 @@ async def _process_single_day(
     # Calculate required lookback days for all filters
     max_lookback_days = max(f.get_required_lookback_days() for f in filters_list)
     
-    # Calculate the actual data start date (screening start date - lookback period)
-    # Add extra buffer days for weekends/holidays (50 day MA needs ~70 calendar days)
-    data_start_date = trading_date - timedelta(days=max_lookback_days + 30)
+    # Smart date calculation: Convert trading days to calendar days
+    # Approximate: 252 trading days per year = ~21 trading days per month
+    # Add 40% buffer for weekends/holidays
+    calendar_days_needed = int(max_lookback_days * 1.4)
+    data_start_date = trading_date - timedelta(days=calendar_days_needed)
     
     # Ensure we don't request data before what's available (we have data from 2025-01-02)
     min_available_date = date(2025, 1, 2)
@@ -148,6 +161,7 @@ async def _process_single_day(
     logger.info(f"[{trading_date}] Data fetch period: {data_start_date} to {trading_date} (lookback: {max_lookback_days} days)")
     
     # Fetch data with optional pre-filtering
+    data_loading_start = time.time()
     if enable_db_prefiltering and hasattr(polygon_client, 'db_pool'):
         try:
             loader = OptimizedDataLoader(polygon_client.db_pool)
@@ -166,36 +180,53 @@ async def _process_single_day(
                 enable_prefiltering=True
             )
             db_prefiltered_count = len(symbols) - len(data_by_symbol)
-            logger.info(f"[{trading_date}] Database pre-filtering eliminated {db_prefiltered_count} symbols")
+            timing_breakdown['data_loading_ms'] = (time.time() - data_loading_start) * 1000
+            logger.info(f"[{trading_date}] Database pre-filtering eliminated {db_prefiltered_count} symbols (data loading took {timing_breakdown['data_loading_ms']:.1f}ms)")
         except Exception as e:
             logger.warning(f"[{trading_date}] Database pre-filtering failed, falling back to full load: {e}")
             data_by_symbol = await _fetch_all_data(
                 polygon_client, symbols, data_start_date, trading_date
             )
+            timing_breakdown['data_loading_ms'] = (time.time() - data_loading_start) * 1000
     else:
         data_by_symbol = await _fetch_all_data(
             polygon_client, symbols, data_start_date, trading_date
         )
+        timing_breakdown['data_loading_ms'] = (time.time() - data_loading_start) * 1000
+    
+    logger.info(f"[{trading_date}] Loaded data for {len(data_by_symbol)} symbols in {timing_breakdown['data_loading_ms']:.1f}ms")
     
     # Apply filters to each symbol
     symbol_results = {}
     total_qualifying = 0
     
+    # Initialize filter timings
+    for filter_obj in filters_list:
+        filter_name = filter_obj.__class__.__name__
+        timing_breakdown['filter_timings'][filter_name] = {
+            'total_ms': 0,
+            'symbols_processed': 0
+        }
+    
     for symbol, bars in data_by_symbol.items():
         if not bars:
             continue
         
-        # Convert to StockData and then numpy array
-        stock_data = StockData(symbol=symbol, bars=bars)
-        np_data = stock_data.to_numpy()
+        # Fast conversion directly to numpy without Pydantic models
+        np_data = rows_to_numpy(bars)
         
         # Apply filters and collect all filter results
         filter_results = []
         passes_all = True
         
         for filter_obj in filters_list:
+            filter_name = filter_obj.__class__.__name__
+            filter_start = time.time()
             try:
                 filter_result = filter_obj.apply(np_data, symbol)
+                filter_time = (time.time() - filter_start) * 1000
+                timing_breakdown['filter_timings'][filter_name]['total_ms'] += filter_time
+                timing_breakdown['filter_timings'][filter_name]['symbols_processed'] += 1
                 # Check if any days qualify - if not, filter failed
                 if filter_result.num_qualifying_days == 0:
                     passes_all = False
@@ -238,6 +269,7 @@ async def _process_single_day(
     logger.info(f"[{trading_date}] Found {total_qualifying} qualifying symbols")
     
     # Save results to database if any symbols qualified
+    save_start = time.time()
     if symbol_results:
         try:
             # Create cache request model based on enabled filters
@@ -320,12 +352,24 @@ async def _process_single_day(
         except Exception as e:
             logger.error(f"[{trading_date}] Failed to save results: {e}")
     
+    timing_breakdown['result_saving_ms'] = (time.time() - save_start) * 1000
+    
+    # Log filter timing summary
+    logger.info(f"[{trading_date}] Timing breakdown:")
+    logger.info(f"  - Symbol fetch: {timing_breakdown['symbol_fetch_ms']:.1f}ms")
+    logger.info(f"  - Data loading: {timing_breakdown['data_loading_ms']:.1f}ms")
+    for filter_name, filter_timing in timing_breakdown['filter_timings'].items():
+        avg_time = filter_timing['total_ms'] / max(filter_timing['symbols_processed'], 1)
+        logger.info(f"  - {filter_name}: {filter_timing['total_ms']:.1f}ms total, {avg_time:.3f}ms avg/symbol ({filter_timing['symbols_processed']} symbols)")
+    logger.info(f"  - Result saving: {timing_breakdown['result_saving_ms']:.1f}ms")
+    
     return {
         'date': trading_date,
         'symbol_results': symbol_results,
         'total_qualifying': total_qualifying,
         'total_screened': len(data_by_symbol),
-        'execution_time_ms': (time.time() - single_day_start_time) * 1000
+        'execution_time_ms': (time.time() - single_day_start_time) * 1000,
+        'timing_breakdown': timing_breakdown
     }
 
 
@@ -335,22 +379,44 @@ async def _fetch_all_data(
     start_date: date,
     end_date: date
 ) -> dict:
-    """Fetch data for all symbols from Polygon."""
-    data_by_symbol = {}
+    """Fetch data for all symbols using batch database query."""
+    # Use the database connection for batch loading
+    if not hasattr(polygon_client, 'db_pool') or polygon_client.db_pool is None:
+        logger.error("Database pool not available for batch data loading")
+        return {}
     
-    for symbol in symbols:
-        try:
-            bars = await polygon_client.get_daily_bars(
-                symbol=symbol,
-                start_date=start_date,
-                end_date=end_date
+    # Use batch query to load all symbols at once
+    query = """
+    SELECT symbol, time::date as date, open, high, low, close, volume
+    FROM daily_bars
+    WHERE symbol = ANY($1::text[])
+      AND time::date BETWEEN $2 AND $3
+    ORDER BY symbol, time
+    """
+    
+    try:
+        async with polygon_client.db_pool.acquire() as conn:
+            rows = await conn.fetch(
+                query,
+                symbols,
+                start_date,
+                end_date
             )
-            if bars:
-                data_by_symbol[symbol] = bars
-        except Exception as e:
-            logger.error(f"Error fetching data for {symbol}: {e}")
-    
-    return data_by_symbol
+        
+        # Group by symbol
+        data_by_symbol = {}
+        for row in rows:
+            symbol = row['symbol']
+            if symbol not in data_by_symbol:
+                data_by_symbol[symbol] = []
+            data_by_symbol[symbol].append(dict(row))
+        
+        logger.info(f"Batch loaded {len(data_by_symbol)} symbols with {len(rows)} total bars")
+        return data_by_symbol
+        
+    except Exception as e:
+        logger.error(f"Error in batch data loading: {e}")
+        return {}
 
 
 @router.post("/screen", response_model=SimpleScreenResponse)
@@ -477,6 +543,10 @@ async def simple_screen_stocks(
             )
             results.append(result)
         
+        timing_breakdown_dict = {}
+        if 'timing_breakdown' in day_result:
+            timing_breakdown_dict[str(trading_days[0])] = day_result['timing_breakdown']
+        
         return SimpleScreenResponse(
             request=request,
             execution_time_ms=day_result['execution_time_ms'],
@@ -484,12 +554,14 @@ async def simple_screen_stocks(
             total_qualifying_stocks=day_result['total_qualifying'],
             results=results,
             db_prefiltering_used=request.enable_db_prefiltering,
-            symbols_filtered_by_db=0
+            symbols_filtered_by_db=0,
+            timing_breakdown=timing_breakdown_dict if timing_breakdown_dict else None
         )
     
     # Multiple days - process each day individually
     all_symbol_data = {}  # symbol -> {dates: [], metrics: {}}
     total_symbols_screened_max = 0
+    timing_breakdowns = {}  # date -> timing breakdown
     
     for i, trading_date in enumerate(trading_days, 1):
         logger.info(f"Processing day {i}/{len(trading_days)}: {trading_date}")
@@ -503,6 +575,10 @@ async def simple_screen_stocks(
             cache_service=cache_service,
             session_id=screener_session_id
         )
+        
+        # Store timing breakdown if available
+        if 'timing_breakdown' in day_result:
+            timing_breakdowns[str(trading_date)] = day_result['timing_breakdown']
         
         # Aggregate results
         for symbol, data in day_result['symbol_results'].items():
@@ -543,7 +619,8 @@ async def simple_screen_stocks(
         total_qualifying_stocks=len(results),
         results=results,
         db_prefiltering_used=request.enable_db_prefiltering,
-        symbols_filtered_by_db=0
+        symbols_filtered_by_db=0,
+        timing_breakdown=timing_breakdowns if timing_breakdowns else None
     )
 
 

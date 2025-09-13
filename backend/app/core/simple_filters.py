@@ -113,6 +113,10 @@ class SimplePriceRangeFilter(EnhancedBaseFilter):
         self.min_price = min_price
         self.max_price = max_price
     
+    def get_required_lookback_days(self) -> int:
+        """Price range filter only needs current day data."""
+        return 0  # No historical data needed
+    
     def apply(self, data: np.ndarray, symbol: str) -> FilterResult:
         """Apply price range filter using OPEN prices."""
         self._validate_data(data)
