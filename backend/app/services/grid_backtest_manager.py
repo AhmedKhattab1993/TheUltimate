@@ -341,5 +341,90 @@ class GridBacktestManager:
                 else:
                     logger.error(f"SAVE VERIFY: Could not read back saved record!")
                 
+                # Save trades if available
+                trades = result.get('trades', [])
+                if trades:
+                    await self._save_backtest_trades(symbol, date, pivot_bars, trades)
+                
         except Exception as e:
             logger.error(f"Error saving backtest result for {symbol}: {e}")
+    
+    async def _save_backtest_trades(self, symbol: str, date: date, pivot_bars: int, 
+                                   trades: List[Dict[str, Any]]) -> None:
+        """Save backtest trades to grid_market_structure_trades table."""
+        try:
+            from zoneinfo import ZoneInfo
+            from datetime import datetime
+            
+            if not trades:
+                logger.info(f"No trades to save for {symbol} on {date} with pivot_bars={pivot_bars}")
+                return
+            
+            # Prepare batch insert data
+            insert_data = []
+            eastern_tz = ZoneInfo('America/New_York')
+            
+            for trade in trades:
+                # Convert unix timestamp to Eastern Time
+                unix_timestamp = float(trade.get('trade_time', 0))
+                trade_time_utc = datetime.fromtimestamp(unix_timestamp, tz=ZoneInfo('UTC'))
+                trade_time_eastern = trade_time_utc.astimezone(eastern_tz)
+                
+                # Calculate position metrics if available
+                fill_price = float(trade.get('fill_price', 0))
+                fill_quantity = float(trade.get('fill_quantity', 0))
+                position_value = fill_price * abs(fill_quantity)
+                
+                # Determine trade type based on message or pattern
+                message = trade.get('message', '')
+                trade_type = 'entry'
+                signal_reason = ''
+                
+                if 'liquidat' in message.lower():
+                    trade_type = 'exit'
+                    signal_reason = 'MARKET_CLOSE'
+                elif 'flip' in message.lower() or 'revers' in message.lower():
+                    trade_type = 'reversal'
+                    signal_reason = 'BOS_REVERSAL'
+                elif 'bullish' in message.lower() or 'long' in message.lower():
+                    signal_reason = 'BOS_BULLISH'
+                elif 'bearish' in message.lower() or 'short' in message.lower():
+                    signal_reason = 'BOS_BEARISH'
+                
+                insert_data.append((
+                    symbol,
+                    date,
+                    pivot_bars,
+                    trade_time_eastern,
+                    trade.get('direction', ''),
+                    abs(int(trade.get('quantity', 0))),
+                    fill_price,
+                    abs(int(fill_quantity)),
+                    float(trade.get('order_fee', 0)),
+                    None,  # profit_loss (calculated later if needed)
+                    None,  # profit_loss_percent
+                    abs(int(fill_quantity)),  # position_size
+                    position_value,
+                    trade.get('order_id', ''),
+                    trade.get('order_type', 'market'),
+                    trade_type,
+                    signal_reason
+                ))
+            
+            # Batch insert trades
+            async with self.db_pool.acquire() as conn:
+                await conn.executemany("""
+                    INSERT INTO grid_market_structure_trades (
+                        symbol, backtest_date, pivot_bars,
+                        trade_time, direction, quantity, fill_price, fill_quantity,
+                        order_fee, profit_loss, profit_loss_percent,
+                        position_size, position_value, order_id, order_type,
+                        trade_type, signal_reason
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+                """, insert_data)
+                
+                logger.info(f"Saved {len(insert_data)} trades for {symbol} on {date} with pivot_bars={pivot_bars}")
+        
+        except Exception as e:
+            logger.error(f"Error saving trades for {symbol}: {e}")
+            # Don't fail the whole save if trade save fails

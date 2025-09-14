@@ -260,10 +260,14 @@ class ParallelBacktestQueueManager:
             # Parse statistics and add to result
             statistics = await self._extract_statistics_from_result(result['result_path'])
             
+            # Extract trades from result
+            trades = await self._extract_trades_from_result(result['result_path'])
+            
             # Add symbol and other metadata to result
             result['symbol'] = backtest_config['symbol']
             result['status'] = 'completed'
             result['statistics'] = statistics  # CRITICAL: Add statistics to result
+            result['trades'] = trades  # Add trades to result
             result['success'] = True
             if backtest_id:
                 result['backtest_id'] = backtest_id
@@ -629,6 +633,52 @@ class ParallelBacktestQueueManager:
         except Exception as e:
             logger.error(f"Error extracting statistics from {result_path}: {e}", exc_info=True)
             return None
+    
+    async def _extract_trades_from_result(self, result_path: str) -> Optional[List[Dict[str, Any]]]:
+        """Extract trade data from LEAN result files."""
+        try:
+            result_dir = Path(result_path)
+            
+            # Find the order-events file (LEAN saves as *-order-events.json)
+            order_events_file = None
+            for f in result_dir.glob("*-order-events.json"):
+                order_events_file = f
+                break
+            
+            if not order_events_file or not order_events_file.exists():
+                logger.warning(f"No order-events file found in {result_path}")
+                return []
+            
+            logger.info(f"Found order-events file: {order_events_file.name}")
+            
+            # Load orders data
+            with open(order_events_file, 'r') as f:
+                orders_data = json.load(f)
+            
+            # Filter for filled trades only
+            filled_trades = []
+            for order in orders_data:
+                if order.get('status') == 'filled':
+                    filled_trades.append({
+                        'symbol': order.get('symbol', ''),
+                        'symbol_value': order.get('symbolValue', ''),
+                        'trade_time': order.get('time', 0),  # Unix timestamp
+                        'direction': order.get('direction', ''),
+                        'quantity': float(order.get('quantity', 0)),
+                        'fill_price': float(order.get('fillPrice', 0)),
+                        'fill_quantity': float(order.get('fillQuantity', order.get('quantity', 0))),
+                        'order_fee': float(order.get('orderFeeAmount', 0)),
+                        'order_id': order.get('id', ''),
+                        'order_type': order.get('type', 'market'),
+                        'message': order.get('message', '')
+                    })
+            
+            logger.info(f"Extracted {len(filled_trades)} filled trades from {result_path}")
+            return filled_trades
+            
+        except Exception as e:
+            logger.error(f"Error extracting trades from {result_path}: {e}", exc_info=True)
+            return []
     
     async def _save_screener_backtest_link(self, screener_session_id: uuid.UUID, 
                                           backtest_id: str, symbol: str, 

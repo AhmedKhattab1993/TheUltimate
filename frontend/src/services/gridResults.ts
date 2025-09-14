@@ -59,5 +59,24 @@ export const GridResultsService = {
     }
 
     return response.json()
+  },
+
+  async getSymbolPivotTrades(date: string, symbol: string, pivotBars: number, limit: number = 50): Promise<any[]> {
+    const response = await fetch(
+      `${API_BASE_URL}/api/v2/grid/results/${date}/symbols/${symbol}/pivot/${pivotBars}/trades?limit=${limit}`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    )
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.detail || 'Failed to fetch trades')
+    }
+
+    return response.json()
   }
 }

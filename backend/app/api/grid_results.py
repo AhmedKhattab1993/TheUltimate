@@ -370,3 +370,155 @@ async def get_symbol_grid_results(
     except Exception as e:
         logger.error(f"Error getting symbol grid results: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{date}/trades")
+async def get_grid_trades(
+    date: date,
+    symbol: Optional[str] = None,
+    pivot_bars: Optional[int] = None,
+    limit: int = Query(50, description="Maximum number of trades to return", ge=1, le=500)
+):
+    """
+    Get trades for grid analysis results.
+    
+    Can filter by symbol and/or pivot_bars value.
+    Returns the last N trades (default 50) ordered by trade time descending.
+    """
+    try:
+        # Build query
+        query = """
+            SELECT 
+                t.symbol,
+                t.pivot_bars,
+                t.trade_time AT TIME ZONE 'America/New_York' as trade_time_et,
+                t.direction,
+                t.quantity,
+                t.fill_price,
+                t.fill_quantity,
+                t.order_fee,
+                t.position_value,
+                t.trade_type,
+                t.signal_reason,
+                EXTRACT(EPOCH FROM t.trade_time)::BIGINT as trade_time_unix
+            FROM grid_market_structure_trades t
+            WHERE t.backtest_date = $1
+        """
+        
+        params = [date]
+        param_count = 1
+        
+        if symbol:
+            param_count += 1
+            query += f" AND t.symbol = ${param_count}"
+            params.append(symbol)
+        
+        if pivot_bars is not None:
+            param_count += 1
+            query += f" AND t.pivot_bars = ${param_count}"
+            params.append(pivot_bars)
+        
+        query += " ORDER BY t.trade_time DESC"
+        param_count += 1
+        query += f" LIMIT ${param_count}"
+        params.append(limit)
+        
+        rows = await db_pool.fetch(query, *params)
+        
+        # Convert to list of dicts with formatted data
+        trades = []
+        for row in rows:
+            trades.append({
+                "symbol": row['symbol'],
+                "pivotBars": row['pivot_bars'],
+                "tradeTime": row['trade_time_et'].isoformat(),
+                "tradeTimeUnix": row['trade_time_unix'],
+                "direction": row['direction'],
+                "quantity": abs(float(row['quantity'])),
+                "fillPrice": float(row['fill_price']) if row['fill_price'] else 0,
+                "fillQuantity": float(row['fill_quantity']) if row['fill_quantity'] else abs(float(row['quantity'])),
+                "orderFee": float(row['order_fee']) if row['order_fee'] else 0,
+                "positionValue": float(row['position_value']) if row['position_value'] else 0,
+                "tradeType": row['trade_type'],
+                "signalReason": row['signal_reason']
+            })
+        
+        return trades
+        
+    except Exception as e:
+        logger.error(f"Error getting grid trades: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{date}/symbols/{symbol}/pivot/{pivot_bars}/trades")
+async def get_symbol_pivot_trades(
+    date: date,
+    symbol: str,
+    pivot_bars: int,
+    limit: int = Query(50, description="Maximum number of trades to return", ge=1, le=500)
+):
+    """
+    Get trades for a specific symbol and pivot_bars combination.
+    
+    Returns the last N trades (default 50) ordered by trade time descending.
+    """
+    try:
+        # Verify the grid result exists
+        result_exists = await db_pool.fetchval("""
+            SELECT EXISTS(
+                SELECT 1 FROM grid_market_structure 
+                WHERE symbol = $1 AND backtest_date = $2 AND pivot_bars = $3
+            )
+        """, symbol, date, pivot_bars)
+        
+        if not result_exists:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Grid result not found for {symbol} on {date} with pivot_bars={pivot_bars}"
+            )
+        
+        # Fetch trades
+        query = """
+            SELECT 
+                t.trade_time AT TIME ZONE 'America/New_York' as trade_time_et,
+                t.direction,
+                t.quantity,
+                t.fill_price,
+                t.fill_quantity,
+                t.order_fee,
+                t.position_value,
+                t.trade_type,
+                t.signal_reason,
+                EXTRACT(EPOCH FROM t.trade_time)::BIGINT as trade_time_unix
+            FROM grid_market_structure_trades t
+            WHERE t.symbol = $1 AND t.backtest_date = $2 AND t.pivot_bars = $3
+            ORDER BY t.trade_time DESC
+            LIMIT $4
+        """
+        
+        rows = await db_pool.fetch(query, symbol, date, pivot_bars, limit)
+        
+        # Convert to list of dicts with formatted data
+        trades = []
+        for row in rows:
+            trades.append({
+                "symbol": symbol,
+                "tradeTime": row['trade_time_et'].isoformat(),
+                "tradeTimeUnix": row['trade_time_unix'],
+                "direction": row['direction'],
+                "quantity": abs(float(row['quantity'])),
+                "fillPrice": float(row['fill_price']) if row['fill_price'] else 0,
+                "fillQuantity": float(row['fill_quantity']) if row['fill_quantity'] else abs(float(row['quantity'])),
+                "orderFee": float(row['order_fee']) if row['order_fee'] else 0,
+                "positionValue": float(row['position_value']) if row['position_value'] else 0,
+                "tradeType": row['trade_type'],
+                "signalReason": row['signal_reason']
+            })
+        
+        return trades
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting symbol pivot trades: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

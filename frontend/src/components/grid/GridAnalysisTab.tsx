@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react'
-import { format } from 'date-fns'
+import { format, parseISO } from 'date-fns'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { RefreshCw, BarChart2, AlertCircle } from 'lucide-react'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { RefreshCw, BarChart2, AlertCircle, Eye } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { GridResultsService } from '@/services/gridResults'
 import type { GridResultSummary, GridResultDetail } from '@/types/gridResults'
 
@@ -35,6 +37,12 @@ export function GridAnalysisTab() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [allData, setAllData] = useState<CombinedGridRow[]>([])
+  
+  // Trades dialog state
+  const [showTradesDialog, setShowTradesDialog] = useState(false)
+  const [selectedTrade, setSelectedTrade] = useState<{ symbol: string, date: string, pivotBars: number } | null>(null)
+  const [trades, setTrades] = useState<any[]>([])
+  const [loadingTrades, setLoadingTrades] = useState(false)
 
   // Load all grid results and combine them into a single table
   const loadAllData = async () => {
@@ -116,6 +124,23 @@ export function GridAnalysisTab() {
     if (value >= 1e6) return `$${(value / 1e6).toFixed(2)}M`
     return `$${(value / 1e3).toFixed(2)}K`
   }
+  
+  // Function to view trades
+  const handleViewTrades = async (symbol: string, date: string, pivotBars: number) => {
+    setSelectedTrade({ symbol, date, pivotBars })
+    setShowTradesDialog(true)
+    setLoadingTrades(true)
+    
+    try {
+      const tradesData = await GridResultsService.getSymbolPivotTrades(date, symbol, pivotBars)
+      setTrades(tradesData)
+    } catch (error) {
+      console.error('Failed to fetch trades:', error)
+      setTrades([])
+    } finally {
+      setLoadingTrades(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -175,6 +200,7 @@ export function GridAnalysisTab() {
                     <TableHead className="text-right">Max DD</TableHead>
                     <TableHead className="text-right">Win Rate</TableHead>
                     <TableHead className="text-right">Trades</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -228,6 +254,17 @@ export function GridAnalysisTab() {
                       </TableCell>
                       <TableCell className="text-right">{row.win_rate != null ? `${row.win_rate.toFixed(1)}%` : '-'}</TableCell>
                       <TableCell className="text-right">{row.total_trades != null ? row.total_trades : '-'}</TableCell>
+                      <TableCell className="text-right">
+                        {row.total_trades && row.total_trades > 0 && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleViewTrades(row.symbol, row.date, row.pivot_bars)}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -242,6 +279,112 @@ export function GridAnalysisTab() {
           )}
         </CardContent>
       </Card>
+      
+      {/* Trades Dialog - exactly like in CombinedResultsView */}
+      <Dialog open={showTradesDialog} onOpenChange={(open) => {
+        setShowTradesDialog(open)
+        if (!open) {
+          setTrades([])
+          setSelectedTrade(null)
+        }
+      }}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Trade History</DialogTitle>
+            <DialogDescription>
+              {selectedTrade && trades.length > 0 && (
+                <span>
+                  Showing {trades.length} trades for {selectedTrade.symbol} 
+                  (Pivot Bars: {selectedTrade.pivotBars})
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <Card>
+            <CardContent className="p-0">
+              {loadingTrades ? (
+                <div className="p-8 text-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                  <p className="text-muted-foreground">Loading trades...</p>
+                </div>
+              ) : trades.length === 0 ? (
+                <div className="p-8 text-center text-muted-foreground">
+                  No trades available for this backtest
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-12">#</TableHead>
+                        <TableHead>Time (ET)</TableHead>
+                        <TableHead>Symbol</TableHead>
+                        <TableHead className="text-center">Direction</TableHead>
+                        <TableHead className="text-right">Quantity</TableHead>
+                        <TableHead className="text-right">Fill Price</TableHead>
+                        <TableHead className="text-right">Value</TableHead>
+                        <TableHead className="text-right">Fee</TableHead>
+                        <TableHead className="text-center">Type</TableHead>
+                        <TableHead>Signal</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {trades.map((trade, index) => {
+                        const tradeValue = trade.fillQuantity * trade.fillPrice
+                        return (
+                          <TableRow key={index}>
+                            <TableCell className="font-mono text-xs text-muted-foreground">
+                              {index + 1}
+                            </TableCell>
+                            <TableCell className="font-mono text-sm">
+                              {format(parseISO(trade.tradeTime), 'HH:mm:ss')}
+                            </TableCell>
+                            <TableCell className="font-medium">
+                              {trade.symbol}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <Badge 
+                                variant={trade.direction === 'buy' ? 'default' : 'secondary'}
+                                className={cn(
+                                  "text-xs",
+                                  trade.direction === 'buy' ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                                )}
+                              >
+                                {trade.direction.toUpperCase()}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {trade.quantity.toLocaleString()}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              ${trade.fillPrice.toFixed(2)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              ${tradeValue.toFixed(2)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-muted-foreground">
+                              ${trade.orderFee.toFixed(2)}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <Badge variant="outline" className="text-xs">
+                                {trade.tradeType || 'entry'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {trade.signalReason || '-'}
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
