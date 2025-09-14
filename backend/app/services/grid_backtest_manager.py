@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 class GridBacktestManager:
     """Manages backtests for grid parameter analysis."""
     
-    def __init__(self, db_pool: asyncpg.Pool, max_parallel: int = 100):
+    def __init__(self, db_pool: asyncpg.Pool, max_parallel: int = 10):
         self.db_pool = db_pool
         self.max_parallel = max_parallel
         self.cache_service = None  # Disable caching for grid analysis
