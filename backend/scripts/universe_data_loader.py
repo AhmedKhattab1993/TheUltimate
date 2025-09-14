@@ -272,6 +272,22 @@ class UniverseDataLoader:
                 stats["processed_dates"] += 1
                 continue
                 
+            # Check if we already have data for this date
+            try:
+                existing_count = await db_pool.fetchval('''
+                    SELECT COUNT(DISTINCT symbol) 
+                    FROM daily_bars 
+                    WHERE time::date = $1
+                ''', trading_day)
+                
+                if existing_count > 1000:  # Assume we have most data if > 1000 symbols
+                    logger.info(f"Skipping {trading_day} - already have data for {existing_count} symbols")
+                    stats["processed_dates"] += 1
+                    processed_dates.add(str(trading_day))
+                    continue
+            except Exception as e:
+                logger.warning(f"Error checking existing data for {trading_day}: {e}")
+                
             try:
                 logger.info(f"Loading data for {trading_day} ({stats['processed_dates'] + 1}/{stats['total_dates']})")
                 
@@ -389,8 +405,12 @@ class UniverseDataLoader:
             async with DatabaseTransaction() as conn:
                 await self.data_collector._store_daily_bars(bars, conn)
         except Exception as e:
-            logger.error(f"Error storing batch of {len(bars)} bars: {e}")
-            raise
+            # Check if it's a duplicate key error and log it but don't raise
+            if "duplicate key" in str(e).lower():
+                logger.warning(f"Skipping {len(bars)} bars that already exist in database")
+            else:
+                logger.error(f"Error storing batch of {len(bars)} bars: {e}")
+                raise
             
     async def _update_bulk_coverage(self, symbols: Set[str], date_obj: date):
         """Update coverage tracking for bulk load"""
@@ -719,12 +739,20 @@ class UniverseDataLoader:
                 ))
                 
             async with DatabaseTransaction() as conn:
-                # Use COPY for efficient bulk insert
-                await conn.copy_records_to_table(
-                    'minute_bars',
-                    records=records,
-                    columns=['time', 'symbol', 'open', 'high', 'low', 'close', 'volume', 'vwap', 'transactions']
-                )
+                # Use INSERT with ON CONFLICT to handle duplicates
+                await conn.executemany('''
+                    INSERT INTO minute_bars (time, symbol, open, high, low, close, volume, vwap, transactions)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                    ON CONFLICT (symbol, time) 
+                    DO UPDATE SET
+                        open = EXCLUDED.open,
+                        high = EXCLUDED.high,
+                        low = EXCLUDED.low,
+                        close = EXCLUDED.close,
+                        volume = EXCLUDED.volume,
+                        vwap = EXCLUDED.vwap,
+                        transactions = EXCLUDED.transactions
+                ''', records)
                 
         except Exception as e:
             logger.error(f"Error storing batch of {len(bars)} minute bars: {e}")
