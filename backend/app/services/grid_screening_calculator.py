@@ -243,6 +243,8 @@ class GridScreeningCalculator:
             # Check if the last row is for process_date
             if rows[-1]['date'] == process_date:
                 current_day_open = float(rows[-1]['open'])
+                # Exclude today's bar for indicator calculations
+                np_data_for_calc = np_data[:-1]
             else:
                 # No data for process_date
                 return {
@@ -261,7 +263,7 @@ class GridScreeningCalculator:
             # MA values
             for period in [20, 50, 200]:
                 filter_key = f'ma_{period}'
-                result = self.filters[filter_key].apply(np_data, symbol)
+                result = self.filters[filter_key].apply(np_data_for_calc, symbol)
                 
                 if 'ma_values' in result.metrics:
                     ma_values = result.metrics['ma_values']
@@ -275,7 +277,7 @@ class GridScreeningCalculator:
                     metrics[filter_key] = None
             
             # RSI
-            result = self.filters['rsi_14'].apply(np_data, symbol)
+            result = self.filters['rsi_14'].apply(np_data_for_calc, symbol)
             if 'rsi_values' in result.metrics:
                 rsi_values = result.metrics['rsi_values']
                 if len(rsi_values) > 0 and not np.isnan(rsi_values[-1]):
@@ -286,7 +288,7 @@ class GridScreeningCalculator:
                 metrics['rsi_14'] = None
             
             # Gap percentage
-            result = self.filters['gap'].apply(np_data, symbol)
+            result = self.filters['gap'].apply(np_data_for_calc, symbol)
             if 'gap_percentages' in result.metrics:
                 gap_values = result.metrics['gap_percentages']
                 if len(gap_values) > 0 and not np.isnan(gap_values[-1]):
@@ -297,7 +299,7 @@ class GridScreeningCalculator:
                 metrics['gap_percent'] = None
             
             # Previous day dollar volume
-            result = self.filters['prev_dollar_vol'].apply(np_data, symbol)
+            result = self.filters['prev_dollar_vol'].apply(np_data_for_calc, symbol)
             if 'prev_day_dollar_volumes' in result.metrics:
                 prev_vols = result.metrics['prev_day_dollar_volumes']
                 if len(prev_vols) > 0 and not np.isnan(prev_vols[-1]):
@@ -308,7 +310,7 @@ class GridScreeningCalculator:
                 metrics['prev_day_dollar_volume'] = None
             
             # Relative volume
-            result = self.filters['rel_vol'].apply(np_data, symbol)
+            result = self.filters['rel_vol'].apply(np_data_for_calc, symbol)
             if 'relative_volume_ratios' in result.metrics:
                 rel_ratios = result.metrics['relative_volume_ratios']
                 if len(rel_ratios) > 0 and not np.isnan(rel_ratios[-1]):
@@ -423,6 +425,9 @@ class GridScreeningCalculator:
         # Get the current day's open price (last row should be process_date)
         current_day_open = float(np_data['open'][-1])
         
+        # Exclude today's bar for indicator calculations
+        np_data_for_calc = np_data[:-1]
+        
         # Calculate all metrics
         metrics = {
             'symbol': symbol,
@@ -433,7 +438,7 @@ class GridScreeningCalculator:
         # MA values
         for period in [20, 50, 200]:
             filter_key = f'ma_{period}'
-            result = self.filters[filter_key].apply(np_data, symbol)
+            result = self.filters[filter_key].apply(np_data_for_calc, symbol)
             
             if 'ma_values' in result.metrics:
                 ma_values = result.metrics['ma_values']
@@ -445,7 +450,7 @@ class GridScreeningCalculator:
                 metrics[filter_key] = None
         
         # RSI
-        result = self.filters['rsi_14'].apply(np_data, symbol)
+        result = self.filters['rsi_14'].apply(np_data_for_calc, symbol)
         if 'rsi_values' in result.metrics:
             rsi_values = result.metrics['rsi_values']
             if len(rsi_values) > 0 and not np.isnan(rsi_values[-1]):
@@ -456,7 +461,7 @@ class GridScreeningCalculator:
             metrics['rsi_14'] = None
         
         # Gap percentage
-        result = self.filters['gap'].apply(np_data, symbol)
+        result = self.filters['gap'].apply(np_data_for_calc, symbol)
         if 'gap_percentages' in result.metrics:
             gap_values = result.metrics['gap_percentages']
             if len(gap_values) > 0 and not np.isnan(gap_values[-1]):
@@ -467,7 +472,7 @@ class GridScreeningCalculator:
             metrics['gap_percent'] = None
         
         # Previous day dollar volume
-        result = self.filters['prev_dollar_vol'].apply(np_data, symbol)
+        result = self.filters['prev_dollar_vol'].apply(np_data_for_calc, symbol)
         if 'prev_day_dollar_volumes' in result.metrics:
             prev_vols = result.metrics['prev_day_dollar_volumes']
             if len(prev_vols) > 0 and not np.isnan(prev_vols[-1]):
@@ -478,7 +483,7 @@ class GridScreeningCalculator:
             metrics['prev_day_dollar_volume'] = None
         
         # Relative volume
-        result = self.filters['rel_vol'].apply(np_data, symbol)
+        result = self.filters['rel_vol'].apply(np_data_for_calc, symbol)
         if 'relative_volume_ratios' in result.metrics:
             rel_ratios = result.metrics['relative_volume_ratios']
             if len(rel_ratios) > 0 and not np.isnan(rel_ratios[-1]):
