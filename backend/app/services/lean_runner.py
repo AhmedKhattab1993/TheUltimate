@@ -133,9 +133,6 @@ class LeanRunner:
                     shutil.copy2(temp_config_path, base_config_path)
                     logger.info(f"Updated config.json with symbols: {config_data['parameters'].get('symbols', 'none')}")
                     
-                    # Give LEAN sufficient time to read the config before another process can change it
-                    await asyncio.sleep(2.0)
-                    
                 except (IOError, OSError):
                     # Lock is held by another process, wait and retry
                     await asyncio.sleep(0.1)
