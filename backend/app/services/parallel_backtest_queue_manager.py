@@ -1064,11 +1064,22 @@ class ParallelBacktestQueueManager:
             # Add delay between backtest launches to reduce Docker pressure
             await asyncio.sleep(0.1)
             
+            # Create isolated project directory
+            isolated_path = self.create_isolated_project(symbol, backtest_id)
+            
             logger.info(f"[ParallelBacktest] Starting isolated backtest for {symbol}")
             result = await self.run_isolated_backtest(
-                symbol=symbol,
+                isolated_path=isolated_path,
                 backtest_config=backtest_config
             )
+            
+            # Clean up isolated directory after completion
+            try:
+                if isolated_path.exists():
+                    shutil.rmtree(isolated_path)
+                    logger.debug(f"Cleaned up isolated directory: {isolated_path}")
+            except Exception as cleanup_error:
+                logger.warning(f"Failed to clean up isolated directory {isolated_path}: {cleanup_error}")
             
             if result.get('success'):
                 logger.info(f"[ParallelBacktest] Successfully completed backtest for {symbol}")
