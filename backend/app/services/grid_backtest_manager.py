@@ -189,12 +189,6 @@ class GridBacktestManager:
             completed_count = sum(1 for r in results.values() 
                                 if isinstance(r, dict) and (r.get('success') or r.get('status') == 'completed'))
             failed_count = len(results) - completed_count
-                
-                # Log progress
-                total_processed = completed_count + failed_count
-                if total_processed % 10 == 0:
-                    logger.info(f"Progress: {total_processed}/{len(backtest_configs)} "
-                              f"({completed_count} completed, {failed_count} failed)")
             
             # Final statistics
             duration = time.time() - start_time
