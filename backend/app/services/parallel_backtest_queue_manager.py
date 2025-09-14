@@ -924,8 +924,9 @@ class ParallelBacktestQueueManager:
                 try:
                     logger.info(f"[ParallelBacktest] Processing backtest for {symbol} with ID {backtest_id}")
                     
-                    # Add 1 second delay between backtest launches to reduce Docker pressure
-                    await asyncio.sleep(1.0)
+                    # Add small delay between backtest launches to reduce Docker pressure
+                    # With 100 parallel, we need minimal delay
+                    await asyncio.sleep(0.1)
                     
                     # Create isolated project
                     isolated_path = await self.create_isolated_project(symbol, backtest_id)
