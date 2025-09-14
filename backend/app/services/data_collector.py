@@ -65,6 +65,20 @@ class DataCollector:
         if bar.volume < 0:
             raise DataValidationError(f"Volume ({bar.volume}) is negative")
             
+        # Check for values that would exceed NUMERIC(10,2) precision
+        # Maximum value is 99,999,999.99
+        max_price = 99999999.99
+        for price_field, value in [("open", bar.open), ("high", bar.high), ("low", bar.low), ("close", bar.close)]:
+            if value > max_price:
+                raise DataValidationError(f"{price_field} price {value} exceeds maximum allowed value of {max_price}")
+            
+            # Check if price has more than 2 decimal places
+            price_str = str(value)
+            if '.' in price_str:
+                decimal_places = len(price_str.split('.')[1])
+                if decimal_places > 2:
+                    raise DataValidationError(f"{price_field} price {value} has more than 2 decimal places")
+            
         return True
         
     def _calculate_vwap_if_missing(self, bar: StockBar) -> float:
@@ -115,8 +129,10 @@ class DataCollector:
                 ))
                 
             except DataValidationError as e:
-                logger.warning(f"Validation error for {bar.symbol} on {bar.date}: {e}")
-                await self._log_error(bar.symbol, "validation_error", str(e), bar.date, bar.date)
+                logger.debug(f"Skipping {bar.symbol} on {bar.date}: {e}")
+                # Don't log to database for decimal place issues, just skip
+                if "decimal places" not in str(e):
+                    await self._log_error(bar.symbol, "validation_error", str(e), bar.date, bar.date)
                 continue
                 
         if not records:
