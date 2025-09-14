@@ -208,7 +208,7 @@ class GridScreeningCalculator:
             start_date = process_date - timedelta(days=lookback_days)
             
             # Load data directly from database
-            # IMPORTANT: We exclude process_date to get previous day's close
+            # Include process_date to get the open price for that day
             async with self.db_pool.acquire() as conn:
                 query = """
                 SELECT 
@@ -217,7 +217,7 @@ class GridScreeningCalculator:
                 FROM daily_bars
                 WHERE symbol = $1
                     AND time::date >= $2
-                    AND time::date < $3
+                    AND time::date <= $3
                 ORDER BY time ASC
                 """
                 rows = await conn.fetch(query, symbol, start_date, process_date)
@@ -232,14 +232,23 @@ class GridScreeningCalculator:
             # Convert to numpy array
             np_data = rows_to_numpy(rows)
             
-            # Get the previous trading day's close (last available close before process_date)
-            latest_close = float(np_data['close'][-1])
+            # Get the current day's open price
+            # Check if the last row is for process_date
+            if rows[-1]['date'] == process_date:
+                current_day_open = float(rows[-1]['open'])
+            else:
+                # No data for process_date
+                return {
+                    'symbol': symbol,
+                    'success': False,
+                    'error': f'No data available for {process_date}'
+                }
             
             # Calculate all metrics
             metrics = {
                 'symbol': symbol,
                 'date': process_date,
-                'price': latest_close
+                'price': current_day_open
             }
             
             # MA values
@@ -333,7 +342,7 @@ class GridScreeningCalculator:
             FROM daily_bars
             WHERE symbol = ANY($1::text[])
                 AND time::date >= $2
-                AND time::date < $3
+                AND time::date <= $3
             ORDER BY symbol, time ASC
             """
             rows = await conn.fetch(query, symbols, start_date, process_date)
@@ -355,6 +364,12 @@ class GridScreeningCalculator:
         
         for symbol, symbol_rows in data_by_symbol.items():
             try:
+                # Check if we have data for process_date
+                if not symbol_rows or symbol_rows[-1]['date'] != process_date:
+                    logger.debug(f"No data for {symbol} on {process_date}")
+                    error_count += 1
+                    continue
+                
                 # Convert to numpy array
                 np_data = rows_to_numpy(symbol_rows)
                 
@@ -391,14 +406,14 @@ class GridScreeningCalculator:
         """
         Calculate all metrics from numpy data.
         """
-        # Get the latest values
-        latest_close = float(np_data['close'][-1])
+        # Get the current day's open price (last row should be process_date)
+        current_day_open = float(np_data['open'][-1])
         
         # Calculate all metrics
         metrics = {
             'symbol': symbol,
             'date': process_date,
-            'price': latest_close
+            'price': current_day_open
         }
         
         # MA values
