@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { RefreshCw, BarChart2, AlertCircle, Eye } from 'lucide-react'
+import { RefreshCw, BarChart2, AlertCircle, Eye, ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { GridResultsService } from '@/services/gridResults'
 import type { GridResultSummary, GridResultDetail } from '@/types/gridResults'
@@ -37,6 +37,10 @@ export function GridAnalysisTab() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [allData, setAllData] = useState<CombinedGridRow[]>([])
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 100
   
   // Trades dialog state
   const [showTradesDialog, setShowTradesDialog] = useState(false)
@@ -104,12 +108,19 @@ export function GridAnalysisTab() {
       })
 
       setAllData(combinedData)
+      setCurrentPage(1) // Reset to first page when new data is loaded
     } catch (err: any) {
       setError(err.message || 'Failed to load grid results')
     } finally {
       setLoading(false)
     }
   }
+
+  // Calculate pagination values
+  const totalPages = Math.ceil(allData.length / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const endIndex = startIndex + itemsPerPage
+  const paginatedData = allData.slice(startIndex, endIndex)
 
   useEffect(() => {
     loadAllData()
@@ -160,8 +171,33 @@ export function GridAnalysisTab() {
               <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
-            <div className="text-sm text-muted-foreground">
-              Total Rows: {allData.length}
+            <div className="flex items-center gap-4">
+              <div className="text-sm text-muted-foreground">
+                Total Rows: {allData.length}
+              </div>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    variant="outline"
+                    size="sm"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <div className="text-sm text-muted-foreground">
+                    Page {currentPage} of {totalPages}
+                  </div>
+                  <Button
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    variant="outline"
+                    size="sm"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -204,7 +240,7 @@ export function GridAnalysisTab() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {allData.map((row, index) => (
+                  {paginatedData.map((row, index) => (
                     <TableRow key={`${row.date}_${row.symbol}_${row.pivot_bars}_${index}`}>
                       <TableCell className="sticky left-0 bg-background font-medium">
                         {format(new Date(row.date), 'MMM d, yyyy')}
@@ -269,6 +305,33 @@ export function GridAnalysisTab() {
                   ))}
                 </TableBody>
               </Table>
+            </div>
+          )}
+          
+          {/* Pagination controls at bottom */}
+          {!loading && allData.length > itemsPerPage && (
+            <div className="flex justify-center items-center gap-2 mt-4">
+              <Button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                variant="outline"
+                size="sm"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Previous
+              </Button>
+              <div className="text-sm text-muted-foreground px-4">
+                Page {currentPage} of {totalPages} | Showing {startIndex + 1}-{Math.min(endIndex, allData.length)} of {allData.length} results
+              </div>
+              <Button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                variant="outline"
+                size="sm"
+              >
+                Next
+                <ChevronRight className="h-4 w-4" />
+              </Button>
             </div>
           )}
 
