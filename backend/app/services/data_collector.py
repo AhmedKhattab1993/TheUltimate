@@ -111,9 +111,6 @@ class DataCollector:
                 # Convert date to Eastern Time timestamp
                 et_time = ET.localize(datetime.combine(bar.date, datetime.min.time()))
                 
-                # Calculate VWAP if missing
-                vwap = self._calculate_vwap_if_missing(bar)
-                
                 records.append((
                     et_time,
                     bar.symbol,
@@ -122,7 +119,7 @@ class DataCollector:
                     Decimal(str(bar.low)),
                     Decimal(str(bar.close)),
                     bar.volume,
-                    Decimal(str(vwap)) if vwap else None,
+                    None,  # Ignore VWAP to avoid database overflow issues
                     None,  # transactions
                     True,  # adjusted
                     datetime.now(pytz.UTC)  # created_at
