@@ -1065,7 +1065,7 @@ class ParallelBacktestQueueManager:
             await asyncio.sleep(0.1)
             
             # Create isolated project directory
-            isolated_path = self.create_isolated_project(symbol, backtest_id)
+            isolated_path = await self.create_isolated_project(symbol, backtest_id)
             
             logger.info(f"[ParallelBacktest] Starting isolated backtest for {symbol}")
             result = await self.run_isolated_backtest(
