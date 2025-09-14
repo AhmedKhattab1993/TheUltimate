@@ -163,18 +163,13 @@ class GridBacktestManager:
                     original_symbol = composite_symbol
                     pivot_bars = 5  # Default
                 
-                logger.info(f"Processing result for {composite_symbol} -> {original_symbol} (pivot_bars={pivot_bars})")
-                logger.info(f"Result type: {type(result)}, Result: {result}")
+                logger.debug(f"Processing result for {composite_symbol} -> {original_symbol} (pivot_bars={pivot_bars})")
                 
                 if isinstance(result, dict) and (result.get('success') or result.get('status') == 'completed'):
                     completed_count += 1
                     # Fix the symbol in the result
                     result['symbol'] = original_symbol
-                    logger.info(f"SUCCESS: Saving result for {original_symbol} with pivot_bars={pivot_bars}")
-                    logger.info(f"Result keys: {list(result.keys())}")
-                    if 'statistics' in result:
-                        logger.info(f"Statistics type: {type(result['statistics'])}")
-                        logger.info(f"Statistics content: {result['statistics']}")
+                    logger.debug(f"SUCCESS: Saving result for {original_symbol} with pivot_bars={pivot_bars}")
                     await self._save_backtest_result(
                         symbol=original_symbol,
                         date=process_date,
@@ -262,8 +257,7 @@ class GridBacktestManager:
                                    pivot_bars: int, result: Dict[str, Any]) -> None:
         """Save backtest result to grid_market_structure table."""
         try:
-            logger.info(f"SAVE: Saving backtest result for {symbol}, date={date}, pivot_bars={pivot_bars}")
-            logger.info(f"SAVE: Full result dict: {result}")
+            logger.debug(f"Saving backtest result for {symbol}, date={date}, pivot_bars={pivot_bars}")
             
             # The result should have statistics already
             # For cached results, statistics are in the result dict
@@ -323,7 +317,7 @@ class GridBacktestManager:
                     win_rate, profit_loss_ratio, total_trades, 
                     json.dumps(stats) if stats else None)
                 
-                logger.info(f"SAVE: Successfully saved backtest result for {symbol} on {date} with pivot_bars={pivot_bars}")
+                logger.debug(f"Successfully saved backtest result for {symbol} on {date} with pivot_bars={pivot_bars}")
                 
                 # Verify the save by reading it back
                 row = await conn.fetchrow("""
@@ -332,14 +326,8 @@ class GridBacktestManager:
                     WHERE symbol = $1 AND backtest_date = $2 AND pivot_bars = $3
                 """, symbol, date, pivot_bars)
                 
-                if row:
-                    logger.info(f"SAVE VERIFY: Read back from DB:")
-                    logger.info(f"  total_return: {row['total_return']}")
-                    logger.info(f"  sharpe_ratio: {row['sharpe_ratio']}")
-                    logger.info(f"  total_trades: {row['total_trades']}")
-                    logger.info(f"  statistics: {'present' if row['statistics'] else 'null'}")
-                else:
-                    logger.error(f"SAVE VERIFY: Could not read back saved record!")
+                if not row:
+                    logger.error(f"Could not read back saved record for {symbol}!")
                 
                 # Save trades if available
                 trades = result.get('trades', [])
@@ -357,7 +345,7 @@ class GridBacktestManager:
             from datetime import datetime
             
             if not trades:
-                logger.info(f"No trades to save for {symbol} on {date} with pivot_bars={pivot_bars}")
+                logger.debug(f"No trades to save for {symbol} on {date} with pivot_bars={pivot_bars}")
                 return
             
             # Prepare batch insert data

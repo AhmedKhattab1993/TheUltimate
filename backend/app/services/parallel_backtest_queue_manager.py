@@ -272,13 +272,7 @@ class ParallelBacktestQueueManager:
             if backtest_id:
                 result['backtest_id'] = backtest_id
             
-            logger.info(f"[IsolatedBacktest] Result for {backtest_config['symbol']}:")
-            logger.info(f"  - status: {result['status']}")
-            logger.info(f"  - statistics: {'present' if statistics else 'missing'}")
-            logger.info(f"  - backtest_id: {backtest_id}")
-            if statistics:
-                logger.info(f"  - total_return: {statistics.get('total_return', 0)}")
-                logger.info(f"  - total_trades: {statistics.get('total_trades', 0)}")
+            logger.debug(f"[IsolatedBacktest] Result for {backtest_config['symbol']}: status={result['status']}, statistics={'present' if statistics else 'missing'}")
             
             return result
             
@@ -509,7 +503,7 @@ class ParallelBacktestQueueManager:
             with open(summary_file, 'r') as f:
                 lean_result = json.load(f)
                 
-            logger.info(f"Extracting comprehensive metrics from LEAN result file: {summary_file.name}")
+            logger.debug(f"Extracting comprehensive metrics from LEAN result file: {summary_file.name}")
             
             # Extract different sections from LEAN output
             stats_data = lean_result.get("statistics", {})
@@ -626,7 +620,7 @@ class ParallelBacktestQueueManager:
             
             # Log successful extraction
             metrics_count = sum(1 for v in statistics.values() if v != 0 and v != "" and v is not None)
-            logger.info(f"Successfully extracted {metrics_count} non-zero metrics from LEAN result")
+            logger.debug(f"Successfully extracted {metrics_count} non-zero metrics from LEAN result")
             
             return statistics
             
@@ -673,7 +667,7 @@ class ParallelBacktestQueueManager:
                         'message': order.get('message', '')
                     })
             
-            logger.info(f"Extracted {len(filled_trades)} filled trades from {result_path}")
+            logger.debug(f"Extracted {len(filled_trades)} filled trades from {result_path}")
             return filled_trades
             
         except Exception as e:
@@ -867,11 +861,7 @@ class ParallelBacktestQueueManager:
                         'cache_hit': True
                     }
                     
-                    logger.info(f"[Cache] Found cached result for {symbol}:")
-                    logger.info(f"  - backtest_id: {cached_result.backtest_id}")
-                    logger.info(f"  - total_return: {statistics.get('total_return', 0)}")
-                    logger.info(f"  - total_trades: {statistics.get('total_trades', 0)}")
-                    logger.info(f"  - sharpe_ratio: {statistics.get('sharpe_ratio', 0)}")
+                    logger.debug(f"[Cache] Found cached result for {symbol}: total_return={statistics.get('total_return', 0)}, total_trades={statistics.get('total_trades', 0)}")
                     
                     # Note: Cached results are already in the database from when they were first run
                     # No need to save them again - just return them like the original manager
@@ -944,7 +934,7 @@ class ParallelBacktestQueueManager:
                         self.run_isolated_backtest(isolated_path, backtest_config),
                         timeout=timeout_per_backtest
                     )
-                    logger.info(f"[ParallelBacktest] Completed backtest for {symbol} with status: {result.get('status', 'unknown')}")
+                    logger.debug(f"[ParallelBacktest] Completed backtest for {symbol} with status: {result.get('status', 'unknown')}")
                     
                     return symbol, result
                     
