@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.api import simple_screener, backtest, screener_results, combined_results
+from app.api import simple_screener, backtest, screener_results, combined_results, grid_results
 from app.services.polygon_client import PolygonAPIError
 from app.services.database import db_pool
 
@@ -207,6 +207,13 @@ app.include_router(
     tags=["combined-results"]
 )
 
+# Include grid results router
+app.include_router(
+    grid_results.router,
+    # No prefix needed - router already has /api/v2/grid/results
+    tags=["grid-results"]
+)
+
 
 # Root endpoint
 @app.get("/", tags=["root"])
@@ -229,6 +236,10 @@ async def root():
             "backtest_monitor_ws": "/api/v2/backtest/monitor/{backtest_id}",
             # Screener results endpoints (v2)
             "screener_results_list": "/api/v2/screener/results",
-            "screener_results_detail": "/api/v2/screener/results/{result_id}"
+            "screener_results_detail": "/api/v2/screener/results/{result_id}",
+            # Grid results endpoints (v2)
+            "grid_results_list": "/api/v2/grid/results",
+            "grid_results_detail": "/api/v2/grid/results/{date}/detail",
+            "grid_symbol_results": "/api/v2/grid/results/{date}/symbols/{symbol}"
         }
     }
