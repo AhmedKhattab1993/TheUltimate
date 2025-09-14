@@ -128,8 +128,42 @@ class GridBacktestManager:
         logger.info(f"TESTING_MODE setting: {getattr(settings, 'TESTING_MODE', 'Not set')}")
         
         
-        # Process all backtests
+        # Process all backtests with incremental saving
         try:
+            # Create a callback to save results as they complete
+            async def save_result_callback(composite_symbol: str, result: Dict[str, Any]) -> None:
+                """Callback to save results immediately as each backtest completes."""
+                try:
+                    # Extract original symbol and pivot_bars from composite symbol
+                    if '_pb' in composite_symbol:
+                        original_symbol = composite_symbol.split('_pb')[0]
+                        pivot_bars_str = composite_symbol.split('_pb')[1]
+                        pivot_bars = int(pivot_bars_str)
+                    else:
+                        # Fallback
+                        original_symbol = composite_symbol
+                        pivot_bars = 5  # Default
+                    
+                    logger.debug(f"Processing result for {composite_symbol} -> {original_symbol} (pivot_bars={pivot_bars})")
+                    
+                    if isinstance(result, dict) and (result.get('success') or result.get('status') == 'completed'):
+                        # Fix the symbol in the result
+                        result['symbol'] = original_symbol
+                        logger.debug(f"SUCCESS: Saving result for {original_symbol} with pivot_bars={pivot_bars}")
+                        await self._save_backtest_result(
+                            symbol=original_symbol,
+                            date=process_date,
+                            pivot_bars=pivot_bars,
+                            result=result
+                        )
+                        logger.info(f"Saved result for {original_symbol} with pivot_bars={pivot_bars}")
+                    else:
+                        error_msg = result.get('error', 'Unknown error') if isinstance(result, dict) else str(result)
+                        logger.error(f"FAILED: Backtest failed for {original_symbol} (pivot_bars={pivot_bars}): {error_msg}")
+                        
+                except Exception as e:
+                    logger.error(f"Error in save_result_callback for {composite_symbol}: {e}")
+            
             # Modify configs to have unique identifiers including pivot_bars
             modified_configs = []
             for config in backtest_configs:
@@ -142,45 +176,19 @@ class GridBacktestManager:
                 }
                 modified_configs.append(modified_config)
             
-            # Run all backtests
-            logger.info(f"Starting queue_manager.run_batch() with {len(modified_configs)} configs")
-            results = await queue_manager.run_batch(modified_configs)
-            logger.info(f"Queue batch completed. Got {len(results)} results")
-            logger.info(f"Result keys: {list(results.keys()) if results else 'No results'}")
+            # Run all backtests with incremental processing
+            logger.info(f"Starting incremental backtest processing with {len(modified_configs)} configs")
+            results = await self._run_backtests_incremental(
+                queue_manager=queue_manager,
+                backtest_configs=modified_configs,
+                save_callback=save_result_callback
+            )
+            logger.info(f"All backtests completed. Got {len(results)} results")
             
-            # Process results
-            completed_count = 0
-            failed_count = 0
-            
-            for composite_symbol, result in results.items():
-                # Extract original symbol and pivot_bars from composite symbol
-                if '_pb' in composite_symbol:
-                    original_symbol = composite_symbol.split('_pb')[0]
-                    pivot_bars_str = composite_symbol.split('_pb')[1]
-                    pivot_bars = int(pivot_bars_str)
-                else:
-                    # Fallback
-                    original_symbol = composite_symbol
-                    pivot_bars = 5  # Default
-                
-                logger.debug(f"Processing result for {composite_symbol} -> {original_symbol} (pivot_bars={pivot_bars})")
-                
-                if isinstance(result, dict) and (result.get('success') or result.get('status') == 'completed'):
-                    completed_count += 1
-                    # Fix the symbol in the result
-                    result['symbol'] = original_symbol
-                    logger.debug(f"SUCCESS: Saving result for {original_symbol} with pivot_bars={pivot_bars}")
-                    await self._save_backtest_result(
-                        symbol=original_symbol,
-                        date=process_date,
-                        pivot_bars=pivot_bars,
-                        result=result
-                    )
-                else:
-                    failed_count += 1
-                    error_msg = result.get('error', 'Unknown error') if isinstance(result, dict) else str(result)
-                    logger.error(f"FAILED: Backtest failed for {original_symbol} (pivot_bars={pivot_bars}): {error_msg}")
-                    logger.error(f"Full result: {result}")
+            # Count results
+            completed_count = sum(1 for r in results.values() 
+                                if isinstance(r, dict) and (r.get('success') or r.get('status') == 'completed'))
+            failed_count = len(results) - completed_count
                 
                 # Log progress
                 total_processed = completed_count + failed_count
@@ -336,6 +344,54 @@ class GridBacktestManager:
                 
         except Exception as e:
             logger.error(f"Error saving backtest result for {symbol}: {e}")
+    
+    async def _run_backtests_incremental(self, queue_manager: ParallelBacktestQueueManager,
+                                        backtest_configs: List[Dict[str, Any]], 
+                                        save_callback) -> Dict[str, Any]:
+        """
+        Run backtests incrementally, saving results as each completes.
+        
+        This avoids waiting for all backtests to complete before saving any results.
+        """
+        # Create semaphore to limit parallelism
+        semaphore = asyncio.Semaphore(self.max_parallel)
+        results = {}
+        results_lock = asyncio.Lock()
+        
+        async def run_single_backtest(config: Dict[str, Any]) -> None:
+            """Run a single backtest and save result immediately."""
+            async with semaphore:
+                symbol = config['symbol']
+                try:
+                    # Run the backtest using queue manager's isolated backtest method
+                    result = await queue_manager.run_isolated_backtest_wrapper(config)
+                    
+                    # Save to results dict
+                    async with results_lock:
+                        results[symbol] = result
+                    
+                    # Call the save callback immediately
+                    await save_callback(symbol, result)
+                    
+                except Exception as e:
+                    logger.error(f"Error running backtest for {symbol}: {e}")
+                    error_result = {
+                        'symbol': symbol,
+                        'status': 'failed',
+                        'error': str(e),
+                        'success': False
+                    }
+                    async with results_lock:
+                        results[symbol] = error_result
+                    await save_callback(symbol, error_result)
+        
+        # Create tasks for all backtests
+        tasks = [run_single_backtest(config) for config in backtest_configs]
+        
+        # Run all tasks concurrently
+        await asyncio.gather(*tasks, return_exceptions=True)
+        
+        return results
     
     async def _save_backtest_trades(self, symbol: str, date: date, pivot_bars: int, 
                                    trades: List[Dict[str, Any]]) -> None:

@@ -1048,3 +1048,41 @@ class ParallelBacktestQueueManager:
                 self.completion_callback()
         
         return all_results
+    
+    async def run_isolated_backtest_wrapper(self, backtest_config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Wrapper method to run a single isolated backtest.
+        
+        This method is used by GridBacktestManager for incremental processing.
+        """
+        symbol = backtest_config['symbol']
+        backtest_id = backtest_config.get('backtest_id', str(uuid4()))
+        
+        try:
+            logger.info(f"[ParallelBacktest] Processing backtest for {symbol} with ID {backtest_id}")
+            
+            # Add delay between backtest launches to reduce Docker pressure
+            await asyncio.sleep(0.1)
+            
+            logger.info(f"[ParallelBacktest] Starting isolated backtest for {symbol}")
+            result = await self.run_isolated_backtest(
+                symbol=symbol,
+                backtest_config=backtest_config
+            )
+            
+            if result.get('success'):
+                logger.info(f"[ParallelBacktest] Successfully completed backtest for {symbol}")
+                return result
+            else:
+                logger.error(f"[ParallelBacktest] Backtest failed for {symbol}: {result.get('error', 'Unknown error')}")
+                return result
+                
+        except Exception as e:
+            logger.error(f"Failed to run isolated backtest for {symbol}: {e}")
+            return {
+                'symbol': symbol,
+                'backtest_id': backtest_id,
+                'status': 'failed',
+                'error': str(e),
+                'success': False
+            }
