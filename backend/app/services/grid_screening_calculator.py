@@ -208,6 +208,7 @@ class GridScreeningCalculator:
             start_date = process_date - timedelta(days=lookback_days)
             
             # Load data directly from database
+            # IMPORTANT: We exclude process_date to get previous day's close
             async with self.db_pool.acquire() as conn:
                 query = """
                 SELECT 
@@ -216,7 +217,7 @@ class GridScreeningCalculator:
                 FROM daily_bars
                 WHERE symbol = $1
                     AND time::date >= $2
-                    AND time::date <= $3
+                    AND time::date < $3
                 ORDER BY time ASC
                 """
                 rows = await conn.fetch(query, symbol, start_date, process_date)
@@ -231,7 +232,7 @@ class GridScreeningCalculator:
             # Convert to numpy array
             np_data = rows_to_numpy(rows)
             
-            # Get the latest values
+            # Get the previous trading day's close (last available close before process_date)
             latest_close = float(np_data['close'][-1])
             
             # Calculate all metrics
@@ -332,7 +333,7 @@ class GridScreeningCalculator:
             FROM daily_bars
             WHERE symbol = ANY($1::text[])
                 AND time::date >= $2
-                AND time::date <= $3
+                AND time::date < $3
             ORDER BY symbol, time ASC
             """
             rows = await conn.fetch(query, symbols, start_date, process_date)
