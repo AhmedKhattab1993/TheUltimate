@@ -21,6 +21,8 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from app.config import settings
 from app.services.date_utils import get_trading_days_between
+from app.services.grid_screening_calculator import GridScreeningCalculator
+from app.services.database import DatabasePool
 import asyncpg
 
 logging.basicConfig(
@@ -34,15 +36,25 @@ class GridAnalysisOrchestrator:
     """Main orchestrator for grid analysis."""
     
     def __init__(self):
-        self.conn = None
+        self.db_pool = None
+        self.screening_calculator = None
         
     async def __aenter__(self):
-        self.conn = await asyncpg.connect(settings.database_url)
+        # Create database pool
+        self.db_pool = await asyncpg.create_pool(
+            settings.database_url,
+            min_size=5,
+            max_size=20
+        )
+        
+        # Initialize calculator
+        self.screening_calculator = GridScreeningCalculator(self.db_pool)
+        
         return self
         
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self.conn:
-            await self.conn.close()
+        if self.db_pool:
+            await self.db_pool.close()
     
     async def process_date(self, process_date: date) -> Dict[str, Any]:
         """Process a single date - run screening and backtests."""
@@ -59,45 +71,43 @@ class GridAnalysisOrchestrator:
         # Phase 1: Screening
         logger.info("\nPhase 1: Calculating screening values...")
         try:
-            # For now, just check what symbols we have data for
-            query = """
-            SELECT DISTINCT symbol 
-            FROM daily_bars 
-            WHERE time::date = $1 
-            ORDER BY symbol
-            """
-            symbols = await self.conn.fetch(query, process_date)
-            logger.info(f"Found {len(symbols)} symbols with data for {process_date}")
+            # Use the screening calculator to process all symbols
+            screening_result = await self.screening_calculator.calculate_for_date(
+                process_date,
+                limit=None  # Process all symbols
+            )
             
-            if symbols:
-                logger.info(f"First 10 symbols: {[s['symbol'] for s in symbols[:10]]}")
-                logger.info(f"Last 10 symbols: {[s['symbol'] for s in symbols[-10:]]}")
-                
-                # Log all symbols to a file if needed
-                symbols_file = Path(f"symbols_{process_date}.txt")
-                with open(symbols_file, 'w') as f:
-                    for sym in symbols:
-                        f.write(f"{sym['symbol']}\n")
-                logger.info(f"All symbols written to {symbols_file}")
+            logger.info(f"Screening results:")
+            logger.info(f"  Total symbols: {screening_result['total_symbols']}")
+            logger.info(f"  Already processed: {screening_result.get('already_processed', 0)}")
+            logger.info(f"  Newly processed: {screening_result['processed']}")
+            logger.info(f"  Errors: {screening_result['errors']}")
+            logger.info(f"  Duration: {screening_result['duration_seconds']:.2f} seconds")
             
             results["screening"] = {
-                "symbols_count": len(symbols),
-                "status": "completed" if symbols else "no_data"
+                "symbols_count": screening_result['total_symbols'],
+                "processed": screening_result['processed'],
+                "errors": screening_result['errors'],
+                "status": "completed" if screening_result['processed'] > 0 or screening_result.get('already_processed', 0) > 0 else "no_data"
             }
+            
+            # Store symbols count for backtest phase
+            self._symbols_count = screening_result['total_symbols']
             
         except Exception as e:
             logger.error(f"Error in screening phase: {e}")
             results["screening"] = {"status": "error", "error": str(e)}
+            self._symbols_count = 0
         
         # Phase 2: Backtesting
         logger.info("\nPhase 2: Running backtests...")
         try:
             # For now, just show what we would do
-            if symbols:
+            if self._symbols_count > 0:
                 pivot_bars_values = [1, 2, 3, 5, 10, 20]
-                total_backtests = len(symbols) * len(pivot_bars_values)
+                total_backtests = self._symbols_count * len(pivot_bars_values)
                 logger.info(f"Would run {total_backtests} backtests:")
-                logger.info(f"  - {len(symbols)} symbols")
+                logger.info(f"  - {self._symbols_count} symbols")
                 logger.info(f"  - {len(pivot_bars_values)} pivot_bars values: {pivot_bars_values}")
                 logger.info(f"  - Lower timeframe: 1 minute")
                 
