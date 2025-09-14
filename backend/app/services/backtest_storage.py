@@ -10,6 +10,7 @@ from typing import Dict, Any, Optional, List
 import asyncpg
 import os
 from zoneinfo import ZoneInfo
+import uuid
 
 from ..models.backtest import (
     BacktestResult, BacktestStatistics, BacktestListResponse
@@ -43,7 +44,9 @@ class BacktestStorage:
                          result_path: str,
                          resolution: str = "Daily",
                          pivot_bars: int = 20,
-                         lower_timeframe: str = "5min") -> Optional[BacktestResult]:
+                         lower_timeframe: str = "5min",
+                         screener_session_id: Optional[str] = None,
+                         bulk_id: Optional[str] = None) -> Optional[BacktestResult]:
         """
         Save a completed backtest result.
         
@@ -225,6 +228,16 @@ class BacktestStorage:
             # Save trades to database if we have orders
             if orders:
                 await self._save_trades_to_database(backtest_id, orders)
+            
+            # Create screener-backtest link if we have session_id and bulk_id
+            if screener_session_id and bulk_id:
+                await self._create_screener_backtest_link(
+                    screener_session_id=screener_session_id,
+                    backtest_id=backtest_id,
+                    symbol=symbol,
+                    data_date=start_date,
+                    bulk_id=bulk_id
+                )
             
             return result
             
@@ -530,4 +543,53 @@ class BacktestStorage:
         except Exception as e:
             logger.error(f"Error saving trades to database: {e}")
             # Don't fail the whole backtest save if trade save fails
+            pass
+    
+    async def _create_screener_backtest_link(self, 
+                                            screener_session_id: str,
+                                            backtest_id: str,
+                                            symbol: str,
+                                            data_date: date,
+                                            bulk_id: str):
+        """Create a link between screener session and backtest result."""
+        try:
+            # Database connection parameters
+            db_config = {
+                'host': os.getenv('DB_HOST', 'localhost'),
+                'port': int(os.getenv('DB_PORT', '5432')),
+                'database': os.getenv('DB_NAME', 'stock_screener'),
+                'user': os.getenv('DB_USER', 'postgres'),
+                'password': os.getenv('DB_PASSWORD', 'postgres')
+            }
+            
+            # Connect to database
+            conn = await asyncpg.connect(**db_config)
+            
+            # Convert string UUID to UUID object if needed
+            if isinstance(screener_session_id, str):
+                screener_session_id = uuid.UUID(screener_session_id)
+            
+            query = """
+            INSERT INTO screener_backtest_links 
+                (screener_session_id, backtest_id, symbol, data_date, bulk_id)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (screener_session_id, backtest_id, symbol, data_date) 
+            DO UPDATE SET bulk_id = EXCLUDED.bulk_id
+            """
+            
+            await conn.execute(
+                query,
+                screener_session_id,
+                backtest_id,
+                symbol,
+                data_date,
+                bulk_id
+            )
+            
+            await conn.close()
+            logger.info(f"Created screener-backtest link for {symbol} with bulk_id: {bulk_id}")
+            
+        except Exception as e:
+            logger.error(f"Error creating screener-backtest link: {e}")
+            # Don't fail the whole backtest save if link creation fails
             pass

@@ -71,6 +71,38 @@ class BulkBacktestWebSocketManager:
         logger.info(f"[BulkWebSocket] Registered bulk backtest {bulk_id} - status set to False")
         logger.info(f"[BulkWebSocket] Updated bulk_status: {self.bulk_status}")
     
+    async def notify_backtest_update(self, bulk_id: str, backtest_id: str, symbol: str, 
+                                     status: str, cache_hit: bool = False, error: str = None):
+        """Notify all clients about individual backtest status update."""
+        if bulk_id not in self.active_connections:
+            logger.debug(f"[BulkWebSocket] No active connections for bulk_id: {bulk_id} - skipping backtest update")
+            return
+        
+        message = {
+            "type": "backtest_update",
+            "bulk_id": bulk_id,
+            "backtest_id": backtest_id,
+            "symbol": symbol,
+            "status": status,
+            "cache_hit": cache_hit
+        }
+        
+        if error:
+            message["error"] = error
+        
+        disconnected = []
+        for websocket in self.active_connections[bulk_id]:
+            try:
+                await websocket.send_json(message)
+                logger.debug(f"[BulkWebSocket] Sent backtest update for {symbol} (status: {status}, cache_hit: {cache_hit})")
+            except Exception as e:
+                logger.warning(f"[BulkWebSocket] Failed to send backtest update: {e}")
+                disconnected.append(websocket)
+        
+        # Remove disconnected clients
+        for ws in disconnected:
+            self.disconnect(bulk_id, ws)
+    
     async def notify_completion(self, bulk_id: str):
         """Notify all clients that bulk backtest is complete."""
         timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]

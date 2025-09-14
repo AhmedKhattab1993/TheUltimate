@@ -17,6 +17,7 @@ from ..services.backtest_manager import backtest_manager
 from ..services.lean_runner import LeanRunner
 from ..services.backtest_storage import BacktestStorage
 from ..services.backtest_queue_manager import BacktestQueueManager
+from ..services.parallel_backtest_queue_manager import ParallelBacktestQueueManager
 from ..services.cache_service import CacheService
 from ..services.screener_results import screener_results_manager
 from ..services.database import db_pool
@@ -551,10 +552,10 @@ async def start_bulk_backtests(request: BacktestRequest):
         # Generate unique bulk ID for this operation
         bulk_id = str(uuid.uuid4())
         
-        # Create queue manager with same settings as pipeline
-        queue_manager = BacktestQueueManager(
-            max_parallel=5,  # Same as pipeline default
-            startup_delay=15.0,  # Same as pipeline default
+        # Create parallel queue manager for true parallel execution
+        queue_manager = ParallelBacktestQueueManager(
+            max_parallel=10,  # Can handle more parallel runs with isolation
+            startup_delay=0.0,  # No delay needed with isolated directories
             cache_service=cache_service,
             enable_storage=True,  # Enable database storage
             enable_cleanup=True   # Enable cleanup after storage
@@ -893,16 +894,18 @@ async def start_screener_backtests(request: ScreenerBacktestRequest):
             backtest_ttl_days=7
         )
         
-        # Create queue manager with same settings as pipeline
-        queue_manager = BacktestQueueManager(
-            max_parallel=5,
-            startup_delay=15.0,
+        # Create parallel queue manager for true parallel execution
+        logger.info(f"[ScreenerBacktest] Creating ParallelBacktestQueueManager for bulk_id: {bulk_id}")
+        queue_manager = ParallelBacktestQueueManager(
+            max_parallel=10,  # Can handle more parallel runs with isolation
+            startup_delay=0.0,  # No delay needed with isolated directories
             cache_service=cache_service,
             enable_storage=True,
             enable_cleanup=True,
             screener_session_id=screener_session_id,  # Pass session_id if available
             bulk_id=bulk_id  # Pass bulk_id to track this specific run
         )
+        logger.info(f"[ScreenerBacktest] ParallelBacktestQueueManager created successfully")
         
         # Set up completion callback for WebSocket notification
         async def completion_callback():
@@ -937,12 +940,15 @@ async def start_screener_backtests(request: ScreenerBacktestRequest):
                 backtest_requests.append(backtest_request)
         
         # Run backtests asynchronously - don't await
+        logger.info(f"[ScreenerBacktest] Starting run_batch with {len(backtest_requests)} requests")
+        logger.info(f"[ScreenerBacktest] First request sample: {backtest_requests[0] if backtest_requests else 'No requests'}")
         asyncio.create_task(queue_manager.run_batch(
             backtest_requests,
             timeout_per_backtest=300,
             retry_attempts=2,
             continue_on_error=True
         ))
+        logger.info(f"[ScreenerBacktest] run_batch task created and started asynchronously")
         
         # Get date range from the collected data
         if symbols_by_date:
