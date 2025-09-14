@@ -257,11 +257,24 @@ class ParallelBacktestQueueManager:
                 result_path=result['result_path']
             )
             
+            # Parse statistics and add to result
+            statistics = await self._extract_statistics_from_result(result['result_path'])
+            
             # Add symbol and other metadata to result
             result['symbol'] = backtest_config['symbol']
             result['status'] = 'completed'
+            result['statistics'] = statistics  # CRITICAL: Add statistics to result
+            result['success'] = True
             if backtest_id:
                 result['backtest_id'] = backtest_id
+            
+            logger.info(f"[IsolatedBacktest] Result for {backtest_config['symbol']}:")
+            logger.info(f"  - status: {result['status']}")
+            logger.info(f"  - statistics: {'present' if statistics else 'missing'}")
+            logger.info(f"  - backtest_id: {backtest_id}")
+            if statistics:
+                logger.info(f"  - total_return: {statistics.get('total_return', 0)}")
+                logger.info(f"  - total_trades: {statistics.get('total_trades', 0)}")
             
             return result
             
@@ -296,6 +309,9 @@ class ParallelBacktestQueueManager:
             if not statistics:
                 logger.warning(f"Could not extract statistics for {symbol}")
                 return None
+            
+            # Generate cache_hash regardless of whether cache is enabled
+            cache_hash = str(uuid4())
             
             # Store in cache if enabled
             if self.cache_service:
@@ -800,6 +816,12 @@ class ParallelBacktestQueueManager:
                         'from_cache': True,
                         'cache_hit': True
                     }
+                    
+                    logger.info(f"[Cache] Found cached result for {symbol}:")
+                    logger.info(f"  - backtest_id: {cached_result.backtest_id}")
+                    logger.info(f"  - total_return: {statistics.get('total_return', 0)}")
+                    logger.info(f"  - total_trades: {statistics.get('total_trades', 0)}")
+                    logger.info(f"  - sharpe_ratio: {statistics.get('sharpe_ratio', 0)}")
                     
                     # Note: Cached results are already in the database from when they were first run
                     # No need to save them again - just return them like the original manager

@@ -11,12 +11,13 @@ class GridScreeningResult(BaseModel):
     """Individual screening result for a symbol."""
     symbol: str
     price: float
-    price_vs_ma20: float
-    price_vs_vwap: float
+    ma_20: float
+    ma_50: float
+    ma_200: float
     rsi_14: float
     gap_percent: float
     prev_day_dollar_volume: float
-    relative_volume_1d_vs_20d: float
+    relative_volume: float
 
 
 class GridMarketStructureResult(BaseModel):

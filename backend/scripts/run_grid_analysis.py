@@ -26,11 +26,22 @@ from app.services.grid_backtest_manager import GridBacktestManager
 from app.services.database import DatabasePool
 import asyncpg
 
+# Setup logging to both file and console
+log_filename = f"grid_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+log_filepath = Path(__file__).parent / log_filename
+
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_filepath),  # Log to file
+        logging.StreamHandler()  # Log to console
+    ]
 )
 logger = logging.getLogger(__name__)
+
+# Log the output file path
+logger.info(f"Grid analysis logs will be saved to: {log_filepath}")
 
 
 class GridAnalysisOrchestrator:

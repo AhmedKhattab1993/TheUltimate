@@ -74,22 +74,9 @@ class GridScreeningCalculator:
         
         logger.info(f"Processing {len(symbols)} symbols for {process_date}")
         
-        # Get existing symbols to avoid duplicates
-        existing_symbols = await self._get_existing_symbols(process_date)
-        symbols_to_process = [s for s in symbols if s not in existing_symbols]
-        
-        if not symbols_to_process:
-            logger.info(f"All {len(symbols)} symbols already processed for {process_date}")
-            return {
-                'date': process_date,
-                'total_symbols': len(symbols),
-                'already_processed': len(symbols),
-                'processed': 0,
-                'errors': 0,
-                'duration_seconds': time.time() - start_time
-            }
-        
-        logger.info(f"Need to process {len(symbols_to_process)} new symbols")
+        # Process all symbols (disable duplicate checking for grid analysis)
+        symbols_to_process = symbols
+        logger.info(f"Processing all {len(symbols_to_process)} symbols (no duplicate checking)")
         
         if use_bulk_loading and len(symbols_to_process) > 20:
             # Use bulk loading for better performance with many symbols
@@ -138,7 +125,7 @@ class GridScreeningCalculator:
         return {
             'date': process_date,
             'total_symbols': len(symbols),
-            'already_processed': len(existing_symbols),
+            'already_processed': 0,  # No duplicate checking enabled
             'processed': processed_count,
             'errors': error_count,
             'duration_seconds': duration

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect } from 'react'
 import { format, subDays } from 'date-fns'
-import { Search, RefreshCw, AlertCircle, Calendar, TrendingUp, History } from 'lucide-react'
+import { Search, RefreshCw, AlertCircle, Calendar, TrendingUp, History, BarChart2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { DatePicker } from '@/components/ui/date-picker'
@@ -16,6 +16,7 @@ import { RelativeVolumeFilter } from '@/components/filters/RelativeVolumeFilter'
 import { ScreenerResults } from '@/components/results/ScreenerResults'
 import { BacktestingTab } from '@/components/backtesting/BacktestingTab'
 import { ResultsTab } from '@/components/results/ResultsTab'
+import { GridAnalysisTab } from '@/components/grid/GridAnalysisTab'
 import { useScreenerContext } from '@/contexts/ScreenerContext'
 import { useScreener } from '@/hooks/useScreener'
 import { validateFilters } from '@/utils/validation'
@@ -108,7 +109,7 @@ export function SimpleStockScreener() {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="screener">
               <Search className="h-4 w-4 mr-2" />
               Stock Screener
@@ -120,6 +121,10 @@ export function SimpleStockScreener() {
             <TabsTrigger value="results">
               <History className="h-4 w-4 mr-2" />
               Results
+            </TabsTrigger>
+            <TabsTrigger value="grid">
+              <BarChart2 className="h-4 w-4 mr-2" />
+              Grid Analysis
             </TabsTrigger>
           </TabsList>
 
@@ -254,6 +259,10 @@ export function SimpleStockScreener() {
 
           <TabsContent value="results">
             <ResultsTab />
+          </TabsContent>
+          
+          <TabsContent value="grid">
+            <GridAnalysisTab />
           </TabsContent>
         </Tabs>
       </div>

@@ -29,7 +29,7 @@ class GridBacktestManager:
     def __init__(self, db_pool: asyncpg.Pool, max_parallel: int = 10):
         self.db_pool = db_pool
         self.max_parallel = max_parallel
-        self.cache_service = CacheService()
+        self.cache_service = None  # Disable caching for grid analysis
         
         # Define parameter grid
         self.pivot_bars_values = [1, 2, 3, 5, 10, 20]
@@ -110,6 +110,7 @@ class GridBacktestManager:
             }
         
         logger.info(f"Running {len(backtest_configs)} backtests for {process_date}")
+        logger.info(f"Sample backtest config: {backtest_configs[0] if backtest_configs else 'None'}")
         
         # Create grid session ID for tracking
         grid_session_id = uuid.uuid4()
@@ -117,12 +118,14 @@ class GridBacktestManager:
         # Initialize the queue manager
         queue_manager = ParallelBacktestQueueManager(
             max_parallel=self.max_parallel,
-            cache_service=self.cache_service,
+            cache_service=None,  # Disable caching for grid analysis
             enable_storage=False,  # We'll handle storage ourselves
             enable_cleanup=True,
             screener_session_id=grid_session_id,
             bulk_id=f"grid_{process_date}"
         )
+        logger.info(f"Queue manager initialized with max_parallel={self.max_parallel}")
+        logger.info(f"TESTING_MODE setting: {getattr(settings, 'TESTING_MODE', 'Not set')}")
         
         
         # Process all backtests
@@ -140,7 +143,10 @@ class GridBacktestManager:
                 modified_configs.append(modified_config)
             
             # Run all backtests
+            logger.info(f"Starting queue_manager.run_batch() with {len(modified_configs)} configs")
             results = await queue_manager.run_batch(modified_configs)
+            logger.info(f"Queue batch completed. Got {len(results)} results")
+            logger.info(f"Result keys: {list(results.keys()) if results else 'No results'}")
             
             # Process results
             completed_count = 0
@@ -157,12 +163,18 @@ class GridBacktestManager:
                     original_symbol = composite_symbol
                     pivot_bars = 5  # Default
                 
+                logger.info(f"Processing result for {composite_symbol} -> {original_symbol} (pivot_bars={pivot_bars})")
+                logger.info(f"Result type: {type(result)}, Result: {result}")
+                
                 if isinstance(result, dict) and (result.get('success') or result.get('status') == 'completed'):
                     completed_count += 1
                     # Fix the symbol in the result
                     result['symbol'] = original_symbol
-                    logger.debug(f"Saving result for {original_symbol} with pivot_bars={pivot_bars}")
-                    logger.debug(f"Result keys: {list(result.keys())}")
+                    logger.info(f"SUCCESS: Saving result for {original_symbol} with pivot_bars={pivot_bars}")
+                    logger.info(f"Result keys: {list(result.keys())}")
+                    if 'statistics' in result:
+                        logger.info(f"Statistics type: {type(result['statistics'])}")
+                        logger.info(f"Statistics content: {result['statistics']}")
                     await self._save_backtest_result(
                         symbol=original_symbol,
                         date=process_date,
@@ -172,7 +184,8 @@ class GridBacktestManager:
                 else:
                     failed_count += 1
                     error_msg = result.get('error', 'Unknown error') if isinstance(result, dict) else str(result)
-                    logger.error(f"Backtest failed for {original_symbol} (pivot_bars={pivot_bars}): {error_msg}")
+                    logger.error(f"FAILED: Backtest failed for {original_symbol} (pivot_bars={pivot_bars}): {error_msg}")
+                    logger.error(f"Full result: {result}")
                 
                 # Log progress
                 total_processed = completed_count + failed_count
@@ -249,10 +262,16 @@ class GridBacktestManager:
                                    pivot_bars: int, result: Dict[str, Any]) -> None:
         """Save backtest result to grid_market_structure table."""
         try:
+            logger.info(f"SAVE: Saving backtest result for {symbol}, date={date}, pivot_bars={pivot_bars}")
+            logger.info(f"SAVE: Full result dict: {result}")
+            
             # The result should have statistics already
             # For cached results, statistics are in the result dict
             backtest_id = result.get('backtest_id', result.get('cache_id'))
             stats = result.get('statistics', {})
+            
+            logger.info(f"SAVE: Stats extracted: {stats}")
+            logger.info(f"SAVE: Stats type: {type(stats)}")
             
             # Calculate key metrics - handle both formats
             total_return = stats.get('total_return', stats.get('Total Return [%]', 0))
@@ -262,9 +281,25 @@ class GridBacktestManager:
             profit_loss_ratio = stats.get('profit_loss_ratio', stats.get('Profit-Loss Ratio', 0))
             total_trades = stats.get('total_trades', stats.get('Total Trades', 0))
             
+            logger.info(f"SAVE: Calculated metrics - total_return: {total_return}, sharpe: {sharpe_ratio}, trades: {total_trades}")
+            
             # Get equity curve data if available
             equity_curve = result.get('equity_curve', {})
             final_equity = equity_curve.get('final_value', self.initial_cash)
+            
+            # Log the SQL parameters
+            logger.info(f"SAVE: SQL parameters:")
+            logger.info(f"  symbol: {symbol}")
+            logger.info(f"  date: {date}")
+            logger.info(f"  pivot_bars: {pivot_bars}")
+            logger.info(f"  lower_timeframe: {self.lower_timeframe}")
+            logger.info(f"  total_return: {total_return}")
+            logger.info(f"  sharpe_ratio: {sharpe_ratio}")
+            logger.info(f"  max_drawdown: {max_drawdown}")
+            logger.info(f"  win_rate: {win_rate}")
+            logger.info(f"  profit_factor: {profit_loss_ratio}")
+            logger.info(f"  total_trades: {total_trades}")
+            logger.info(f"  statistics length: {len(json.dumps(stats)) if stats else 0}")
             
             async with self.db_pool.acquire() as conn:
                 await conn.execute("""
@@ -288,7 +323,23 @@ class GridBacktestManager:
                     win_rate, profit_loss_ratio, total_trades, 
                     json.dumps(stats) if stats else None)
                 
-                logger.debug(f"Saved backtest result for {symbol} on {date} with pivot_bars={pivot_bars}")
+                logger.info(f"SAVE: Successfully saved backtest result for {symbol} on {date} with pivot_bars={pivot_bars}")
+                
+                # Verify the save by reading it back
+                row = await conn.fetchrow("""
+                    SELECT total_return, sharpe_ratio, total_trades, statistics
+                    FROM grid_market_structure
+                    WHERE symbol = $1 AND backtest_date = $2 AND pivot_bars = $3
+                """, symbol, date, pivot_bars)
+                
+                if row:
+                    logger.info(f"SAVE VERIFY: Read back from DB:")
+                    logger.info(f"  total_return: {row['total_return']}")
+                    logger.info(f"  sharpe_ratio: {row['sharpe_ratio']}")
+                    logger.info(f"  total_trades: {row['total_trades']}")
+                    logger.info(f"  statistics: {'present' if row['statistics'] else 'null'}")
+                else:
+                    logger.error(f"SAVE VERIFY: Could not read back saved record!")
                 
         except Exception as e:
             logger.error(f"Error saving backtest result for {symbol}: {e}")

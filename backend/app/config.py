@@ -13,16 +13,7 @@ class Settings(BaseSettings):
     TESTING_MODE: bool = Field(default=False, description="Enable testing mode with limited symbols")
     TESTING_SYMBOLS: List[str] = Field(
         default=[
-            "AAPL",  # Apple
-            "TSLA",  # Tesla
-            "AMZN",  # Amazon
-            "NVDA",  # NVIDIA
-            "MSFT",  # Microsoft
-            "GOOGL", # Google
-            "META",  # Meta/Facebook
-            "SPY",   # S&P 500 ETF
-            "QQQ",   # NASDAQ ETF
-            "AMD"    # AMD
+            "AAPL"   # Apple - single symbol for testing
         ],
         description="Symbols to use in testing mode"
     )

@@ -192,12 +192,13 @@ async def get_grid_result_detail(
         SELECT 
             symbol,
             price,
-            (price - ma_20) / ma_20 * 100 as price_vs_ma20,
-            0 as price_vs_vwap,
+            ma_20,
+            ma_50,
+            ma_200,
             rsi_14,
             gap_percent,
             prev_day_dollar_volume,
-            relative_volume as relative_volume_1d_vs_20d,
+            relative_volume,
             date,
             created_at
         FROM grid_screening
@@ -235,13 +236,14 @@ async def get_grid_result_detail(
         for row in screening_rows:
             screening_results.append(GridScreeningResult(
                 symbol=row['symbol'],
-                price=float(row['price']),
-                price_vs_ma20=float(row['price_vs_ma20']),
-                price_vs_vwap=float(row['price_vs_vwap']),
-                rsi_14=float(row['rsi_14']),
-                gap_percent=float(row['gap_percent']),
-                prev_day_dollar_volume=float(row['prev_day_dollar_volume']),
-                relative_volume_1d_vs_20d=float(row['relative_volume_1d_vs_20d'])
+                price=float(row['price']) if row['price'] else 0,
+                ma_20=float(row['ma_20']) if row['ma_20'] else 0,
+                ma_50=float(row['ma_50']) if row['ma_50'] else 0,
+                ma_200=float(row['ma_200']) if row['ma_200'] else 0,
+                rsi_14=float(row['rsi_14']) if row['rsi_14'] else 0,
+                gap_percent=float(row['gap_percent']) if row['gap_percent'] else 0,
+                prev_day_dollar_volume=float(row['prev_day_dollar_volume']) if row['prev_day_dollar_volume'] else 0,
+                relative_volume=float(row['relative_volume']) if row['relative_volume'] else 0
             ))
         
         backtest_results = []
@@ -253,7 +255,7 @@ async def get_grid_result_detail(
                 symbol=row['symbol'],
                 pivot_bars=row['pivot_bars'],
                 status='completed',
-                total_return=stats.get('net_profit', 0),
+                total_return=stats.get('total_return', 0),
                 sharpe_ratio=stats.get('sharpe_ratio', 0),
                 max_drawdown=stats.get('max_drawdown', 0),
                 win_rate=stats.get('win_rate', 0),
@@ -290,12 +292,13 @@ async def get_symbol_grid_results(
         SELECT 
             symbol,
             price,
-            (price - ma_20) / ma_20 * 100 as price_vs_ma20,
-            0 as price_vs_vwap,
+            ma_20,
+            ma_50,
+            ma_200,
             rsi_14,
             gap_percent,
             prev_day_dollar_volume,
-            relative_volume as relative_volume_1d_vs_20d,
+            relative_volume,
             date,
             created_at
         FROM grid_screening
@@ -328,13 +331,14 @@ async def get_symbol_grid_results(
         # Build response
         screening = GridScreeningResult(
             symbol=screening_row['symbol'],
-            price=float(screening_row['price']),
-            price_vs_ma20=float(screening_row['price_vs_ma20']),
-            price_vs_vwap=float(screening_row['price_vs_vwap']),
-            rsi_14=float(screening_row['rsi_14']),
-            gap_percent=float(screening_row['gap_percent']),
-            prev_day_dollar_volume=float(screening_row['prev_day_dollar_volume']),
-            relative_volume_1d_vs_20d=float(screening_row['relative_volume_1d_vs_20d'])
+            price=float(screening_row['price']) if screening_row['price'] else 0,
+            ma_20=float(screening_row['ma_20']) if screening_row['ma_20'] else 0,
+            ma_50=float(screening_row['ma_50']) if screening_row['ma_50'] else 0,
+            ma_200=float(screening_row['ma_200']) if screening_row['ma_200'] else 0,
+            rsi_14=float(screening_row['rsi_14']) if screening_row['rsi_14'] else 0,
+            gap_percent=float(screening_row['gap_percent']) if screening_row['gap_percent'] else 0,
+            prev_day_dollar_volume=float(screening_row['prev_day_dollar_volume']) if screening_row['prev_day_dollar_volume'] else 0,
+            relative_volume=float(screening_row['relative_volume']) if screening_row['relative_volume'] else 0
         )
         
         backtests = []
