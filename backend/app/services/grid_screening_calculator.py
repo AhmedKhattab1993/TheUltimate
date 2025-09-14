@@ -148,6 +148,22 @@ class GridScreeningCalculator:
                                    limit: Optional[int] = None) -> List[str]:
         """Get all symbols that have data for the given date."""
         async with self.db_pool.acquire() as conn:
+            # Check if testing mode is enabled
+            if settings.TESTING_MODE:
+                # Use only testing symbols
+                query = """
+                SELECT DISTINCT symbol 
+                FROM daily_bars 
+                WHERE time::date = $1 
+                    AND symbol = ANY($2::text[])
+                ORDER BY symbol
+                """
+                rows = await conn.fetch(query, process_date, settings.TESTING_SYMBOLS)
+                symbols = [row['symbol'] for row in rows]
+                logger.info(f"Testing mode: Found {len(symbols)} symbols from testing list")
+                return symbols
+            
+            # Normal mode - get all symbols
             query = """
             SELECT DISTINCT symbol 
             FROM daily_bars 

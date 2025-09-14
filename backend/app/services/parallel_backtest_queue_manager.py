@@ -204,6 +204,8 @@ class ParallelBacktestQueueManager:
         """
         logger.info(f"[IsolatedBacktest] Starting backtest for {backtest_config['symbol']} in {isolated_path}")
         logger.info(f"[IsolatedBacktest] Config: {backtest_config}")
+        if 'original_symbol' in backtest_config:
+            logger.info(f"[IsolatedBacktest] Using original symbol '{backtest_config['original_symbol']}' for LEAN (composite: {backtest_config['symbol']})")
         
         try:
             # Create a LeanRunner instance for this isolated project
@@ -211,6 +213,9 @@ class ParallelBacktestQueueManager:
             lean_runner = LeanRunner(lean_project_path=str(isolated_path.parent))
             
             # Create BacktestRequest object from config dictionary
+            # Use original_symbol for LEAN if available, otherwise use symbol
+            symbol_for_lean = backtest_config.get('original_symbol', backtest_config['symbol'])
+            
             backtest_request = BacktestRequest(
                 strategy_name=backtest_config.get('strategy', 'MarketStructure'),
                 start_date=datetime.strptime(backtest_config['start_date'], '%Y-%m-%d').date(),
@@ -220,7 +225,7 @@ class ParallelBacktestQueueManager:
                 pivot_bars=backtest_config.get('parameters', {}).get('pivot_bars', 20),
                 lower_timeframe=backtest_config.get('parameters', {}).get('lower_timeframe', '5min'),
                 parameters=backtest_config.get('parameters', {}),
-                symbols=[backtest_config['symbol']],
+                symbols=[symbol_for_lean],
                 use_screener_results=False
             )
             

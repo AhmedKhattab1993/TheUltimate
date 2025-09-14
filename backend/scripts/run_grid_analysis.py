@@ -22,6 +22,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 from app.config import settings
 from app.services.date_utils import get_trading_days_between
 from app.services.grid_screening_calculator import GridScreeningCalculator
+from app.services.grid_backtest_manager import GridBacktestManager
 from app.services.database import DatabasePool
 import asyncpg
 
@@ -38,6 +39,7 @@ class GridAnalysisOrchestrator:
     def __init__(self):
         self.db_pool = None
         self.screening_calculator = None
+        self.backtest_manager = None
         
     async def __aenter__(self):
         # Create database pool
@@ -47,8 +49,9 @@ class GridAnalysisOrchestrator:
             max_size=20
         )
         
-        # Initialize calculator
+        # Initialize calculator and backtest manager
         self.screening_calculator = GridScreeningCalculator(self.db_pool)
+        self.backtest_manager = GridBacktestManager(self.db_pool, max_parallel=10)
         
         return self
         
@@ -102,18 +105,27 @@ class GridAnalysisOrchestrator:
         # Phase 2: Backtesting
         logger.info("\nPhase 2: Running backtests...")
         try:
-            # For now, just show what we would do
+            # Only run backtests if we have symbols
             if self._symbols_count > 0:
-                pivot_bars_values = [1, 2, 3, 5, 10, 20]
-                total_backtests = self._symbols_count * len(pivot_bars_values)
-                logger.info(f"Would run {total_backtests} backtests:")
-                logger.info(f"  - {self._symbols_count} symbols")
-                logger.info(f"  - {len(pivot_bars_values)} pivot_bars values: {pivot_bars_values}")
-                logger.info(f"  - Lower timeframe: 1 minute")
+                # Run the backtests
+                backtest_result = await self.backtest_manager.run_backtests_for_date(process_date)
+                
+                logger.info(f"Backtest results:")
+                logger.info(f"  Total symbols: {backtest_result['total_symbols']}")
+                logger.info(f"  Total backtests: {backtest_result['total_backtests']}")
+                logger.info(f"  Already processed: {backtest_result.get('already_processed', 0)}")
+                logger.info(f"  Completed: {backtest_result['completed']}")
+                logger.info(f"  Failed: {backtest_result['failed']}")
+                logger.info(f"  Duration: {backtest_result['duration_seconds']:.2f} seconds")
+                
+                if backtest_result.get('throughput'):
+                    logger.info(f"  Throughput: {backtest_result['throughput']:.2f} backtests/second")
                 
                 results["backtesting"] = {
-                    "total_backtests": total_backtests,
-                    "status": "planned"
+                    "total_backtests": backtest_result['total_backtests'],
+                    "completed": backtest_result['completed'],
+                    "failed": backtest_result['failed'],
+                    "status": "completed" if backtest_result['completed'] > 0 or backtest_result.get('already_processed', 0) > 0 else "no_data"
                 }
             else:
                 results["backtesting"] = {"status": "skipped", "reason": "no_symbols"}
@@ -185,6 +197,13 @@ def main():
     parser.add_argument("--end-date", type=str, help="End date for range (YYYY-MM-DD)")
     
     args = parser.parse_args()
+    
+    # Show testing mode status
+    if settings.TESTING_MODE:
+        logger.info(f"\n{'*'*60}")
+        logger.info("TESTING MODE ENABLED")
+        logger.info(f"Limited to symbols: {', '.join(settings.TESTING_SYMBOLS)}")
+        logger.info(f"{'*'*60}\n")
     
     # Validate arguments
     if args.date:

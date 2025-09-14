@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from pydantic import field_validator
+from pydantic import field_validator, Field
 from typing import List, Union
 import os
 import json
@@ -9,6 +9,23 @@ load_dotenv()
 
 
 class Settings(BaseSettings):
+    # Testing mode - limits symbols for faster testing
+    TESTING_MODE: bool = Field(default=False, description="Enable testing mode with limited symbols")
+    TESTING_SYMBOLS: List[str] = Field(
+        default=[
+            "AAPL",  # Apple
+            "TSLA",  # Tesla
+            "AMZN",  # Amazon
+            "NVDA",  # NVIDIA
+            "MSFT",  # Microsoft
+            "GOOGL", # Google
+            "META",  # Meta/Facebook
+            "SPY",   # S&P 500 ETF
+            "QQQ",   # NASDAQ ETF
+            "AMD"    # AMD
+        ],
+        description="Symbols to use in testing mode"
+    )
     polygon_api_key: str = os.getenv("POLYGON_API_KEY", "")
     cors_origins: List[str] = ["*"]  # Allow all origins for testing
     
