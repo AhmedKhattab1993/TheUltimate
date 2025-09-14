@@ -13,7 +13,9 @@ class Settings(BaseSettings):
     TESTING_MODE: bool = Field(default=False, description="Enable testing mode with limited symbols")
     TESTING_SYMBOLS: List[str] = Field(
         default=[
-            "AAPL"   # Apple - single symbol for testing
+            "AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "NVDA", "JPM",
+            "V", "JNJ", "WMT", "PG", "UNH", "HD", "DIS", "MA", "BAC", "XOM",
+            "PFE", "CVX"  # Top 20 S&P 500 stocks for testing
         ],
         description="Symbols to use in testing mode"
     )
