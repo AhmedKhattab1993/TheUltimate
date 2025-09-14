@@ -204,8 +204,13 @@ class GridScreeningCalculator:
         """Calculate all screening metrics for a single symbol."""
         try:
             # Load data with sufficient lookback for MA200
-            lookback_days = 252  # 1 year for MA200 + buffer
-            start_date = process_date - timedelta(days=lookback_days)
+            # Need at least 200 trading days, which is approximately 280 calendar days
+            # But limit to available data (earliest is 2024-01-02)
+            lookback_days = 400  # Use more days to ensure we get 200+ trading days
+            start_date = max(
+                process_date - timedelta(days=lookback_days),
+                date(2024, 1, 1)  # Don't go before our data starts
+            )
             
             # Load data directly from database
             # Include process_date to get the open price for that day
@@ -231,6 +236,8 @@ class GridScreeningCalculator:
             
             # Convert to numpy array
             np_data = rows_to_numpy(rows)
+            
+            logger.debug(f"{symbol}: Loaded {len(rows)} bars from {rows[0]['date']} to {rows[-1]['date']}")
             
             # Get the current day's open price
             # Check if the last row is for process_date
@@ -261,8 +268,10 @@ class GridScreeningCalculator:
                     if len(ma_values) > 0 and not np.isnan(ma_values[-1]):
                         metrics[filter_key] = float(ma_values[-1])
                     else:
+                        logger.debug(f"{symbol} MA{period}: Last value is NaN or empty array")
                         metrics[filter_key] = None
                 else:
+                    logger.debug(f"{symbol} MA{period}: No ma_values in metrics")
                     metrics[filter_key] = None
             
             # RSI
@@ -328,8 +337,13 @@ class GridScreeningCalculator:
         Process symbols using bulk loading for better performance.
         """
         # Load all data in one query
-        lookback_days = 252  # 1 year for MA200 + buffer
-        start_date = process_date - timedelta(days=lookback_days)
+        # Need at least 200 trading days, which is approximately 280 calendar days
+        # But limit to available data (earliest is 2024-01-02)
+        lookback_days = 400  # Use more days to ensure we get 200+ trading days
+        start_date = max(
+            process_date - timedelta(days=lookback_days),
+            date(2024, 1, 1)  # Don't go before our data starts
+        )
         
         logger.info(f"Bulk loading data for {len(symbols)} symbols")
         
