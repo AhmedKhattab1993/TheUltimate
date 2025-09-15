@@ -1,0 +1,24 @@
+{
+  "parameters": {
+    "parallel": 1,
+    "total": 1,
+    "symbol": "AAPL",
+    "date": "2025-09-10",
+    "runs": 1
+  },
+  "runs": [
+    {
+      "max_parallel": 1,
+      "total_backtests": 1,
+      "completed": 1,
+      "failed": 0,
+      "total_time": 15.603972911834717,
+      "average_time_per_backtest": 15.603759288787842,
+      "median_time_per_backtest": 15.603759288787842,
+      "min_time_per_backtest": 15.603759288787842,
+      "max_time_per_backtest": 15.603759288787842,
+      "throughput_per_second": 0.06408624301324936,
+      "effective_parallelism": 0.9999863097015046
+    }
+  ]
+}

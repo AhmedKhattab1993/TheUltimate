@@ -1049,7 +1049,7 @@ class ParallelBacktestQueueManager:
         
         return all_results
     
-    async def run_isolated_backtest_wrapper(self, backtest_config: Dict[str, Any]) -> Dict[str, Any]:
+    async def run_isolated_backtest_wrapper(self, backtest_config: Dict[str, Any], skip_cleanup: bool = False) -> Dict[str, Any]:
         """
         Wrapper method to run a single isolated backtest.
         
@@ -1073,13 +1073,16 @@ class ParallelBacktestQueueManager:
                 backtest_config=backtest_config
             )
             
-            # Clean up isolated directory after completion
-            try:
-                if isolated_path.exists():
-                    shutil.rmtree(isolated_path)
-                    logger.debug(f"Cleaned up isolated directory: {isolated_path}")
-            except Exception as cleanup_error:
-                logger.warning(f"Failed to clean up isolated directory {isolated_path}: {cleanup_error}")
+            # Clean up isolated directory after completion (unless skipped)
+            if not skip_cleanup:
+                try:
+                    if isolated_path.exists():
+                        shutil.rmtree(isolated_path)
+                        logger.debug(f"Cleaned up isolated directory: {isolated_path}")
+                except Exception as cleanup_error:
+                    logger.warning(f"Failed to clean up isolated directory {isolated_path}: {cleanup_error}")
+            else:
+                logger.info(f"Skipping cleanup of isolated directory: {isolated_path}")
             
             if result.get('success'):
                 logger.info(f"[ParallelBacktest] Successfully completed backtest for {symbol}")
