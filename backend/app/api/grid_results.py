@@ -1,5 +1,5 @@
 """
-API endpoints for grid analysis results.
+API endpoints for grid backtest results.
 Provides combined access to grid screening and market structure backtest results.
 """
 
@@ -85,7 +85,7 @@ async def list_grid_results(
     symbol: Optional[str] = Query(None, description="Filter by symbol")
 ):
     """
-    List grid analysis results with pagination and filtering.
+    List grid backtest results with pagination and filtering.
     
     Returns combined screening and backtest results grouped by date.
     """
@@ -456,7 +456,7 @@ async def get_grid_trades(
     limit: int = Query(50, description="Maximum number of trades to return", ge=1, le=500)
 ):
     """
-    Get trades for grid analysis results.
+    Get trades for grid backtest results.
     
     Can filter by symbol and/or pivot_bars value.
     Returns the last N trades (default 50) ordered by trade time descending.

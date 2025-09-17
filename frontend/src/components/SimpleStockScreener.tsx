@@ -16,7 +16,7 @@ import { RelativeVolumeFilter } from '@/components/filters/RelativeVolumeFilter'
 import { ScreenerResults } from '@/components/results/ScreenerResults'
 import { BacktestingTab } from '@/components/backtesting/BacktestingTab'
 import { ResultsTab } from '@/components/results/ResultsTab'
-import { GridAnalysisTab } from '@/components/grid/GridAnalysisTab'
+import { GridBacktestResultsTab } from '@/components/grid/GridBacktestResultsTab'
 import { useScreenerContext } from '@/contexts/ScreenerContext'
 import { useScreener } from '@/hooks/useScreener'
 import { validateFilters } from '@/utils/validation'
@@ -124,7 +124,7 @@ export function SimpleStockScreener() {
             </TabsTrigger>
             <TabsTrigger value="grid">
               <BarChart2 className="h-4 w-4 mr-2" />
-              Grid Analysis
+              Grid Backtest Results
             </TabsTrigger>
           </TabsList>
 
@@ -262,7 +262,7 @@ export function SimpleStockScreener() {
           </TabsContent>
           
           <TabsContent value="grid">
-            <GridAnalysisTab />
+            <GridBacktestResultsTab />
           </TabsContent>
         </Tabs>
       </div>

@@ -33,7 +33,7 @@ interface CombinedGridRow {
   backtest_status: string
 }
 
-export function GridAnalysisTab() {
+export function GridBacktestResultsTab() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [allData, setAllData] = useState<CombinedGridRow[]>([])
@@ -262,7 +262,7 @@ export function GridAnalysisTab() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <BarChart2 className="h-5 w-5" />
-            Grid Analysis Results
+            Grid Backtest Results
           </CardTitle>
           <CardDescription>
             Combined screening and backtest results for all symbols across all dates
@@ -314,7 +314,7 @@ export function GridAnalysisTab() {
           {loading && (
             <div className="text-center py-8">
               <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-2" />
-              <p className="text-muted-foreground">Loading all grid analysis data...</p>
+              <p className="text-muted-foreground">Loading all grid backtest results...</p>
             </div>
           )}
 
@@ -440,7 +440,7 @@ export function GridAnalysisTab() {
 
           {!loading && allData.length === 0 && (
             <div className="text-center py-8">
-              <p className="text-muted-foreground">No grid analysis results available</p>
+              <p className="text-muted-foreground">No grid backtest results available</p>
             </div>
           )}
         </CardContent>
