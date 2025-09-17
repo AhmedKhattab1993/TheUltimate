@@ -15,14 +15,14 @@ import {
 } from 'lucide-react'
 import { format, subDays } from 'date-fns'
 import { filterOptimizerService } from '@/services/filterOptimizer'
-import { 
-  OptimizationTarget, 
+import type { 
+  OptimizationRequest,
+  OptimizationResponse,
+  SuggestedRanges,
   FilterSearchSpace,
-  OptimizationResult,
-  type OptimizationRequest,
-  type OptimizationResponse,
-  type SuggestedRanges
+  OptimizationResult
 } from '@/types/filterOptimizer'
+import { OptimizationTarget } from '@/types/filterOptimizer'
 
 export function FilterOptimizerTab() {
   // State
@@ -38,19 +38,66 @@ export function FilterOptimizerTab() {
   const [customFormula, setCustomFormula] = useState('')
   const [minSymbols, setMinSymbols] = useState(10)
   const [maxResults, setMaxResults] = useState(20)
-  const [pivotBars, setPivotBars] = useState<number | undefined>(undefined)
   
   // Search space state
   const [searchSpace, setSearchSpace] = useState<FilterSearchSpace>({
-    price_min: { min_value: 5, max_value: 50, step: 5 },
-    price_max: { min_value: 20, max_value: 200, step: 10 },
-    rsi_min: { min_value: 20, max_value: 40, step: 5 },
-    rsi_max: { min_value: 60, max_value: 80, step: 5 },
-    gap_min: { min_value: -5, max_value: 0, step: 1 },
-    gap_max: { min_value: 0, max_value: 5, step: 1 },
-    volume_min: { min_value: 1000000, max_value: 5000000, step: 1000000 },
-    rel_volume_min: { min_value: 1.0, max_value: 3.0, step: 0.5 }
+    price_range: { min_value: 1, max_value: 100, step: 10 },
+    rsi_range: { min_value: 0, max_value: 100, step: 10 },
+    gap_range: { min_value: -10, max_value: 10, step: 2 },
+    volume_range: { min_value: 1000000, max_value: 50000000, step: 5000000 },
+    rel_volume_range: { min_value: 1, max_value: 5, step: 0.5 },
+    pivot_bars_range: { min_value: 4, max_value: 12, step: 1 },
+    ma_periods: [20, 50, 200],
+    ma_conditions: ['above', 'below']
   })
+  
+  // Calculate total combinations
+  const calculateTotalCombinations = () => {
+    let totalCombinations = 1
+    
+    // Price range sliding windows
+    if (searchSpace.price_range) {
+      const priceWindows = Math.floor((searchSpace.price_range.max_value - searchSpace.price_range.min_value) / searchSpace.price_range.step)
+      if (priceWindows > 0) totalCombinations *= priceWindows
+    }
+    
+    // RSI range sliding windows
+    if (searchSpace.rsi_range) {
+      const rsiWindows = Math.floor((searchSpace.rsi_range.max_value - searchSpace.rsi_range.min_value) / searchSpace.rsi_range.step)
+      if (rsiWindows > 0) totalCombinations *= rsiWindows
+    }
+    
+    // Gap range sliding windows
+    if (searchSpace.gap_range) {
+      const gapWindows = Math.floor((searchSpace.gap_range.max_value - searchSpace.gap_range.min_value) / searchSpace.gap_range.step)
+      if (gapWindows > 0) totalCombinations *= gapWindows
+    }
+    
+    // Volume range sliding windows
+    if (searchSpace.volume_range) {
+      const volumeWindows = Math.floor((searchSpace.volume_range.max_value - searchSpace.volume_range.min_value) / searchSpace.volume_range.step)
+      if (volumeWindows > 0) totalCombinations *= volumeWindows
+    }
+    
+    // Relative volume range sliding windows
+    if (searchSpace.rel_volume_range) {
+      const relVolumeWindows = Math.floor((searchSpace.rel_volume_range.max_value - searchSpace.rel_volume_range.min_value) / searchSpace.rel_volume_range.step)
+      if (relVolumeWindows > 0) totalCombinations *= relVolumeWindows
+    }
+    
+    // Pivot bars range sliding windows
+    if (searchSpace.pivot_bars_range) {
+      const pivotWindows = Math.floor((searchSpace.pivot_bars_range.max_value - searchSpace.pivot_bars_range.min_value) / searchSpace.pivot_bars_range.step)
+      if (pivotWindows > 0) totalCombinations *= pivotWindows
+    }
+    
+    // MA periods and conditions
+    if (searchSpace.ma_periods && searchSpace.ma_conditions) {
+      totalCombinations *= searchSpace.ma_periods.length * searchSpace.ma_conditions.length
+    }
+    
+    return totalCombinations
+  }
   
   // Load suggested ranges when dates change
   useEffect(() => {
@@ -83,8 +130,7 @@ export function FilterOptimizerTab() {
         custom_formula: target === OptimizationTarget.CUSTOM ? customFormula : undefined,
         search_space: searchSpace,
         max_results: maxResults,
-        min_symbols_required: minSymbols,
-        pivot_bars: pivotBars
+        min_symbols_required: minSymbols
       }
       
       const response = await filterOptimizerService.optimizeFilters(request)
@@ -101,14 +147,42 @@ export function FilterOptimizerTab() {
     
     const suggested = suggestedRanges.suggested_ranges
     setSearchSpace({
-      price_min: suggested.price_range.min,
-      price_max: suggested.price_range.max,
-      rsi_min: suggested.rsi_range.min,
-      rsi_max: suggested.rsi_range.max,
-      gap_min: suggested.gap_range.min,
-      gap_max: suggested.gap_range.max,
-      volume_min: suggested.volume.min,
-      rel_volume_min: suggested.relative_volume.min
+      price_range: {
+        min_value: suggested.price_range.min.suggested_min,
+        max_value: suggested.price_range.max.suggested_max,
+        step: 10 // Reasonable step for sliding window
+      },
+      rsi_range: {
+        min_value: 0,
+        max_value: 100,
+        step: 10
+      },
+      gap_range: {
+        min_value: -10,
+        max_value: 10,
+        step: 2
+      },
+      volume_range: suggested.volume?.min ? {
+        min_value: suggested.volume.min.suggested_min,
+        max_value: suggested.volume.min.suggested_max * 10, // Expand range for sliding window
+        step: suggested.volume.min.suggested_step * 2
+      } : {
+        min_value: 1000000,
+        max_value: 50000000,
+        step: 5000000
+      },
+      rel_volume_range: suggested.relative_volume?.min ? {
+        min_value: suggested.relative_volume.min.suggested_min,
+        max_value: suggested.relative_volume.min.suggested_max,
+        step: suggested.relative_volume.min.suggested_step
+      } : {
+        min_value: 1.0,
+        max_value: 5.0,
+        step: 0.5
+      },
+      pivot_bars_range: { min_value: 4, max_value: 12, step: 1 },
+      ma_periods: [20, 50, 200],
+      ma_conditions: ['above', 'below']
     })
   }
   
@@ -200,30 +274,25 @@ export function FilterOptimizerTab() {
             
             <TabsContent value="configuration" className="space-y-6">
               {/* Date Range and Target */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold">Analysis Period</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Start Date</Label>
-                      <DatePicker
-                        date={startDate}
-                        onDateChange={(date) => setStartDate(date || new Date())}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>End Date</Label>
-                      <DatePicker
-                        date={endDate}
-                        onDateChange={(date) => setEndDate(date || new Date())}
-                      />
-                    </div>
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold">Analysis Configuration</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Start Date</Label>
+                    <DatePicker
+                      date={startDate}
+                      onDateChange={(date) => setStartDate(date || new Date())}
+                    />
                   </div>
-                </div>
-                
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold">Optimization Target</h3>
-                  <div className="space-y-3">
+                  <div className="space-y-2">
+                    <Label>End Date</Label>
+                    <DatePicker
+                      date={endDate}
+                      onDateChange={(date) => setEndDate(date || new Date())}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Optimization Target</Label>
                     <Select value={target} onValueChange={(v) => setTarget(v as OptimizationTarget)}>
                       <SelectTrigger>
                         <SelectValue />
@@ -237,51 +306,18 @@ export function FilterOptimizerTab() {
                         <SelectItem value={OptimizationTarget.CUSTOM}>Custom Formula</SelectItem>
                       </SelectContent>
                     </Select>
-                    {target === OptimizationTarget.CUSTOM && (
-                      <Input
-                        placeholder="e.g., 0.4*sharpe + 0.3*win_rate - 0.3*drawdown"
-                        value={customFormula}
-                        onChange={(e) => setCustomFormula(e.target.value)}
-                      />
-                    )}
                   </div>
                 </div>
-              </div>
-              
-              {/* Additional Settings */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold">Additional Settings</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {target === OptimizationTarget.CUSTOM && (
                   <div className="space-y-2">
-                    <Label>Min Symbols Required</Label>
+                    <Label>Custom Formula</Label>
                     <Input
-                      type="number"
-                      min="1"
-                      value={minSymbols}
-                      onChange={(e) => setMinSymbols(parseInt(e.target.value) || 10)}
+                      placeholder="e.g., 0.4*sharpe + 0.3*win_rate - 0.3*drawdown"
+                      value={customFormula}
+                      onChange={(e) => setCustomFormula(e.target.value)}
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label>Max Results to Show</Label>
-                    <Input
-                      type="number"
-                      min="10"
-                      max="100"
-                      value={maxResults}
-                      onChange={(e) => setMaxResults(parseInt(e.target.value) || 20)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Pivot Bars (Optional)</Label>
-                    <Input
-                      type="number"
-                      min="1"
-                      placeholder="All"
-                      value={pivotBars || ''}
-                      onChange={(e) => setPivotBars(e.target.value ? parseInt(e.target.value) : undefined)}
-                    />
-                  </div>
-                </div>
+                )}
               </div>
               
               {/* Search Space Configuration */}
@@ -308,91 +344,55 @@ export function FilterOptimizerTab() {
                     </CardHeader>
                     <CardContent className="space-y-3">
                       <div className="grid grid-cols-3 gap-2 text-sm">
-                        <Label className="text-muted-foreground">Parameter</Label>
-                        <Label className="text-muted-foreground">Min-Max</Label>
-                        <Label className="text-muted-foreground">Step</Label>
+                        <Label className="text-muted-foreground">Min Price ($)</Label>
+                        <Label className="text-muted-foreground">Max Price ($)</Label>
+                        <Label className="text-muted-foreground">Step Size ($)</Label>
                       </div>
                       <div className="grid grid-cols-3 gap-2">
-                        <span className="text-sm">Min Price</span>
-                        <div className="flex gap-1">
-                          <Input
-                            type="number"
-                            value={searchSpace.price_min?.min_value || 0}
-                            onChange={(e) => setSearchSpace({
-                              ...searchSpace,
-                              price_min: {
-                                ...searchSpace.price_min!,
-                                min_value: parseFloat(e.target.value) || 0
-                              }
-                            })}
-                            className="h-8 text-sm"
-                          />
-                          <Input
-                            type="number"
-                            value={searchSpace.price_min?.max_value || 0}
-                            onChange={(e) => setSearchSpace({
-                              ...searchSpace,
-                              price_min: {
-                                ...searchSpace.price_min!,
-                                max_value: parseFloat(e.target.value) || 0
-                              }
-                            })}
-                            className="h-8 text-sm"
-                          />
-                        </div>
                         <Input
                           type="number"
-                          value={searchSpace.price_min?.step || 0}
+                          min="0.01"
+                          step="0.01"
+                          value={searchSpace.price_range?.min_value || 1}
                           onChange={(e) => setSearchSpace({
                             ...searchSpace,
-                            price_min: {
-                              ...searchSpace.price_min!,
-                              step: parseFloat(e.target.value) || 1
+                            price_range: {
+                              ...searchSpace.price_range!,
+                              min_value: parseFloat(e.target.value) || 1
+                            }
+                          })}
+                          className="h-8 text-sm"
+                        />
+                        <Input
+                          type="number"
+                          min="1"
+                          value={searchSpace.price_range?.max_value || 100}
+                          onChange={(e) => setSearchSpace({
+                            ...searchSpace,
+                            price_range: {
+                              ...searchSpace.price_range!,
+                              max_value: parseFloat(e.target.value) || 100
+                            }
+                          })}
+                          className="h-8 text-sm"
+                        />
+                        <Input
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          value={searchSpace.price_range?.step || 10}
+                          onChange={(e) => setSearchSpace({
+                            ...searchSpace,
+                            price_range: {
+                              ...searchSpace.price_range!,
+                              step: parseFloat(e.target.value) || 10
                             }
                           })}
                           className="h-8 text-sm"
                         />
                       </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        <span className="text-sm">Max Price</span>
-                        <div className="flex gap-1">
-                          <Input
-                            type="number"
-                            value={searchSpace.price_max?.min_value || 0}
-                            onChange={(e) => setSearchSpace({
-                              ...searchSpace,
-                              price_max: {
-                                ...searchSpace.price_max!,
-                                min_value: parseFloat(e.target.value) || 0
-                              }
-                            })}
-                            className="h-8 text-sm"
-                          />
-                          <Input
-                            type="number"
-                            value={searchSpace.price_max?.max_value || 0}
-                            onChange={(e) => setSearchSpace({
-                              ...searchSpace,
-                              price_max: {
-                                ...searchSpace.price_max!,
-                                max_value: parseFloat(e.target.value) || 0
-                              }
-                            })}
-                            className="h-8 text-sm"
-                          />
-                        </div>
-                        <Input
-                          type="number"
-                          value={searchSpace.price_max?.step || 0}
-                          onChange={(e) => setSearchSpace({
-                            ...searchSpace,
-                            price_max: {
-                              ...searchSpace.price_max!,
-                              step: parseFloat(e.target.value) || 1
-                            }
-                          })}
-                          className="h-8 text-sm"
-                        />
+                      <div className="text-sm text-muted-foreground">
+                        Tests sliding windows: [$1-$11], [$11-$21], [$21-$31], etc.
                       </div>
                     </CardContent>
                   </Card>
@@ -404,97 +404,368 @@ export function FilterOptimizerTab() {
                     </CardHeader>
                     <CardContent className="space-y-3">
                       <div className="grid grid-cols-3 gap-2 text-sm">
-                        <Label className="text-muted-foreground">Parameter</Label>
-                        <Label className="text-muted-foreground">Min-Max</Label>
-                        <Label className="text-muted-foreground">Step</Label>
+                        <Label className="text-muted-foreground">Min RSI</Label>
+                        <Label className="text-muted-foreground">Max RSI</Label>
+                        <Label className="text-muted-foreground">Step Size</Label>
                       </div>
                       <div className="grid grid-cols-3 gap-2">
-                        <span className="text-sm">Min RSI</span>
-                        <div className="flex gap-1">
-                          <Input
-                            type="number"
-                            value={searchSpace.rsi_min?.min_value || 0}
-                            onChange={(e) => setSearchSpace({
-                              ...searchSpace,
-                              rsi_min: {
-                                ...searchSpace.rsi_min!,
-                                min_value: parseFloat(e.target.value) || 0
-                              }
-                            })}
-                            className="h-8 text-sm"
-                          />
-                          <Input
-                            type="number"
-                            value={searchSpace.rsi_min?.max_value || 0}
-                            onChange={(e) => setSearchSpace({
-                              ...searchSpace,
-                              rsi_min: {
-                                ...searchSpace.rsi_min!,
-                                max_value: parseFloat(e.target.value) || 0
-                              }
-                            })}
-                            className="h-8 text-sm"
-                          />
-                        </div>
                         <Input
                           type="number"
-                          value={searchSpace.rsi_min?.step || 0}
+                          min="0"
+                          max="100"
+                          value={searchSpace.rsi_range?.min_value || 0}
                           onChange={(e) => setSearchSpace({
                             ...searchSpace,
-                            rsi_min: {
-                              ...searchSpace.rsi_min!,
+                            rsi_range: {
+                              ...searchSpace.rsi_range!,
+                              min_value: parseFloat(e.target.value) || 0
+                            }
+                          })}
+                          className="h-8 text-sm"
+                        />
+                        <Input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={searchSpace.rsi_range?.max_value || 100}
+                          onChange={(e) => setSearchSpace({
+                            ...searchSpace,
+                            rsi_range: {
+                              ...searchSpace.rsi_range!,
+                              max_value: parseFloat(e.target.value) || 100
+                            }
+                          })}
+                          className="h-8 text-sm"
+                        />
+                        <Input
+                          type="number"
+                          min="1"
+                          value={searchSpace.rsi_range?.step || 10}
+                          onChange={(e) => setSearchSpace({
+                            ...searchSpace,
+                            rsi_range: {
+                              ...searchSpace.rsi_range!,
+                              step: parseFloat(e.target.value) || 10
+                            }
+                          })}
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        Tests sliding windows: [0-10], [10-20], [20-30], etc.
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Gap Range */}
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">Gap Range (%)</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="grid grid-cols-3 gap-2 text-sm">
+                        <Label className="text-muted-foreground">Min Gap %</Label>
+                        <Label className="text-muted-foreground">Max Gap %</Label>
+                        <Label className="text-muted-foreground">Step Size</Label>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <Input
+                          type="number"
+                          value={searchSpace.gap_range?.min_value || -10}
+                          onChange={(e) => setSearchSpace({
+                            ...searchSpace,
+                            gap_range: {
+                              ...searchSpace.gap_range!,
+                              min_value: parseFloat(e.target.value) || -10
+                            }
+                          })}
+                          className="h-8 text-sm"
+                        />
+                        <Input
+                          type="number"
+                          value={searchSpace.gap_range?.max_value || 10}
+                          onChange={(e) => setSearchSpace({
+                            ...searchSpace,
+                            gap_range: {
+                              ...searchSpace.gap_range!,
+                              max_value: parseFloat(e.target.value) || 10
+                            }
+                          })}
+                          className="h-8 text-sm"
+                        />
+                        <Input
+                          type="number"
+                          min="0.1"
+                          step="0.1"
+                          value={searchSpace.gap_range?.step || 2}
+                          onChange={(e) => setSearchSpace({
+                            ...searchSpace,
+                            gap_range: {
+                              ...searchSpace.gap_range!,
+                              step: parseFloat(e.target.value) || 2
+                            }
+                          })}
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        Tests sliding windows: [-10 to -8], [-8 to -6], [-6 to -4], etc.
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Volume Filters */}
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">Volume Filters</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {/* Dollar Volume */}
+                      <div>
+                        <Label className="text-sm font-medium">Dollar Volume Range</Label>
+                        <div className="grid grid-cols-3 gap-2 mt-2">
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Min ($)</Label>
+                            <Input
+                              type="number"
+                              value={searchSpace.volume_range?.min_value || 1000000}
+                              onChange={(e) => setSearchSpace({
+                                ...searchSpace,
+                                volume_range: {
+                                  ...searchSpace.volume_range!,
+                                  min_value: parseFloat(e.target.value) || 1000000
+                                }
+                              })}
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Max ($)</Label>
+                            <Input
+                              type="number"
+                              value={searchSpace.volume_range?.max_value || 50000000}
+                              onChange={(e) => setSearchSpace({
+                                ...searchSpace,
+                                volume_range: {
+                                  ...searchSpace.volume_range!,
+                                  max_value: parseFloat(e.target.value) || 50000000
+                                }
+                              })}
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Step ($)</Label>
+                            <Input
+                              type="number"
+                              value={searchSpace.volume_range?.step || 5000000}
+                              onChange={(e) => setSearchSpace({
+                                ...searchSpace,
+                                volume_range: {
+                                  ...searchSpace.volume_range!,
+                                  step: parseFloat(e.target.value) || 5000000
+                                }
+                              })}
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Relative Volume */}
+                      <div>
+                        <Label className="text-sm font-medium">Relative Volume Range</Label>
+                        <div className="grid grid-cols-3 gap-2 mt-2">
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Min Ratio</Label>
+                            <Input
+                              type="number"
+                              step="0.1"
+                              value={searchSpace.rel_volume_range?.min_value || 1}
+                              onChange={(e) => setSearchSpace({
+                                ...searchSpace,
+                                rel_volume_range: {
+                                  ...searchSpace.rel_volume_range!,
+                                  min_value: parseFloat(e.target.value) || 1
+                                }
+                              })}
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Max Ratio</Label>
+                            <Input
+                              type="number"
+                              step="0.1"
+                              value={searchSpace.rel_volume_range?.max_value || 5}
+                              onChange={(e) => setSearchSpace({
+                                ...searchSpace,
+                                rel_volume_range: {
+                                  ...searchSpace.rel_volume_range!,
+                                  max_value: parseFloat(e.target.value) || 5
+                                }
+                              })}
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Step</Label>
+                            <Input
+                              type="number"
+                              step="0.1"
+                              value={searchSpace.rel_volume_range?.step || 0.5}
+                              onChange={(e) => setSearchSpace({
+                                ...searchSpace,
+                                rel_volume_range: {
+                                  ...searchSpace.rel_volume_range!,
+                                  step: parseFloat(e.target.value) || 0.5
+                                }
+                              })}
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="text-sm text-muted-foreground">
+                        Tests sliding windows for both dollar volume and relative volume ratios.
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Moving Average Filter */}
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">Moving Average Filter</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="space-y-3">
+                        <div>
+                          <Label className="text-sm text-muted-foreground">MA Periods to Test</Label>
+                          <div className="flex gap-2 mt-2">
+                            {[20, 50, 200].map((period) => (
+                              <label key={period} className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  checked={searchSpace.ma_periods?.includes(period) || false}
+                                  onChange={(e) => {
+                                    const current = searchSpace.ma_periods || []
+                                    const updated = e.target.checked
+                                      ? [...current, period]
+                                      : current.filter(p => p !== period)
+                                    setSearchSpace({
+                                      ...searchSpace,
+                                      ma_periods: updated
+                                    })
+                                  }}
+                                  className="rounded"
+                                />
+                                <span className="text-sm">{period} MA</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <Label className="text-sm text-muted-foreground">Conditions to Test</Label>
+                          <div className="flex gap-2 mt-2">
+                            {['above', 'below'].map((condition) => (
+                              <label key={condition} className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  checked={searchSpace.ma_conditions?.includes(condition) || false}
+                                  onChange={(e) => {
+                                    const current = searchSpace.ma_conditions || []
+                                    const updated = e.target.checked
+                                      ? [...current, condition]
+                                      : current.filter(c => c !== condition)
+                                    setSearchSpace({
+                                      ...searchSpace,
+                                      ma_conditions: updated
+                                    })
+                                  }}
+                                  className="rounded"
+                                />
+                                <span className="text-sm capitalize">{condition}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  
+                  {/* Pivot Bars */}
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">Pivot Bars Range</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="grid grid-cols-3 gap-2 text-sm">
+                        <Label className="text-muted-foreground">Min Bars</Label>
+                        <Label className="text-muted-foreground">Max Bars</Label>
+                        <Label className="text-muted-foreground">Step Size</Label>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <Input
+                          type="number"
+                          min="1"
+                          value={searchSpace.pivot_bars_range?.min_value || 4}
+                          onChange={(e) => setSearchSpace({
+                            ...searchSpace,
+                            pivot_bars_range: {
+                              ...searchSpace.pivot_bars_range!,
+                              min_value: parseFloat(e.target.value) || 4
+                            }
+                          })}
+                          className="h-8 text-sm"
+                        />
+                        <Input
+                          type="number"
+                          min="1"
+                          value={searchSpace.pivot_bars_range?.max_value || 12}
+                          onChange={(e) => setSearchSpace({
+                            ...searchSpace,
+                            pivot_bars_range: {
+                              ...searchSpace.pivot_bars_range!,
+                              max_value: parseFloat(e.target.value) || 12
+                            }
+                          })}
+                          className="h-8 text-sm"
+                        />
+                        <Input
+                          type="number"
+                          min="1"
+                          value={searchSpace.pivot_bars_range?.step || 1}
+                          onChange={(e) => setSearchSpace({
+                            ...searchSpace,
+                            pivot_bars_range: {
+                              ...searchSpace.pivot_bars_range!,
                               step: parseFloat(e.target.value) || 1
                             }
                           })}
                           className="h-8 text-sm"
                         />
                       </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        <span className="text-sm">Max RSI</span>
-                        <div className="flex gap-1">
-                          <Input
-                            type="number"
-                            value={searchSpace.rsi_max?.min_value || 0}
-                            onChange={(e) => setSearchSpace({
-                              ...searchSpace,
-                              rsi_max: {
-                                ...searchSpace.rsi_max!,
-                                min_value: parseFloat(e.target.value) || 0
-                              }
-                            })}
-                            className="h-8 text-sm"
-                          />
-                          <Input
-                            type="number"
-                            value={searchSpace.rsi_max?.max_value || 0}
-                            onChange={(e) => setSearchSpace({
-                              ...searchSpace,
-                              rsi_max: {
-                                ...searchSpace.rsi_max!,
-                                max_value: parseFloat(e.target.value) || 0
-                              }
-                            })}
-                            className="h-8 text-sm"
-                          />
-                        </div>
-                        <Input
-                          type="number"
-                          value={searchSpace.rsi_max?.step || 0}
-                          onChange={(e) => setSearchSpace({
-                            ...searchSpace,
-                            rsi_max: {
-                                ...searchSpace.rsi_max!,
-                              step: parseFloat(e.target.value) || 1
-                            }
-                          })}
-                          className="h-8 text-sm"
-                        />
+                      <div className="text-sm text-muted-foreground">
+                        Tests sliding windows: [4-5], [5-6], [6-7], etc. for pattern recognition.
                       </div>
                     </CardContent>
                   </Card>
                 </div>
               </div>
               
+              {/* Combinations Summary */}
+              <div className="flex justify-center">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
+                  <div className="flex items-center gap-2 text-sm">
+                    <BarChart3 className="h-4 w-4 text-blue-600" />
+                    <span className="text-blue-800">
+                      <strong>{calculateTotalCombinations().toLocaleString()}</strong> combinations will be tested
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               {/* Action Buttons */}
               <div className="flex justify-center">
                 <Button

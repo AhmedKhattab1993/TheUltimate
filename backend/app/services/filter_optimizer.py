@@ -29,6 +29,18 @@ class FilterOptimizer:
     def __init__(self):
         self.db_pool = db_pool
     
+    def _generate_sliding_windows(self, min_val: float, max_val: float, step: float) -> List[Dict[str, float]]:
+        """Generate sliding windows for a range"""
+        windows = []
+        current = min_val
+        while current + step <= max_val:
+            windows.append({
+                'min': current,
+                'max': current + step
+            })
+            current += step
+        return windows
+    
     async def optimize_filters(self, request: OptimizationRequest) -> OptimizationResponse:
         """
         Main optimization method that tests different filter combinations
@@ -112,60 +124,51 @@ class FilterOptimizer:
         # Generate value ranges for each filter
         ranges = {}
         
-        if search_space.price_min:
-            ranges['price_min'] = np.arange(
-                search_space.price_min.min_value,
-                search_space.price_min.max_value + search_space.price_min.step,
-                search_space.price_min.step
+        # Price sliding window
+        if search_space.price_range:
+            ranges['price_ranges'] = self._generate_sliding_windows(
+                search_space.price_range.min_value,
+                search_space.price_range.max_value,
+                search_space.price_range.step
             )
         
-        if search_space.price_max:
-            ranges['price_max'] = np.arange(
-                search_space.price_max.min_value,
-                search_space.price_max.max_value + search_space.price_max.step,
-                search_space.price_max.step
+        # RSI sliding window
+        if search_space.rsi_range:
+            ranges['rsi_ranges'] = self._generate_sliding_windows(
+                search_space.rsi_range.min_value,
+                search_space.rsi_range.max_value,
+                search_space.rsi_range.step
             )
         
-        if search_space.rsi_min:
-            ranges['rsi_min'] = np.arange(
-                search_space.rsi_min.min_value,
-                search_space.rsi_min.max_value + search_space.rsi_min.step,
-                search_space.rsi_min.step
+        # Gap sliding window
+        if search_space.gap_range:
+            ranges['gap_ranges'] = self._generate_sliding_windows(
+                search_space.gap_range.min_value,
+                search_space.gap_range.max_value,
+                search_space.gap_range.step
             )
         
-        if search_space.rsi_max:
-            ranges['rsi_max'] = np.arange(
-                search_space.rsi_max.min_value,
-                search_space.rsi_max.max_value + search_space.rsi_max.step,
-                search_space.rsi_max.step
+        # Volume sliding windows
+        if search_space.volume_range:
+            ranges['volume_ranges'] = self._generate_sliding_windows(
+                search_space.volume_range.min_value,
+                search_space.volume_range.max_value,
+                search_space.volume_range.step
             )
         
-        if search_space.gap_min:
-            ranges['gap_min'] = np.arange(
-                search_space.gap_min.min_value,
-                search_space.gap_min.max_value + search_space.gap_min.step,
-                search_space.gap_min.step
+        if search_space.rel_volume_range:
+            ranges['rel_volume_ranges'] = self._generate_sliding_windows(
+                search_space.rel_volume_range.min_value,
+                search_space.rel_volume_range.max_value,
+                search_space.rel_volume_range.step
             )
         
-        if search_space.gap_max:
-            ranges['gap_max'] = np.arange(
-                search_space.gap_max.min_value,
-                search_space.gap_max.max_value + search_space.gap_max.step,
-                search_space.gap_max.step
-            )
-        
-        if search_space.volume_min:
-            ranges['volume_min'] = np.arange(
-                search_space.volume_min.min_value,
-                search_space.volume_min.max_value + search_space.volume_min.step,
-                search_space.volume_min.step
-            )
-        
-        if search_space.rel_volume_min:
-            ranges['rel_volume_min'] = np.arange(
-                search_space.rel_volume_min.min_value,
-                search_space.rel_volume_min.max_value + search_space.rel_volume_min.step,
-                search_space.rel_volume_min.step
+        # Pivot bars sliding window
+        if search_space.pivot_bars_range:
+            ranges['pivot_bars_ranges'] = self._generate_sliding_windows(
+                search_space.pivot_bars_range.min_value,
+                search_space.pivot_bars_range.max_value,
+                search_space.pivot_bars_range.step
             )
         
         # Generate cartesian product of all ranges
@@ -176,43 +179,45 @@ class FilterOptimizer:
             for combo_values in product(*values):
                 combo = {}
                 for i, key in enumerate(keys):
-                    value = float(combo_values[i])
+                    value = combo_values[i]
                     
-                    # Group into appropriate filter structures
-                    if key in ['price_min', 'price_max']:
-                        if 'price_range' not in combo:
-                            combo['price_range'] = {}
-                        combo['price_range'][key.replace('price_', '')] = value
-                    elif key in ['rsi_min', 'rsi_max']:
-                        if 'rsi_range' not in combo:
-                            combo['rsi_range'] = {}
-                        combo['rsi_range'][key.replace('rsi_', '')] = value
-                    elif key in ['gap_min', 'gap_max']:
-                        if 'gap_range' not in combo:
-                            combo['gap_range'] = {}
-                        combo['gap_range'][key.replace('gap_', '')] = value
+                    # Handle sliding windows vs regular ranges
+                    if key.endswith('_ranges'):
+                        # This is a sliding window (already a dict with min/max)
+                        range_name = key.replace('_ranges', '_range')
+                        combo[range_name] = value
                     else:
-                        combo[key] = value
+                        combo[key] = float(value)
                 
                 # Validate combinations (e.g., min < max)
                 if self._is_valid_combination(combo):
                     combinations.append(combo)
         
         # Add MA conditions if specified
-        if search_space.ma_conditions:
+        if search_space.ma_periods and search_space.ma_conditions:
             if combinations:
                 # Add MA conditions to existing combinations
                 new_combinations = []
                 for combo in combinations:
-                    for ma_condition in search_space.ma_conditions:
-                        new_combo = combo.copy()
-                        new_combo['ma_condition'] = ma_condition
-                        new_combinations.append(new_combo)
+                    for period in search_space.ma_periods:
+                        for condition in search_space.ma_conditions:
+                            new_combo = combo.copy()
+                            new_combo['ma_condition'] = {
+                                'period': period,
+                                'condition': condition
+                            }
+                            new_combinations.append(new_combo)
                 combinations = new_combinations
             else:
                 # Only MA conditions
-                for ma_condition in search_space.ma_conditions:
-                    combinations.append({'ma_condition': ma_condition})
+                for period in search_space.ma_periods:
+                    for condition in search_space.ma_conditions:
+                        combinations.append({
+                            'ma_condition': {
+                                'period': period,
+                                'condition': condition
+                            }
+                        })
         
         return combinations if combinations else [{}]  # Return empty filter if no ranges specified
     
@@ -231,6 +236,11 @@ class FilterOptimizer:
         # Check gap range
         if 'gap_range' in combo and 'min' in combo['gap_range'] and 'max' in combo['gap_range']:
             if combo['gap_range']['min'] >= combo['gap_range']['max']:
+                return False
+        
+        # Check pivot bars range
+        if 'pivot_bars_range' in combo and 'min' in combo['pivot_bars_range'] and 'max' in combo['pivot_bars_range']:
+            if combo['pivot_bars_range']['min'] >= combo['pivot_bars_range']['max']:
                 return False
         
         return True
@@ -283,17 +293,27 @@ class FilterOptimizer:
                 where_conditions.append(f"gs.gap_percent <= ${param_count}")
                 params.append(combination['gap_range']['max'])
         
-        # Add volume filter
-        if 'volume_min' in combination:
-            param_count += 1
-            where_conditions.append(f"gs.prev_day_dollar_volume >= ${param_count}")
-            params.append(combination['volume_min'])
+        # Add volume filter (sliding window)
+        if 'volume_range' in combination:
+            if 'min' in combination['volume_range']:
+                param_count += 1
+                where_conditions.append(f"gs.prev_day_dollar_volume >= ${param_count}")
+                params.append(combination['volume_range']['min'])
+            if 'max' in combination['volume_range']:
+                param_count += 1
+                where_conditions.append(f"gs.prev_day_dollar_volume <= ${param_count}")
+                params.append(combination['volume_range']['max'])
         
-        # Add relative volume filter
-        if 'rel_volume_min' in combination:
-            param_count += 1
-            where_conditions.append(f"gs.relative_volume >= ${param_count}")
-            params.append(combination['rel_volume_min'])
+        # Add relative volume filter (sliding window)
+        if 'rel_volume_range' in combination:
+            if 'min' in combination['rel_volume_range']:
+                param_count += 1
+                where_conditions.append(f"gs.relative_volume >= ${param_count}")
+                params.append(combination['rel_volume_range']['min'])
+            if 'max' in combination['rel_volume_range']:
+                param_count += 1
+                where_conditions.append(f"gs.relative_volume <= ${param_count}")
+                params.append(combination['rel_volume_range']['max'])
         
         # Add MA condition
         if 'ma_condition' in combination:
@@ -306,8 +326,18 @@ class FilterOptimizer:
             else:
                 where_conditions.append(f"gs.price < gs.{ma_column}")
         
-        # Add pivot bars filter if specified
-        if pivot_bars is not None:
+        # Add pivot bars filter (sliding window)
+        if 'pivot_bars_range' in combination:
+            if 'min' in combination['pivot_bars_range']:
+                param_count += 1
+                where_conditions.append(f"gms.pivot_bars >= ${param_count}")
+                params.append(combination['pivot_bars_range']['min'])
+            if 'max' in combination['pivot_bars_range']:
+                param_count += 1
+                where_conditions.append(f"gms.pivot_bars <= ${param_count}")
+                params.append(combination['pivot_bars_range']['max'])
+        # Fallback to request parameter if no range specified
+        elif pivot_bars is not None:
             param_count += 1
             where_conditions.append(f"gms.pivot_bars = ${param_count}")
             params.append(pivot_bars)

@@ -16,15 +16,14 @@ export interface FilterRange {
 }
 
 export interface FilterSearchSpace {
-  price_min?: FilterRange
-  price_max?: FilterRange
-  rsi_min?: FilterRange
-  rsi_max?: FilterRange
-  gap_min?: FilterRange
-  gap_max?: FilterRange
-  volume_min?: FilterRange
-  rel_volume_min?: FilterRange
-  ma_conditions?: Array<{ period: number; condition: 'above' | 'below' }>
+  price_range?: FilterRange
+  rsi_range?: FilterRange
+  gap_range?: FilterRange
+  volume_range?: FilterRange
+  rel_volume_range?: FilterRange
+  pivot_bars_range?: FilterRange
+  ma_periods?: number[]
+  ma_conditions?: string[]
 }
 
 export interface OptimizationRequest {

@@ -3,7 +3,7 @@ Models for filter optimization analysis.
 """
 
 from pydantic import BaseModel
-from typing import List, Dict, Optional, Union, Literal
+from typing import List, Dict, Optional, Union, Literal, Any
 from datetime import date
 from enum import Enum
 
@@ -27,26 +27,25 @@ class FilterRange(BaseModel):
 
 class FilterSearchSpace(BaseModel):
     """Search space for all filter parameters"""
-    # Price range filter
-    price_min: Optional[FilterRange] = None
-    price_max: Optional[FilterRange] = None
+    # Price range filter (sliding window approach)
+    price_range: Optional[FilterRange] = None
     
-    # RSI filter
-    rsi_min: Optional[FilterRange] = None
-    rsi_max: Optional[FilterRange] = None
+    # RSI filter (sliding window approach)
+    rsi_range: Optional[FilterRange] = None
     
-    # Gap filter
-    gap_min: Optional[FilterRange] = None
-    gap_max: Optional[FilterRange] = None
+    # Gap filter (sliding window approach)
+    gap_range: Optional[FilterRange] = None
     
-    # Volume filter
-    volume_min: Optional[FilterRange] = None
+    # Volume filters (sliding window approach)
+    volume_range: Optional[FilterRange] = None
+    rel_volume_range: Optional[FilterRange] = None
     
-    # Relative volume filter
-    rel_volume_min: Optional[FilterRange] = None
+    # Pivot bars (sliding window approach)
+    pivot_bars_range: Optional[FilterRange] = None
     
     # MA filters (discrete choices)
-    ma_conditions: Optional[List[Dict[str, Union[int, str]]]] = None
+    ma_periods: Optional[List[int]] = None
+    ma_conditions: Optional[List[str]] = None
     
 
 class OptimizationRequest(BaseModel):
@@ -94,7 +93,7 @@ class OptimizationResult(BaseModel):
 
 class OptimizationResponse(BaseModel):
     """Response containing optimization results"""
-    request_summary: Dict[str, any]
+    request_summary: Dict[str, Any]
     results: List[OptimizationResult]
     total_combinations_tested: int
     execution_time_ms: int
