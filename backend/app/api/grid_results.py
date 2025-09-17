@@ -22,6 +22,59 @@ from ..models.grid_results import (
 router = APIRouter(prefix="/api/v2/grid/results", tags=["grid-results"])
 logger = logging.getLogger(__name__)
 
+# Define sortable columns whitelist
+SORTABLE_COLUMNS = {
+    # Direct columns from grid_screening
+    'symbol': 'symbol',
+    'date': 'date', 
+    'price': 'price',
+    'ma_20': 'ma_20',
+    'ma_50': 'ma_50',
+    'ma_200': 'ma_200',
+    'rsi_14': 'rsi_14',
+    'gap_percent': 'gap_percent',
+    'prev_day_dollar_volume': 'prev_day_dollar_volume',
+    'relative_volume': 'relative_volume',
+    
+    # Direct columns from grid_market_structure
+    'pivot_bars': 'pivot_bars',
+    'backtest_date': 'backtest_date',
+    
+    # JSON fields from statistics column
+    'total_return': "(statistics->>'total_return')::numeric",
+    'sharpe_ratio': "(statistics->>'sharpe_ratio')::numeric",
+    'max_drawdown': "(statistics->>'max_drawdown')::numeric",
+    'win_rate': "(statistics->>'win_rate')::numeric",
+    'profit_factor': "(statistics->>'profit_factor')::numeric",
+    'total_trades': "(statistics->>'total_trades')::integer"
+}
+
+def validate_sort_params(sort_by: Optional[str], sort_order: Optional[str]) -> tuple[Optional[str], str]:
+    """
+    Validate sorting parameters and return SQL-safe column and order.
+    Returns (column_sql, order) or (None, 'DESC') for default.
+    """
+    if not sort_by:
+        return None, 'DESC'
+        
+    if sort_by not in SORTABLE_COLUMNS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid sort column: {sort_by}. Allowed columns: {list(SORTABLE_COLUMNS.keys())}"
+        )
+    
+    order = 'DESC'
+    if sort_order:
+        sort_order_upper = sort_order.upper()
+        if sort_order_upper not in ['ASC', 'DESC']:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid sort order: {sort_order}. Must be 'asc' or 'desc'"
+            )
+        order = sort_order_upper
+    
+    return SORTABLE_COLUMNS[sort_by], order
+
 
 @router.get("", response_model=GridResultsListResponse)
 async def list_grid_results(
@@ -179,7 +232,9 @@ async def list_grid_results(
 @router.get("/{date}/detail", response_model=GridResultDetail)
 async def get_grid_result_detail(
     date: date,
-    symbol: Optional[str] = Query(None, description="Filter by specific symbol")
+    symbol: Optional[str] = Query(None, description="Filter by specific symbol"),
+    sort_by: Optional[str] = Query(None, description="Column to sort by"),
+    sort_order: Optional[str] = Query(None, description="Sort order: asc or desc")
 ):
     """
     Get detailed grid results for a specific date.
@@ -187,6 +242,9 @@ async def get_grid_result_detail(
     Returns all screening results and backtest results for the date.
     """
     try:
+        # Validate sort parameters
+        sort_column, sort_direction = validate_sort_params(sort_by, sort_order)
+        
         # Get screening results
         screening_query = """
         SELECT 
@@ -207,9 +265,18 @@ async def get_grid_result_detail(
         
         if symbol:
             screening_query += " AND symbol = $2"
-            screening_rows = await db_pool.fetch(screening_query, date, symbol)
+        
+        # Add sorting for screening queries
+        if sort_column and sort_by in ['symbol', 'price', 'ma_20', 'ma_50', 'ma_200', 
+                                       'rsi_14', 'gap_percent', 'prev_day_dollar_volume', 
+                                       'relative_volume']:
+            screening_query += f" ORDER BY {sort_column} {sort_direction} NULLS LAST"
         else:
             screening_query += " ORDER BY symbol"
+        
+        if symbol:
+            screening_rows = await db_pool.fetch(screening_query, date, symbol)
+        else:
             screening_rows = await db_pool.fetch(screening_query, date)
         
         # Get backtest results
@@ -226,9 +293,18 @@ async def get_grid_result_detail(
         
         if symbol:
             backtest_query += " AND symbol = $2"
-            backtest_rows = await db_pool.fetch(backtest_query, date, symbol)
+            
+        # Add sorting for backtest queries 
+        if sort_column and sort_by in ['pivot_bars', 'total_return', 'sharpe_ratio', 
+                                       'max_drawdown', 'win_rate', 'profit_factor', 
+                                       'total_trades']:
+            backtest_query += f" ORDER BY {sort_column} {sort_direction} NULLS LAST"
         else:
             backtest_query += " ORDER BY symbol, pivot_bars"
+            
+        if symbol:
+            backtest_rows = await db_pool.fetch(backtest_query, date, symbol)
+        else:
             backtest_rows = await db_pool.fetch(backtest_query, date)
         
         # Convert to response models

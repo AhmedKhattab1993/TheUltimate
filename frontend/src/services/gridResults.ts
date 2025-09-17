@@ -22,10 +22,19 @@ export const GridResultsService = {
     return response.json()
   },
 
-  async getResultDetail(date: string, symbol?: string): Promise<GridResultDetail> {
-    const url = symbol 
-      ? `${API_BASE_URL}/api/v2/grid/results/${date}/detail?symbol=${symbol}`
-      : `${API_BASE_URL}/api/v2/grid/results/${date}/detail`
+  async getResultDetail(
+    date: string, 
+    symbol?: string, 
+    sortBy?: string, 
+    sortOrder?: 'asc' | 'desc'
+  ): Promise<GridResultDetail> {
+    const params = new URLSearchParams()
+    if (symbol) params.append('symbol', symbol)
+    if (sortBy) params.append('sort_by', sortBy)
+    if (sortOrder) params.append('sort_order', sortOrder)
+    
+    const queryString = params.toString()
+    const url = `${API_BASE_URL}/api/v2/grid/results/${date}/detail${queryString ? '?' + queryString : ''}`
       
     const response = await fetch(url, {
       method: 'GET',

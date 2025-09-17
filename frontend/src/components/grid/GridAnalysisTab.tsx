@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { RefreshCw, BarChart2, AlertCircle, Eye, ChevronLeft, ChevronRight } from 'lucide-react'
+import { RefreshCw, BarChart2, AlertCircle, Eye, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { GridResultsService } from '@/services/gridResults'
 import type { GridResultSummary, GridResultDetail } from '@/types/gridResults'
@@ -38,6 +38,10 @@ export function GridAnalysisTab() {
   const [error, setError] = useState<string | null>(null)
   const [allData, setAllData] = useState<CombinedGridRow[]>([])
   
+  // Sorting state
+  const [sortBy, setSortBy] = useState<string | null>(null)
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
+  
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 100
@@ -59,38 +63,89 @@ export function GridAnalysisTab() {
       // For each date, load detailed results
       for (const summary of response.results) {
         try {
-          const detail = await GridResultsService.getResultDetail(summary.date)
-          
-          // Create a map of screening results by symbol for easy lookup
-          const screeningMap = new Map(
-            detail.screening_results.map(s => [s.symbol, s])
+          const detail = await GridResultsService.getResultDetail(
+            summary.date,
+            undefined, // no symbol filter
+            sortBy || undefined,
+            sortOrder
           )
+          
+          // Determine whether we're sorting by a screening column or backtest column
+          const screeningColumns = ['symbol', 'date', 'price', 'ma_20', 'ma_50', 'ma_200', 
+                                   'rsi_14', 'gap_percent', 'prev_day_dollar_volume', 'relative_volume']
+          const isScreeningSort = sortBy && screeningColumns.includes(sortBy)
 
-          // For each backtest result, create a combined row
-          for (const backtest of detail.backtest_results) {
-            const screening = screeningMap.get(backtest.symbol)
-            if (screening) {
-              combinedData.push({
-                date: summary.date,
-                symbol: backtest.symbol,
-                // Screening data
-                price: screening.price,
-                ma_20: screening.ma_20,
-                ma_50: screening.ma_50,
-                ma_200: screening.ma_200,
-                rsi_14: screening.rsi_14,
-                gap_percent: screening.gap_percent,
-                prev_day_dollar_volume: screening.prev_day_dollar_volume,
-                relative_volume: screening.relative_volume,
-                // Backtest data
-                pivot_bars: backtest.pivot_bars,
-                total_return: backtest.total_return,
-                sharpe_ratio: backtest.sharpe_ratio,
-                max_drawdown: backtest.max_drawdown,
-                win_rate: backtest.win_rate,
-                total_trades: backtest.total_trades,
-                backtest_status: backtest.status,
-              })
+          if (isScreeningSort) {
+            // When sorting by screening columns, iterate through screening results
+            // to preserve the sort order from the API
+            const backtestMap = new Map<string, typeof detail.backtest_results[0][]>()
+            detail.backtest_results.forEach(b => {
+              if (!backtestMap.has(b.symbol)) {
+                backtestMap.set(b.symbol, [])
+              }
+              backtestMap.get(b.symbol)!.push(b)
+            })
+
+            for (const screening of detail.screening_results) {
+              const backtests = backtestMap.get(screening.symbol) || []
+              // Sort backtests by pivot_bars to maintain consistent order within each symbol
+              backtests.sort((a, b) => a.pivot_bars - b.pivot_bars)
+              for (const backtest of backtests) {
+                combinedData.push({
+                  date: summary.date,
+                  symbol: screening.symbol,
+                  // Screening data
+                  price: screening.price,
+                  ma_20: screening.ma_20,
+                  ma_50: screening.ma_50,
+                  ma_200: screening.ma_200,
+                  rsi_14: screening.rsi_14,
+                  gap_percent: screening.gap_percent,
+                  prev_day_dollar_volume: screening.prev_day_dollar_volume,
+                  relative_volume: screening.relative_volume,
+                  // Backtest data
+                  pivot_bars: backtest.pivot_bars,
+                  total_return: backtest.total_return,
+                  sharpe_ratio: backtest.sharpe_ratio,
+                  max_drawdown: backtest.max_drawdown,
+                  win_rate: backtest.win_rate,
+                  total_trades: backtest.total_trades,
+                  backtest_status: backtest.status,
+                })
+              }
+            }
+          } else {
+            // When sorting by backtest columns or no sort, iterate through backtest results
+            // to preserve the sort order from the API
+            const screeningMap = new Map(
+              detail.screening_results.map(s => [s.symbol, s])
+            )
+
+            for (const backtest of detail.backtest_results) {
+              const screening = screeningMap.get(backtest.symbol)
+              if (screening) {
+                combinedData.push({
+                  date: summary.date,
+                  symbol: backtest.symbol,
+                  // Screening data
+                  price: screening.price,
+                  ma_20: screening.ma_20,
+                  ma_50: screening.ma_50,
+                  ma_200: screening.ma_200,
+                  rsi_14: screening.rsi_14,
+                  gap_percent: screening.gap_percent,
+                  prev_day_dollar_volume: screening.prev_day_dollar_volume,
+                  relative_volume: screening.relative_volume,
+                  // Backtest data
+                  pivot_bars: backtest.pivot_bars,
+                  total_return: backtest.total_return,
+                  sharpe_ratio: backtest.sharpe_ratio,
+                  max_drawdown: backtest.max_drawdown,
+                  win_rate: backtest.win_rate,
+                  total_trades: backtest.total_trades,
+                  backtest_status: backtest.status,
+                })
+              }
             }
           }
         } catch (err) {
@@ -98,14 +153,16 @@ export function GridAnalysisTab() {
         }
       }
 
-      // Sort by date (desc), symbol, then pivot_bars
-      combinedData.sort((a, b) => {
-        const dateCompare = b.date.localeCompare(a.date)
-        if (dateCompare !== 0) return dateCompare
-        const symbolCompare = a.symbol.localeCompare(b.symbol)
-        if (symbolCompare !== 0) return symbolCompare
-        return a.pivot_bars - b.pivot_bars
-      })
+      // If no server-side sorting is applied, default sort by date (desc), symbol, then pivot_bars
+      if (!sortBy) {
+        combinedData.sort((a, b) => {
+          const dateCompare = b.date.localeCompare(a.date)
+          if (dateCompare !== 0) return dateCompare
+          const symbolCompare = a.symbol.localeCompare(b.symbol)
+          if (symbolCompare !== 0) return symbolCompare
+          return a.pivot_bars - b.pivot_bars
+        })
+      }
 
       setAllData(combinedData)
       setCurrentPage(1) // Reset to first page when new data is loaded
@@ -124,7 +181,53 @@ export function GridAnalysisTab() {
 
   useEffect(() => {
     loadAllData()
-  }, [])
+  }, [sortBy, sortOrder])
+  
+  // Handle column header clicks for sorting
+  const handleSort = (column: string) => {
+    if (sortBy === column) {
+      // Toggle sort order if clicking the same column
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+    } else {
+      // Set new column and default to descending
+      setSortBy(column)
+      setSortOrder('desc')
+    }
+  }
+  
+  // Helper component for sortable table headers
+  const SortableHeader = ({ column, children }: { column: string, children: React.ReactNode }) => {
+    const isSorted = sortBy === column
+    const isCenter = column === 'pivot_bars'
+    const isLeft = column === 'symbol' || column === 'date'
+    
+    return (
+      <TableHead 
+        className={cn(
+          "cursor-pointer hover:bg-muted/50 select-none", 
+          isCenter ? 'text-center' : isLeft ? '' : 'text-right',
+          column === 'date' ? 'sticky left-0 bg-background' : ''
+        )}
+        onClick={() => handleSort(column)}
+      >
+        <div className={cn(
+          "flex items-center gap-1",
+          isCenter ? 'justify-center' : isLeft ? '' : 'justify-end'
+        )}>
+          <span>{children}</span>
+          {isSorted ? (
+            sortOrder === 'asc' ? (
+              <ArrowUp className="h-4 w-4" />
+            ) : (
+              <ArrowDown className="h-4 w-4" />
+            )
+          ) : (
+            <ArrowUpDown className="h-4 w-4 opacity-50" />
+          )}
+        </div>
+      </TableHead>
+    )
+  }
 
   const formatPercent = (value: number) => {
     return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`
@@ -220,22 +323,22 @@ export function GridAnalysisTab() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="sticky left-0 bg-background">Date</TableHead>
-                    <TableHead>Symbol</TableHead>
-                    <TableHead className="text-right">Price</TableHead>
-                    <TableHead className="text-right">MA 20</TableHead>
-                    <TableHead className="text-right">MA 50</TableHead>
-                    <TableHead className="text-right">MA 200</TableHead>
-                    <TableHead className="text-right">RSI 14</TableHead>
-                    <TableHead className="text-right">Gap %</TableHead>
-                    <TableHead className="text-right">Prev Day $Vol</TableHead>
-                    <TableHead className="text-right">Rel Vol</TableHead>
-                    <TableHead className="text-center">Pivot Bars</TableHead>
-                    <TableHead className="text-right">Return</TableHead>
-                    <TableHead className="text-right">Sharpe</TableHead>
-                    <TableHead className="text-right">Max DD</TableHead>
-                    <TableHead className="text-right">Win Rate</TableHead>
-                    <TableHead className="text-right">Trades</TableHead>
+                    <SortableHeader column="date">Date</SortableHeader>
+                    <SortableHeader column="symbol">Symbol</SortableHeader>
+                    <SortableHeader column="price">Price</SortableHeader>
+                    <SortableHeader column="ma_20">MA 20</SortableHeader>
+                    <SortableHeader column="ma_50">MA 50</SortableHeader>
+                    <SortableHeader column="ma_200">MA 200</SortableHeader>
+                    <SortableHeader column="rsi_14">RSI 14</SortableHeader>
+                    <SortableHeader column="gap_percent">Gap %</SortableHeader>
+                    <SortableHeader column="prev_day_dollar_volume">Prev Day $Vol</SortableHeader>
+                    <SortableHeader column="relative_volume">Rel Vol</SortableHeader>
+                    <SortableHeader column="pivot_bars">Pivot Bars</SortableHeader>
+                    <SortableHeader column="total_return">Return</SortableHeader>
+                    <SortableHeader column="sharpe_ratio">Sharpe</SortableHeader>
+                    <SortableHeader column="max_drawdown">Max DD</SortableHeader>
+                    <SortableHeader column="win_rate">Win Rate</SortableHeader>
+                    <SortableHeader column="total_trades">Trades</SortableHeader>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
