@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.api import simple_screener, backtest, screener_results, combined_results, grid_results
+from app.api import simple_screener, backtest, screener_results, combined_results, grid_results, filter_optimizer
 from app.services.polygon_client import PolygonAPIError
 from app.services.database import db_pool
 
@@ -212,6 +212,13 @@ app.include_router(
     grid_results.router,
     # No prefix needed - router already has /api/v2/grid/results
     tags=["grid-results"]
+)
+
+# Include filter optimizer router
+app.include_router(
+    filter_optimizer.router,
+    # No prefix needed - router already has /api/v2/filter-optimizer
+    tags=["filter-optimizer"]
 )
 
 

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect } from 'react'
 import { format, subDays } from 'date-fns'
-import { Search, RefreshCw, AlertCircle, Calendar, TrendingUp, History, BarChart2 } from 'lucide-react'
+import { Search, RefreshCw, AlertCircle, Calendar, TrendingUp, History, BarChart2, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { DatePicker } from '@/components/ui/date-picker'
@@ -17,6 +17,7 @@ import { ScreenerResults } from '@/components/results/ScreenerResults'
 import { BacktestingTab } from '@/components/backtesting/BacktestingTab'
 import { ResultsTab } from '@/components/results/ResultsTab'
 import { GridBacktestResultsTab } from '@/components/grid/GridBacktestResultsTab'
+import { FilterOptimizerTab } from '@/components/filter-optimizer/FilterOptimizerTab'
 import { useScreenerContext } from '@/contexts/ScreenerContext'
 import { useScreener } from '@/hooks/useScreener'
 import { validateFilters } from '@/utils/validation'
@@ -109,7 +110,7 @@ export function SimpleStockScreener() {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="screener">
               <Search className="h-4 w-4 mr-2" />
               Stock Screener
@@ -125,6 +126,10 @@ export function SimpleStockScreener() {
             <TabsTrigger value="grid">
               <BarChart2 className="h-4 w-4 mr-2" />
               Grid Backtest Results
+            </TabsTrigger>
+            <TabsTrigger value="optimizer">
+              <Settings className="h-4 w-4 mr-2" />
+              Filter Optimizer
             </TabsTrigger>
           </TabsList>
 
@@ -263,6 +268,10 @@ export function SimpleStockScreener() {
           
           <TabsContent value="grid">
             <GridBacktestResultsTab />
+          </TabsContent>
+          
+          <TabsContent value="optimizer">
+            <FilterOptimizerTab />
           </TabsContent>
         </Tabs>
       </div>
