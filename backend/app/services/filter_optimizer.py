@@ -33,10 +33,11 @@ class FilterOptimizer:
         """Generate sliding windows for a range"""
         windows = []
         current = min_val
-        while current + step <= max_val:
+        while current < max_val:
+            window_max = min(current + step, max_val)
             windows.append({
                 'min': current,
-                'max': current + step
+                'max': window_max
             })
             current += step
         return windows

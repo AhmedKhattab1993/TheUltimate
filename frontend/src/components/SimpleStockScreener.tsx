@@ -129,7 +129,7 @@ export function SimpleStockScreener() {
             </TabsTrigger>
             <TabsTrigger value="optimizer">
               <Settings className="h-4 w-4 mr-2" />
-              Filter Optimizer
+              Grid Parameters Tuning
             </TabsTrigger>
           </TabsList>
 

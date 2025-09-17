@@ -39,6 +39,11 @@ async def get_suggested_ranges(start_date: str, end_date: str):
     """
     try:
         from ..services.database import db_pool
+        from datetime import datetime
+        
+        # Convert string dates to date objects
+        start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+        end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
         
         # Query to get min/max values from the data
         query = """
@@ -69,7 +74,7 @@ async def get_suggested_ranges(start_date: str, end_date: str):
             AND rsi_14 IS NOT NULL
         """
         
-        result = await db_pool.fetchrow(query, start_date, end_date)
+        result = await db_pool.fetchrow(query, start_date_obj, end_date_obj)
         
         if not result:
             raise HTTPException(status_code=404, detail="No data found for the specified date range")
@@ -83,7 +88,7 @@ async def get_suggested_ranges(start_date: str, end_date: str):
                     "suggested_step": 5.0
                 },
                 "max": {
-                    "suggested_min": float(result['price_5th'] or 10),
+                    "suggested_min": max(10, float(result['price_5th'] or 10)),
                     "suggested_max": min(500, float(result['price_95th'] or 500)),
                     "suggested_step": 10.0
                 }

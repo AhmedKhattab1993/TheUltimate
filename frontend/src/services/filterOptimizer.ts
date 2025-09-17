@@ -18,11 +18,19 @@ export class FilterOptimizerService {
 
     if (!response.ok) {
       const error = await response.json()
-      throw new Error(error.detail || 'Failed to optimize filters')
+      // Handle validation errors from FastAPI
+      if (response.status === 422 && error.detail) {
+        const validationErrors = error.detail.map((err: any) => 
+          `${err.loc.join('.')}: ${err.msg}`
+        ).join(', ')
+        throw new Error(validationErrors || 'Validation error')
+      }
+      throw new Error(error.detail || error.message || 'Failed to optimize filters')
     }
 
     return response.json()
   }
+
 
   async getSuggestedRanges(startDate: string, endDate: string): Promise<SuggestedRanges> {
     const params = new URLSearchParams({

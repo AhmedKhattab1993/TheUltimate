@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { DatePicker } from '@/components/ui/date-picker'
+import { Switch } from '@/components/ui/switch'
 import { 
   TrendingUp, Settings, AlertCircle, RefreshCw, Search, 
   ChevronRight, Download, BarChart3, Target
@@ -36,63 +37,110 @@ export function FilterOptimizerTab() {
   const [endDate, setEndDate] = useState<Date>(new Date())
   const [target, setTarget] = useState<OptimizationTarget>(OptimizationTarget.SHARPE_RATIO)
   const [customFormula, setCustomFormula] = useState('')
-  const [minSymbols, setMinSymbols] = useState(10)
+  const [minSymbols, setMinSymbols] = useState(1)
   const [maxResults, setMaxResults] = useState(20)
   
   // Search space state
   const [searchSpace, setSearchSpace] = useState<FilterSearchSpace>({
-    price_range: { min_value: 1, max_value: 100, step: 10 },
-    rsi_range: { min_value: 0, max_value: 100, step: 10 },
-    gap_range: { min_value: -10, max_value: 10, step: 2 },
-    volume_range: { min_value: 1000000, max_value: 50000000, step: 5000000 },
-    rel_volume_range: { min_value: 1, max_value: 5, step: 0.5 },
-    pivot_bars_range: { min_value: 4, max_value: 12, step: 1 },
-    ma_periods: [20, 50, 200],
-    ma_conditions: ['above', 'below']
+    price_range: { min_value: 1, max_value: 20, step: 10 },
+    rsi_range: undefined,
+    gap_range: undefined,
+    volume_range: undefined,
+    rel_volume_range: undefined,
+    pivot_bars_range: undefined,
+    ma_periods: [],
+    ma_conditions: []
+  })
+  
+  // Filter enabled state
+  const [filtersEnabled, setFiltersEnabled] = useState({
+    price: true,
+    rsi: false,
+    gap: false,
+    volume: false,
+    relVolume: false,
+    pivotBars: false,
+    movingAverage: false
   })
   
   // Calculate total combinations
   const calculateTotalCombinations = () => {
     let totalCombinations = 1
     
+    // Helper function to calculate number of sliding windows
+    const calculateWindows = (min: number, max: number, step: number) => {
+      const windows = []
+      let current = min
+      while (current < max) {
+        windows.push(1)
+        current += step
+      }
+      return windows.length
+    }
+    
     // Price range sliding windows
-    if (searchSpace.price_range) {
-      const priceWindows = Math.floor((searchSpace.price_range.max_value - searchSpace.price_range.min_value) / searchSpace.price_range.step)
+    if (filtersEnabled.price && searchSpace.price_range) {
+      const priceWindows = calculateWindows(
+        searchSpace.price_range.min_value, 
+        searchSpace.price_range.max_value, 
+        searchSpace.price_range.step
+      )
       if (priceWindows > 0) totalCombinations *= priceWindows
     }
     
     // RSI range sliding windows
-    if (searchSpace.rsi_range) {
-      const rsiWindows = Math.floor((searchSpace.rsi_range.max_value - searchSpace.rsi_range.min_value) / searchSpace.rsi_range.step)
+    if (filtersEnabled.rsi && searchSpace.rsi_range) {
+      const rsiWindows = calculateWindows(
+        searchSpace.rsi_range.min_value,
+        searchSpace.rsi_range.max_value,
+        searchSpace.rsi_range.step
+      )
       if (rsiWindows > 0) totalCombinations *= rsiWindows
     }
     
     // Gap range sliding windows
-    if (searchSpace.gap_range) {
-      const gapWindows = Math.floor((searchSpace.gap_range.max_value - searchSpace.gap_range.min_value) / searchSpace.gap_range.step)
+    if (filtersEnabled.gap && searchSpace.gap_range) {
+      const gapWindows = calculateWindows(
+        searchSpace.gap_range.min_value,
+        searchSpace.gap_range.max_value,
+        searchSpace.gap_range.step
+      )
       if (gapWindows > 0) totalCombinations *= gapWindows
     }
     
     // Volume range sliding windows
-    if (searchSpace.volume_range) {
-      const volumeWindows = Math.floor((searchSpace.volume_range.max_value - searchSpace.volume_range.min_value) / searchSpace.volume_range.step)
+    if (filtersEnabled.volume && searchSpace.volume_range) {
+      const volumeWindows = calculateWindows(
+        searchSpace.volume_range.min_value,
+        searchSpace.volume_range.max_value,
+        searchSpace.volume_range.step
+      )
       if (volumeWindows > 0) totalCombinations *= volumeWindows
     }
     
     // Relative volume range sliding windows
-    if (searchSpace.rel_volume_range) {
-      const relVolumeWindows = Math.floor((searchSpace.rel_volume_range.max_value - searchSpace.rel_volume_range.min_value) / searchSpace.rel_volume_range.step)
+    if (filtersEnabled.relVolume && searchSpace.rel_volume_range) {
+      const relVolumeWindows = calculateWindows(
+        searchSpace.rel_volume_range.min_value,
+        searchSpace.rel_volume_range.max_value,
+        searchSpace.rel_volume_range.step
+      )
       if (relVolumeWindows > 0) totalCombinations *= relVolumeWindows
     }
     
     // Pivot bars range sliding windows
-    if (searchSpace.pivot_bars_range) {
-      const pivotWindows = Math.floor((searchSpace.pivot_bars_range.max_value - searchSpace.pivot_bars_range.min_value) / searchSpace.pivot_bars_range.step)
+    if (filtersEnabled.pivotBars && searchSpace.pivot_bars_range) {
+      const pivotWindows = calculateWindows(
+        searchSpace.pivot_bars_range.min_value,
+        searchSpace.pivot_bars_range.max_value,
+        searchSpace.pivot_bars_range.step
+      )
       if (pivotWindows > 0) totalCombinations *= pivotWindows
     }
     
     // MA periods and conditions
-    if (searchSpace.ma_periods && searchSpace.ma_conditions) {
+    if (filtersEnabled.movingAverage && searchSpace.ma_periods && searchSpace.ma_periods.length > 0 && 
+        searchSpace.ma_conditions && searchSpace.ma_conditions.length > 0) {
       totalCombinations *= searchSpace.ma_periods.length * searchSpace.ma_conditions.length
     }
     
@@ -123,15 +171,29 @@ export function FilterOptimizerTab() {
     setError(null)
     
     try {
+      // Clean up search space - only include enabled filters
+      const cleanedSearchSpace = {
+        price_range: filtersEnabled.price ? searchSpace.price_range : undefined,
+        rsi_range: filtersEnabled.rsi ? searchSpace.rsi_range : undefined,
+        gap_range: filtersEnabled.gap ? searchSpace.gap_range : undefined,
+        volume_range: filtersEnabled.volume ? searchSpace.volume_range : undefined,
+        rel_volume_range: filtersEnabled.relVolume ? searchSpace.rel_volume_range : undefined,
+        pivot_bars_range: filtersEnabled.pivotBars ? searchSpace.pivot_bars_range : undefined,
+        ma_periods: filtersEnabled.movingAverage && searchSpace.ma_periods && searchSpace.ma_periods.length > 0 ? searchSpace.ma_periods : undefined,
+        ma_conditions: filtersEnabled.movingAverage && searchSpace.ma_conditions && searchSpace.ma_conditions.length > 0 ? searchSpace.ma_conditions : undefined
+      }
+      
       const request: OptimizationRequest = {
         start_date: format(startDate, 'yyyy-MM-dd'),
         end_date: format(endDate, 'yyyy-MM-dd'),
         target,
         custom_formula: target === OptimizationTarget.CUSTOM ? customFormula : undefined,
-        search_space: searchSpace,
+        search_space: cleanedSearchSpace,
         max_results: maxResults,
         min_symbols_required: minSymbols
       }
+      
+      console.log('Sending optimization request:', JSON.stringify(request, null, 2))
       
       const response = await filterOptimizerService.optimizeFilters(request)
       setResults(response)
@@ -257,7 +319,7 @@ export function FilterOptimizerTab() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Target className="h-5 w-5" />
-            Filter Optimizer
+            Grid Parameters Tuning
           </CardTitle>
           <CardDescription>
             Find optimal screener filter values based on historical backtest performance
@@ -338,9 +400,15 @@ export function FilterOptimizerTab() {
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Price Range */}
-                  <Card>
+                  <Card className={!filtersEnabled.price ? 'opacity-50' : ''}>
                     <CardHeader className="pb-3">
-                      <CardTitle className="text-base">Price Range ($)</CardTitle>
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-base">Price Range ($)</CardTitle>
+                        <Switch
+                          checked={filtersEnabled.price}
+                          onCheckedChange={(checked) => setFiltersEnabled({...filtersEnabled, price: checked})}
+                        />
+                      </div>
                     </CardHeader>
                     <CardContent className="space-y-3">
                       <div className="grid grid-cols-3 gap-2 text-sm">
@@ -398,9 +466,23 @@ export function FilterOptimizerTab() {
                   </Card>
                   
                   {/* RSI Range */}
-                  <Card>
+                  <Card className={!filtersEnabled.rsi ? 'opacity-50' : ''}>
                     <CardHeader className="pb-3">
-                      <CardTitle className="text-base">RSI Range</CardTitle>
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-base">RSI Range</CardTitle>
+                        <Switch
+                          checked={filtersEnabled.rsi}
+                          onCheckedChange={(checked) => {
+                            setFiltersEnabled({...filtersEnabled, rsi: checked})
+                            if (checked && !searchSpace.rsi_range) {
+                              setSearchSpace({
+                                ...searchSpace,
+                                rsi_range: { min_value: 0, max_value: 100, step: 10 }
+                              })
+                            }
+                          }}
+                        />
+                      </div>
                     </CardHeader>
                     <CardContent className="space-y-3">
                       <div className="grid grid-cols-3 gap-2 text-sm">
@@ -458,9 +540,23 @@ export function FilterOptimizerTab() {
                   </Card>
 
                   {/* Gap Range */}
-                  <Card>
+                  <Card className={!filtersEnabled.gap ? 'opacity-50' : ''}>
                     <CardHeader className="pb-3">
-                      <CardTitle className="text-base">Gap Range (%)</CardTitle>
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-base">Gap Range (%)</CardTitle>
+                        <Switch
+                          checked={filtersEnabled.gap}
+                          onCheckedChange={(checked) => {
+                            setFiltersEnabled({...filtersEnabled, gap: checked})
+                            if (checked && !searchSpace.gap_range) {
+                              setSearchSpace({
+                                ...searchSpace,
+                                gap_range: { min_value: -10, max_value: 10, step: 2 }
+                              })
+                            }
+                          }}
+                        />
+                      </div>
                     </CardHeader>
                     <CardContent className="space-y-3">
                       <div className="grid grid-cols-3 gap-2 text-sm">
@@ -515,15 +611,29 @@ export function FilterOptimizerTab() {
                   </Card>
 
                   {/* Volume Filters */}
-                  <Card>
+                  <Card className={!filtersEnabled.volume && !filtersEnabled.relVolume ? 'opacity-50' : ''}>
                     <CardHeader className="pb-3">
                       <CardTitle className="text-base">Volume Filters</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
                       {/* Dollar Volume */}
                       <div>
-                        <Label className="text-sm font-medium">Dollar Volume Range</Label>
-                        <div className="grid grid-cols-3 gap-2 mt-2">
+                        <div className="flex items-center justify-between mb-2">
+                          <Label className="text-sm font-medium">Dollar Volume Range</Label>
+                          <Switch
+                            checked={filtersEnabled.volume}
+                            onCheckedChange={(checked) => {
+                              setFiltersEnabled({...filtersEnabled, volume: checked})
+                              if (checked && !searchSpace.volume_range) {
+                                setSearchSpace({
+                                  ...searchSpace,
+                                  volume_range: { min_value: 1000000, max_value: 50000000, step: 5000000 }
+                                })
+                              }
+                            }}
+                          />
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
                           <div>
                             <Label className="text-xs text-muted-foreground">Min ($)</Label>
                             <Input
@@ -574,8 +684,22 @@ export function FilterOptimizerTab() {
                       
                       {/* Relative Volume */}
                       <div>
-                        <Label className="text-sm font-medium">Relative Volume Range</Label>
-                        <div className="grid grid-cols-3 gap-2 mt-2">
+                        <div className="flex items-center justify-between mb-2">
+                          <Label className="text-sm font-medium">Relative Volume Range</Label>
+                          <Switch
+                            checked={filtersEnabled.relVolume}
+                            onCheckedChange={(checked) => {
+                              setFiltersEnabled({...filtersEnabled, relVolume: checked})
+                              if (checked && !searchSpace.rel_volume_range) {
+                                setSearchSpace({
+                                  ...searchSpace,
+                                  rel_volume_range: { min_value: 1, max_value: 5, step: 0.5 }
+                                })
+                              }
+                            }}
+                          />
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
                           <div>
                             <Label className="text-xs text-muted-foreground">Min Ratio</Label>
                             <Input
@@ -634,9 +758,24 @@ export function FilterOptimizerTab() {
                   </Card>
 
                   {/* Moving Average Filter */}
-                  <Card>
+                  <Card className={!filtersEnabled.movingAverage ? 'opacity-50' : ''}>
                     <CardHeader className="pb-3">
-                      <CardTitle className="text-base">Moving Average Filter</CardTitle>
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-base">Moving Average Filter</CardTitle>
+                        <Switch
+                          checked={filtersEnabled.movingAverage}
+                          onCheckedChange={(checked) => {
+                            setFiltersEnabled({...filtersEnabled, movingAverage: checked})
+                            if (checked && (!searchSpace.ma_periods || searchSpace.ma_periods.length === 0)) {
+                              setSearchSpace({
+                                ...searchSpace,
+                                ma_periods: [20, 50, 200],
+                                ma_conditions: ['above', 'below']
+                              })
+                            }
+                          }}
+                        />
+                      </div>
                     </CardHeader>
                     <CardContent className="space-y-3">
                       <div className="space-y-3">
@@ -695,9 +834,23 @@ export function FilterOptimizerTab() {
                   </Card>
                   
                   {/* Pivot Bars */}
-                  <Card>
+                  <Card className={!filtersEnabled.pivotBars ? 'opacity-50' : ''}>
                     <CardHeader className="pb-3">
-                      <CardTitle className="text-base">Pivot Bars Range</CardTitle>
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-base">Pivot Bars Range</CardTitle>
+                        <Switch
+                          checked={filtersEnabled.pivotBars}
+                          onCheckedChange={(checked) => {
+                            setFiltersEnabled({...filtersEnabled, pivotBars: checked})
+                            if (checked && !searchSpace.pivot_bars_range) {
+                              setSearchSpace({
+                                ...searchSpace,
+                                pivot_bars_range: { min_value: 4, max_value: 12, step: 1 }
+                              })
+                            }
+                          }}
+                        />
+                      </div>
                     </CardHeader>
                     <CardContent className="space-y-3">
                       <div className="grid grid-cols-3 gap-2 text-sm">
