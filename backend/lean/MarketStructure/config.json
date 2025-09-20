@@ -1,0 +1,17 @@
+{
+    "algorithm-language": "Python",
+    "parameters": {
+        "startDate": "20250909",
+        "endDate": "20250909",
+        "cash": "100000.0",
+        "symbols": "AAPL,MSFT,GOOGL",
+        "use_screener_results": "false",
+        "screener_results_file": "",
+        "lower_timeframe": "1min",
+        "higher_timeframe": "1hour",
+        "pivot_bars": "14",
+        "symbol_indices": "9948"
+    },
+    "description": "Market Structure Break of Structure (BOS) Trading Algorithm",
+    "local-id": 454799226
+}

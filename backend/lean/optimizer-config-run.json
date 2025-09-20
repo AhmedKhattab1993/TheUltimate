@@ -1,0 +1,23 @@
+{
+    "optimization-strategy": "QuantConnect.Optimizer.Strategies.GridSearchOptimizationStrategy",
+    "optimization-strategy-settings": {
+        "$type": "QuantConnect.Optimizer.Strategies.StepBaseOptimizationStrategySettings, QuantConnect.Optimizer",
+        "default-segment-amount": 10
+    },
+    "optimization-criterion": {
+        "target": "TotalPerformance.PortfolioStatistics.SharpeRatio",
+        "extremum": "max"
+    },
+    "parameters": [
+        {
+            "name": "pivot_bars",
+            "min": 5.0,
+            "max": 20.0,
+            "step": 5.0
+        }
+    ],
+    "constraints": [],
+    "maximum-concurrent-backtests": 2,
+    "optimizer-close-automatically": true,
+    "results-destination-folder": "/Results"
+}
