@@ -14,9 +14,10 @@ from datetime import datetime, timedelta, date
 from uuid import uuid4, UUID
 
 from ..models.simple_requests import (
+    RegistryScreenRequest,
     SimpleScreenRequest,
     SimpleScreenResponse,
-    SimpleScreenResult
+    SimpleScreenResult,
 )
 from ..core.simple_filters import (
     SimplePriceRangeFilter,
@@ -36,6 +37,7 @@ from ..config import settings
 from ..services.screener_results import screener_results_manager
 from ..services.cache_service import CacheService
 from ..models.cache_models import CachedScreenerRequest, CachedScreenerResult
+from ..services.lean_job_service import lean_job_service
 
 
 router = APIRouter(prefix="/api/v2/simple-screener", tags=["simple-screener"])
@@ -418,7 +420,7 @@ async def _fetch_all_data(
 
 @router.post("/screen", response_model=SimpleScreenResponse)
 async def simple_screen_stocks(
-    request: SimpleScreenRequest,
+    payload: RegistryScreenRequest,
     polygon_client: PolygonClient = Depends(get_polygon_client)
 ) -> SimpleScreenResponse:
     """
@@ -441,6 +443,15 @@ async def simple_screen_stocks(
     
     All filters use vectorized NumPy operations for maximum performance.
     """
+    # Hydrate registry payload into concrete filter models
+    try:
+        hydrated_filters = lean_job_service.build_filters_from_registry(
+            {key: {"enabled": state.enabled, "values": state.values} for key, state in payload.filters.items()}
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    request = payload.build_simple_request(hydrated_filters)
     start_time = time.time()
     
     # Build filters once

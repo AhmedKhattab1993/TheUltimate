@@ -157,9 +157,10 @@ class CachedScreenerResult(BaseModel):
     
     model_config = ConfigDict()
 
-    @model_serializer(mode='json')
-    def serialize_model(self):
-        return _convert_for_json(self.model_dump(mode='python'))
+    @model_serializer(mode='wrap')
+    def serialize_model(self, handler):
+        data = handler(self)
+        return _convert_for_json(data)
 
 
 class CachedBacktestRequest(BaseModel):
@@ -327,9 +328,10 @@ class CachedBacktestResult(BaseModel):
 
     model_config = ConfigDict()
 
-    @model_serializer(mode='json')
-    def serialize_model(self):
-        return _convert_for_json(self.model_dump(mode='python'))
+    @model_serializer(mode='wrap')
+    def serialize_model(self, handler):
+        data = handler(self)
+        return _convert_for_json(data)
 
 
 class CacheMetadata(BaseModel):
@@ -345,9 +347,10 @@ class CacheMetadata(BaseModel):
     
     model_config = ConfigDict()
 
-    @model_serializer(mode='json')
-    def serialize_model(self):
-        return _convert_for_json(self.model_dump(mode='python'))
+    @model_serializer(mode='wrap')
+    def serialize_model(self, handler):
+        data = handler(self)
+        return _convert_for_json(data)
 
 
 # Legacy model names for backwards compatibility

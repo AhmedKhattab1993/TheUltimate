@@ -1,17 +1,456 @@
 import axios from 'axios'
-import type { ScreenerRequest, ScreenerResponse } from '@/types/api'
-import type { EnhancedScreenerRequest, EnhancedScreenerResponse } from '@/types/screener'
+import type {
+  BacktestRequestPayload,
+  BacktestRunInfo,
+  BacktestRunListResponse,
+  FilterControl,
+  FilterDefinition,
+  FilterOption,
+  GridBacktestRequestPayload,
+  OptimizeRequestPayload,
+  DataIngestionRequestPayload,
+  RegistryResponse,
+  GridResultsListResponse,
+  GridResultDetail,
+  CombinedResultsResponse,
+  CombinedScreenerBacktestRow,
+  GridResultSummary,
+  GridScreeningResult,
+  GridBacktestResultRow,
+  RunSummaryResponse,
+  JobTypeSummary,
+  MetricSummary,
+  TargetSummary,
+  ScreenerRequestPayload,
+  ScreenerResponse,
+  StrategyDefinition,
+  StrategyParameter,
+} from '@/types/api'
 
-// Determine API URL based on where the frontend is accessed from
+type RawFilterOption = {
+  label: string
+  value: string | number
+  description?: string
+}
+
+type RawFilterControl = {
+  control_type: string
+  field: string
+  label: string
+  description?: string
+  default?: string | number | boolean
+  min_value?: number
+  max_value?: number
+  step?: number
+  options?: RawFilterOption[]
+  unit?: string
+  placeholder?: string
+  required?: boolean
+}
+
+type RawFilterDefinition = {
+  id: string
+  backend_key: string
+  label: string
+  category: string
+  description: string
+  default_enabled: boolean
+  controls: RawFilterControl[]
+  tags?: string[]
+  sort_order?: number
+  doc_url?: string | null
+}
+
+type RawStrategyParameter = {
+  name: string
+  label: string
+  description?: string
+  control_type: string
+  default?: string | number | boolean
+  min_value?: number
+  max_value?: number
+  step?: number
+  options?: RawFilterOption[]
+  required?: boolean
+}
+
+type RawStrategyDefinition = {
+  id: string
+  label: string
+  description: string
+  project_path: string
+  parameters: RawStrategyParameter[]
+  defaults: Record<string, string | number | boolean>
+  capabilities: {
+    supports: Array<'backtest' | 'grid' | 'optimize'>
+    default_job_type: 'backtest' | 'grid' | 'optimize'
+    parallelism?: number | null
+  }
+  documentation_url?: string | null
+  notes?: string | null
+}
+
+type RawRegistryResponse = {
+  filters: RawFilterDefinition[]
+  strategies: RawStrategyDefinition[]
+}
+
+type RawScreenerResponse = {
+  execution_time_ms: number
+  total_symbols_screened: number
+  total_qualifying_stocks: number
+  results: Array<{
+    symbol: string
+    qualifying_dates: string[]
+    total_days_analyzed: number
+    qualifying_days_count: number
+    metrics: Record<string, number | string | null>
+  }>
+}
+
+type RawBacktestRunInfo = {
+  backtest_id: string
+  status: string
+  job_type: string
+  created_at: string
+  started_at?: string | null
+  completed_at?: string | null
+  error_message?: string | null
+  result_path?: string | null
+  metrics?: Record<string, number>
+  targets?: string[]
+  request: {
+    strategy_name: string
+    start_date: string
+    end_date: string
+    initial_cash: number
+    resolution: BacktestRequestPayload['resolution']
+    pivot_bars: number
+    lower_timeframe: string
+    symbols?: string[]
+    use_screener_results?: boolean
+    parameters?: Record<string, string | number | boolean>
+  }
+}
+
+type RawBacktestListResponse = {
+  runs: RawBacktestRunInfo[]
+  total_count: number
+  page: number
+  page_size: number
+}
+
+type RawOptimizationRequest = {
+  base_request: ReturnType<typeof toBacktestPayload>
+  target_metric: string
+  target_direction: 'maximize' | 'minimize'
+  parameters: Array<{ name: string; min: number; max: number; step: number }>
+  max_concurrent_backtests?: number
+}
+
+type RawGridResultSummary = {
+  date: string
+  screening_symbols: number
+  backtest_count: number
+  backtest_completed: number
+  backtest_failed: number
+  screening_time_ms?: number | null
+  backtest_time_ms?: number | null
+}
+
+type RawGridResultsListResponse = {
+  results: RawGridResultSummary[]
+  total_count: number
+  page: number
+  page_size: number
+}
+
+type RawGridScreeningResult = {
+  symbol: string
+  price: number
+  ma_20: number
+  ma_50: number
+  ma_200: number
+  rsi_14: number
+  gap_percent: number
+  prev_day_dollar_volume: number
+  relative_volume: number
+}
+
+type RawGridBacktestResultRow = {
+  symbol: string
+  pivot_bars: number
+  status: string
+  total_return: number
+  sharpe_ratio: number
+  max_drawdown: number
+  win_rate: number
+  total_trades: number
+  backtest_id?: string | null
+}
+
+type RawGridResultDetail = {
+  date: string
+  screening_results: RawGridScreeningResult[]
+  backtest_results: RawGridBacktestResultRow[]
+  total_screening_symbols: number
+  total_backtests: number
+}
+
+type RawCombinedResultsResponse = {
+  results: Array<Record<string, any>>
+  total_count: number
+  limit: number
+  offset: number
+}
+
+type RawJobTypeSummary = {
+  job_type: string
+  total_runs: number
+  completed_runs: number
+  failed_runs: number
+  last_run_id?: string | null
+  last_run_at?: string | null
+}
+
+type RawMetricSummary = {
+  job_type: string
+  metric_key: string
+  metric_value: number
+  run_id: string
+  strategy_name: string
+  created_at: string
+}
+
+type RawTargetSummary = {
+  job_type: string
+  target_count: number
+}
+
+type RawRunSummaryResponse = {
+  job_types: RawJobTypeSummary[]
+  metrics: RawMetricSummary[]
+  targets: RawTargetSummary[]
+}
+
+const mapOption = (option: RawFilterOption): FilterOption => ({
+  label: option.label,
+  value: option.value,
+  description: option.description,
+})
+
+const mapControl = (control: RawFilterControl): FilterControl => ({
+  controlType: control.control_type as FilterControl['controlType'],
+  field: control.field,
+  label: control.label,
+  description: control.description,
+  defaultValue: control.default,
+  minValue: control.min_value,
+  maxValue: control.max_value,
+  step: control.step,
+  options: control.options?.map(mapOption),
+  unit: control.unit,
+  placeholder: control.placeholder,
+  required: control.required,
+})
+
+const mapFilterDefinition = (definition: RawFilterDefinition): FilterDefinition => ({
+  id: definition.id,
+  backendKey: definition.backend_key,
+  label: definition.label,
+  category: definition.category as FilterDefinition['category'],
+  description: definition.description,
+  defaultEnabled: definition.default_enabled,
+  controls: definition.controls.map(mapControl),
+  tags: definition.tags ?? [],
+  sortOrder: definition.sort_order ?? 0,
+  docUrl: definition.doc_url ?? undefined,
+})
+
+const mapStrategyParameter = (parameter: RawStrategyParameter): StrategyParameter => ({
+  name: parameter.name,
+  label: parameter.label,
+  description: parameter.description,
+  controlType: parameter.control_type as StrategyParameter['controlType'],
+  defaultValue: parameter.default,
+  minValue: parameter.min_value,
+  maxValue: parameter.max_value,
+  step: parameter.step,
+  options: parameter.options?.map(mapOption),
+  required: parameter.required,
+})
+
+const mapStrategyDefinition = (definition: RawStrategyDefinition): StrategyDefinition => ({
+  id: definition.id,
+  label: definition.label,
+  description: definition.description,
+  projectPath: definition.project_path,
+  parameters: definition.parameters.map(mapStrategyParameter),
+  defaults: definition.defaults,
+  capabilities: {
+    supports: definition.capabilities.supports,
+    defaultJobType: definition.capabilities.default_job_type,
+    parallelism: definition.capabilities.parallelism ?? undefined,
+  },
+  documentationUrl: definition.documentation_url ?? undefined,
+  notes: definition.notes ?? undefined,
+})
+
+const mapBacktestRequest = (
+  request: RawBacktestRunInfo['request'],
+): BacktestRequestPayload => ({
+  strategyName: request.strategy_name,
+  startDate: request.start_date,
+  endDate: request.end_date,
+  initialCash: Number(request.initial_cash),
+  resolution: request.resolution,
+  pivotBars: request.pivot_bars,
+  lowerTimeframe: request.lower_timeframe,
+  symbols: request.symbols,
+  useScreenerResults: request.use_screener_results,
+  parameters: request.parameters,
+})
+
+const mapBacktestRun = (run: RawBacktestRunInfo): BacktestRunInfo => ({
+  backtestId: run.backtest_id,
+  status: run.status,
+  jobType: run.job_type,
+  createdAt: run.created_at,
+  startedAt: run.started_at ?? undefined,
+  completedAt: run.completed_at ?? undefined,
+  errorMessage: run.error_message ?? undefined,
+  resultPath: run.result_path ?? undefined,
+  request: mapBacktestRequest(run.request),
+  metrics: run.metrics ?? undefined,
+  targets: run.targets ?? undefined,
+})
+
+const mapJobTypeSummary = (summary: RawJobTypeSummary): JobTypeSummary => ({
+  jobType: summary.job_type,
+  totalRuns: summary.total_runs,
+  completedRuns: summary.completed_runs,
+  failedRuns: summary.failed_runs,
+  lastRunId: summary.last_run_id ?? undefined,
+  lastRunAt: summary.last_run_at ?? undefined,
+})
+
+const mapMetricSummary = (summary: RawMetricSummary): MetricSummary => ({
+  jobType: summary.job_type,
+  metricKey: summary.metric_key,
+  metricValue: summary.metric_value,
+  runId: summary.run_id,
+  strategyName: summary.strategy_name,
+  createdAt: summary.created_at,
+})
+
+const mapTargetSummary = (summary: RawTargetSummary): TargetSummary => ({
+  jobType: summary.job_type,
+  targetCount: summary.target_count,
+})
+
+const mapRunSummary = (data: RawRunSummaryResponse): RunSummaryResponse => ({
+  jobTypes: data.job_types.map(mapJobTypeSummary),
+  metrics: data.metrics.map(mapMetricSummary),
+  targets: data.targets.map(mapTargetSummary),
+})
+
+const mapGridSummary = (summary: RawGridResultSummary): GridResultSummary => ({
+  date: summary.date,
+  screeningSymbols: summary.screening_symbols,
+  backtestCount: summary.backtest_count,
+  backtestCompleted: summary.backtest_completed,
+  backtestFailed: summary.backtest_failed,
+  screeningTimeMs: summary.screening_time_ms ?? undefined,
+  backtestTimeMs: summary.backtest_time_ms ?? undefined,
+})
+
+const mapGridScreeningResult = (result: RawGridScreeningResult): GridScreeningResult => ({
+  symbol: result.symbol,
+  price: result.price,
+  ma20: result.ma_20,
+  ma50: result.ma_50,
+  ma200: result.ma_200,
+  rsi14: result.rsi_14,
+  gapPercent: result.gap_percent,
+  prevDayDollarVolume: result.prev_day_dollar_volume,
+  relativeVolume: result.relative_volume,
+})
+
+const mapGridBacktestResult = (result: RawGridBacktestResultRow): GridBacktestResultRow => ({
+  symbol: result.symbol,
+  pivotBars: result.pivot_bars,
+  status: result.status,
+  totalReturn: result.total_return,
+  sharpeRatio: result.sharpe_ratio,
+  maxDrawdown: result.max_drawdown,
+  winRate: result.win_rate,
+  totalTrades: result.total_trades,
+  backtestId: result.backtest_id ?? undefined,
+})
+
+const mapGridDetail = (detail: RawGridResultDetail): GridResultDetail => ({
+  date: detail.date,
+  screeningResults: detail.screening_results.map(mapGridScreeningResult),
+  backtestResults: detail.backtest_results.map(mapGridBacktestResult),
+  totalScreeningSymbols: detail.total_screening_symbols,
+  totalBacktests: detail.total_backtests,
+})
+
+const mapCombinedRow = (row: Record<string, any>): CombinedScreenerBacktestRow => ({
+  symbol: row.symbol,
+  screeningDate: row.screening_date ?? undefined,
+  source: row.source ?? undefined,
+  companyName: row.company_name ?? undefined,
+  screenedAt: row.screened_at ?? undefined,
+  backtestId: row.backtest_id ?? undefined,
+  backtestCreatedAt: row.backtest_created_at ?? undefined,
+  strategyName: row.strategy_name ?? undefined,
+  totalReturn: row.total_return ?? undefined,
+  sharpeRatio: row.sharpe_ratio ?? undefined,
+  maxDrawdown: row.max_drawdown ?? undefined,
+  winRate: row.win_rate ?? undefined,
+  totalTrades: row.total_trades ?? undefined,
+  pivotBars: row.pivot_bars ?? undefined,
+  lowerTimeframe: row.lower_timeframe ?? undefined,
+  initialCash: row.initial_cash ?? undefined,
+})
+
+const mapCombinedResponse = (data: RawCombinedResultsResponse): CombinedResultsResponse => ({
+  results: data.results.map(mapCombinedRow),
+  totalCount: data.total_count,
+  limit: data.limit,
+  offset: data.offset,
+})
+
+const mapScreenerResponse = (data: RawScreenerResponse): ScreenerResponse => ({
+  executionTimeMs: data.execution_time_ms,
+  totalSymbolsScreened: data.total_symbols_screened,
+  totalQualifyingStocks: data.total_qualifying_stocks,
+  results: data.results.map((row) => ({
+    symbol: row.symbol,
+    qualifyingDates: row.qualifying_dates,
+    totalDaysAnalyzed: row.total_days_analyzed,
+    qualifyingDaysCount: row.qualifying_days_count,
+    metrics: row.metrics,
+  })),
+})
+
+const mapRegistryResponse = (data: RawRegistryResponse): RegistryResponse => ({
+  filters: data.filters.map(mapFilterDefinition),
+  strategies: data.strategies.map(mapStrategyDefinition),
+})
+
+// -----------------------------------------------------------------------------
+// Axios client configuration
+// -----------------------------------------------------------------------------
+
 export const getApiUrl = () => {
   const hostname = window.location.hostname
-  
-  // If accessing from localhost, use localhost API
+
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
     return 'http://localhost:8000'
   }
-  
-  // If accessing from public IP, use the same IP for API with port 8000
+
   return `http://${hostname}:8000`
 }
 
@@ -24,163 +463,182 @@ const api = axios.create({
   },
 })
 
-// Add version query parameter to all requests to help with caching
+type AxiosConfig = {
+  params?: Record<string, string | number | boolean>
+}
+
 api.interceptors.request.use((config) => {
-  const version = new Date().getTime()
-  if (config.params) {
-    config.params._v = version
-  } else {
-    config.params = { _v: version }
-  }
+  const version = Date.now()
+  const cfg: AxiosConfig = config
+  cfg.params = { ...(cfg.params ?? {}), _v: version }
   return config
 })
 
-// Simple Screener API Interface
-interface SimpleScreenerRequest {
-  start_date: string
-  end_date: string
-  use_all_us_stocks?: boolean
-  enable_db_prefiltering?: boolean
-  filters: {
-    price_range?: {
-      min_price: number
-      max_price: number
-    }
-    price_vs_ma?: {
-      ma_period: 20 | 50 | 200
-      condition: 'above' | 'below'
-    }
-    rsi?: {
-      rsi_period: number
-      condition: 'above' | 'below'
-      threshold: number
-    }
-    gap?: {
-      gap_threshold: number
-      direction: 'up' | 'down' | 'both'
-    }
-    prev_day_dollar_volume?: {
-      min_dollar_volume: number
-    }
-    relative_volume?: {
-      recent_days: number
-      lookback_days: number
-      min_ratio: number
-    }
-  }
+// -----------------------------------------------------------------------------
+// Public API
+// -----------------------------------------------------------------------------
+
+export const registryApi = {
+  fetch: async (): Promise<RegistryResponse> => {
+    const response = await api.get<RawRegistryResponse>('/api/v2/registry/all')
+    return mapRegistryResponse(response.data)
+  },
 }
 
-interface SimpleScreenerResponse {
-  request: SimpleScreenerRequest
-  execution_time_ms: number
-  total_symbols_screened: number
-  total_qualifying_stocks: number
-  db_prefiltering_used: boolean
-  symbols_filtered_by_db?: number
-  results: Array<{
-    symbol: string
-    qualifying_dates: string[]
-    total_days_analyzed: number
-    qualifying_days_count: number
-    qualifying_percentage: number
-    metrics: {
-      avg_open_price?: number
-      ma_20_mean?: number
-      ma_50_mean?: number
-      ma_200_mean?: number
-      rsi_mean?: number
-      days_meeting_condition?: number
+const toScreenerPayload = (payload: ScreenerRequestPayload) => ({
+  start_date: payload.startDate,
+  end_date: payload.endDate,
+  use_all_us_stocks: payload.useAllUsStocks ?? true,
+  enable_db_prefiltering: payload.enableDbPrefiltering ?? true,
+  filters: Object.entries(payload.filters).reduce<Record<string, unknown>>((acc, [key, state]) => {
+    acc[key] = {
+      enabled: state.enabled,
+      values: state.values,
     }
-  }>
+    return acc
+  }, {}),
+})
+
+export const screenerApi = {
+  run: async (payload: ScreenerRequestPayload): Promise<ScreenerResponse> => {
+    const response = await api.post<RawScreenerResponse>(
+      '/api/v2/simple-screener/screen',
+      toScreenerPayload(payload),
+    )
+    return mapScreenerResponse(response.data)
+  },
 }
 
-export const stockScreenerApi = {
-  screen: async (request: ScreenerRequest): Promise<ScreenerResponse> => {
-    const response = await api.post<ScreenerResponse>('/api/v1/screen', request)
-    return response.data
+const toBacktestPayload = (payload: BacktestRequestPayload) => ({
+  strategy_name: payload.strategyName,
+  start_date: payload.startDate,
+  end_date: payload.endDate,
+  initial_cash: payload.initialCash,
+  resolution: payload.resolution,
+  pivot_bars: payload.pivotBars,
+  lower_timeframe: payload.lowerTimeframe,
+  symbols: payload.symbols ?? [],
+  use_screener_results: payload.useScreenerResults ?? false,
+  parameters: payload.parameters ?? {},
+})
+
+const toOptimizePayload = (payload: OptimizeRequestPayload): RawOptimizationRequest => ({
+  base_request: toBacktestPayload(payload.baseRequest),
+  target_metric: payload.targetMetric,
+  target_direction: payload.targetDirection,
+  parameters: payload.parameters.map((parameter) => ({
+    name: parameter.name,
+    min: parameter.min,
+    max: parameter.max,
+    step: parameter.step,
+  })),
+  max_concurrent_backtests: payload.maxConcurrentBacktests,
+})
+
+const toDataPayload = (payload: DataIngestionRequestPayload) => ({
+  dataset: payload.dataset,
+  start_date: payload.startDate,
+  end_date: payload.endDate,
+  resume: payload.resume,
+})
+
+export const backtestApi = {
+  start: async (payload: BacktestRequestPayload): Promise<BacktestRunInfo> => {
+    const response = await api.post<RawBacktestRunInfo>(
+      '/api/v2/backtest/run',
+      toBacktestPayload(payload),
+    )
+    return mapBacktestRun(response.data)
   },
-  
-  screenDatabase: async (request: ScreenerRequest): Promise<ScreenerResponse> => {
-    const response = await api.post<ScreenerResponse>('/api/v1/screen/database', request)
-    return response.data
+  startGrid: async (
+    payload: GridBacktestRequestPayload,
+  ): Promise<BacktestRunInfo[]> => {
+    const response = await api.post<RawBacktestRunInfo[]>(
+      '/api/v2/backtest/grid/run',
+      {
+        base_request: toBacktestPayload(payload.baseRequest),
+        parameter_sweeps: payload.parameterSweeps,
+      },
+    )
+    return response.data.map(mapBacktestRun)
   },
-  
-  screenEnhanced: async (request: EnhancedScreenerRequest): Promise<EnhancedScreenerResponse> => {
-    // Transform the request to match the simple screener API format
-    const simpleRequest: SimpleScreenerRequest = {
-      start_date: request.start_date,
-      end_date: request.end_date,
-      use_all_us_stocks: request.use_all_us_stocks,
-      enable_db_prefiltering: true,
-      filters: {
-        price_range: request.filters.simple_price_range && {
-          min_price: request.filters.simple_price_range.min_price,
-          max_price: request.filters.simple_price_range.max_price
-        },
-        price_vs_ma: request.filters.price_vs_ma && {
-          ma_period: request.filters.price_vs_ma.period,
-          condition: request.filters.price_vs_ma.condition
-        },
-        rsi: request.filters.rsi && {
-          rsi_period: request.filters.rsi.period,
-          condition: request.filters.rsi.condition,
-          threshold: request.filters.rsi.threshold
-        },
-        gap: request.filters.gap && {
-          gap_threshold: request.filters.gap.gap_threshold,
-          direction: request.filters.gap.direction
-        },
-        prev_day_dollar_volume: request.filters.prev_day_dollar_volume && {
-          min_dollar_volume: request.filters.prev_day_dollar_volume.min_dollar_volume
-        },
-        relative_volume: request.filters.relative_volume && {
-          recent_days: request.filters.relative_volume.recent_days,
-          lookback_days: request.filters.relative_volume.lookback_days,
-          min_ratio: request.filters.relative_volume.min_ratio
-        }
-      }
+  startOptimize: async (payload: OptimizeRequestPayload): Promise<BacktestRunInfo> => {
+    const response = await api.post<RawBacktestRunInfo>(
+      '/api/v2/backtest/optimize/run',
+      toOptimizePayload(payload),
+    )
+    return mapBacktestRun(response.data)
+  },
+  listRuns: async (params?: { page?: number; pageSize?: number; strategyName?: string }): Promise<BacktestRunListResponse> => {
+    const response = await api.get<RawBacktestListResponse>('/api/v2/backtest/runs', {
+      params: {
+        page: params?.page ?? 1,
+        page_size: params?.pageSize ?? 20,
+        strategy_name: params?.strategyName,
+      },
+    })
+    return {
+      runs: response.data.runs.map(mapBacktestRun),
+      totalCount: response.data.total_count,
+      page: response.data.page,
+      pageSize: response.data.page_size,
     }
-    
-    const response = await api.post<SimpleScreenerResponse>('/api/v2/simple-screener/screen', simpleRequest)
-    
-    // Transform the response to match the expected format
-    const enhancedResponse: EnhancedScreenerResponse = {
-      request_date: new Date().toISOString(),
-      total_symbols_screened: response.data.total_symbols_screened,
-      total_qualifying_stocks: response.data.total_qualifying_stocks,
-      execution_time_ms: response.data.execution_time_ms,
-      results: response.data.results.map(result => ({
-        symbol: result.symbol,
-        qualifying_dates: result.qualifying_dates,
-        metrics: {
-          latest_price: result.metrics.avg_open_price,
-          latest_volume: 0, // Not provided by simple screener
-          simple_price_range: true, // Simplified
-          price_vs_ma: result.metrics.ma_20_mean || result.metrics.ma_50_mean || result.metrics.ma_200_mean,
-          rsi: result.metrics.rsi_mean
-        }
-      })),
-      performance_metrics: {
-        data_fetch_time_ms: 0,
-        screening_time_ms: response.data.execution_time_ms,
-        total_execution_time_ms: response.data.execution_time_ms,
-        used_bulk_endpoint: false,
-        symbols_fetched: response.data.total_symbols_screened,
-        symbols_failed: 0
-      }
-    }
-    
-    return enhancedResponse
   },
-  
-  // Additional simple screener specific methods
-  getFilterInfo: async () => {
-    const response = await api.get('/api/v2/simple-screener/filters/info')
-    return response.data
+  summary: async (): Promise<RunSummaryResponse> => {
+    const response = await api.get<RawRunSummaryResponse>('/api/v2/backtest/summary')
+    return mapRunSummary(response.data)
   },
-  
-  getExamples: async () => {
-    const response = await api.get('/api/v2/simple-screener/examples')
-    return response.data
-  }
+  getRun: async (id: string): Promise<BacktestRunInfo> => {
+    const response = await api.get<RawBacktestRunInfo>(`/api/v2/backtest/status/${id}`)
+    return mapBacktestRun(response.data)
+  },
+}
+
+export const dataApi = {
+  ingest: async (payload: DataIngestionRequestPayload): Promise<BacktestRunInfo> => {
+    const response = await api.post<RawBacktestRunInfo>(
+      '/api/v2/data/ingest',
+      toDataPayload(payload),
+    )
+    return mapBacktestRun(response.data)
+  },
+}
+
+export const gridResultsApi = {
+  list: async (params: { page: number; pageSize: number; startDate?: string; endDate?: string; symbol?: string }) => {
+    const response = await api.get<RawGridResultsListResponse>('/api/v2/grid/results', {
+      params: {
+        page: params.page,
+        page_size: params.pageSize,
+        start_date: params.startDate,
+        end_date: params.endDate,
+        symbol: params.symbol,
+      },
+    })
+    return {
+      results: response.data.results.map(mapGridSummary),
+      totalCount: response.data.total_count,
+      page: response.data.page,
+      pageSize: response.data.page_size,
+    } as GridResultsListResponse
+  },
+  detail: async (date: string) => {
+    const response = await api.get<RawGridResultDetail>(`/api/v2/grid/results/${date}/detail`)
+    return mapGridDetail(response.data)
+  },
+}
+
+export const combinedResultsApi = {
+  list: async (params: { symbol?: string; startDate?: string; endDate?: string; offset?: number; limit?: number }) => {
+    const response = await api.get<RawCombinedResultsResponse>('/api/v2/combined-results/', {
+      params: {
+        symbol: params.symbol,
+        start_date: params.startDate,
+        end_date: params.endDate,
+        offset: params.offset ?? 0,
+        limit: params.limit ?? 100,
+      },
+    })
+    return mapCombinedResponse(response.data)
+  },
 }

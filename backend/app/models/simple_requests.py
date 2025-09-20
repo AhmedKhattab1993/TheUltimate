@@ -113,6 +113,34 @@ class SimpleFilters(BaseModel):
     relative_volume: Optional[RelativeVolumeParams] = Field(None, description="Filter by relative volume ratio")
 
 
+class RegistryFilterState(BaseModel):
+    """Generic filter payload sent from the frontend registry."""
+
+    enabled: bool = Field(False, description="Whether filter should be applied")
+    values: Dict[str, Any] = Field(default_factory=dict, description="Raw control values")
+
+
+class RegistryScreenRequest(BaseModel):
+    """Wire model accepted by the API before hydration via the filter registry."""
+
+    start_date: date
+    end_date: date
+    filters: Dict[str, RegistryFilterState]
+    use_all_us_stocks: bool = Field(True, description="Whether to hydrate the full universe")
+    enable_db_prefiltering: bool = Field(True, description="Use database-side pre-filtering when available")
+
+    def build_simple_request(self, filters: SimpleFilters) -> "SimpleScreenRequest":
+        """Convert hydrated filters into the legacy request type."""
+
+        return SimpleScreenRequest(
+            start_date=self.start_date,
+            end_date=self.end_date,
+            use_all_us_stocks=self.use_all_us_stocks,
+            filters=filters,
+            enable_db_prefiltering=self.enable_db_prefiltering,
+        )
+
+
 class SimpleScreenRequest(BaseModel):
     """Simplified screening request with 8 basic filters."""
     start_date: date = Field(..., description="Start date for screening")

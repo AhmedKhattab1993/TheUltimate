@@ -14,7 +14,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.api import simple_screener, backtest, screener_results, combined_results, grid_results, filter_optimizer
+from app.api import (
+    backtest,
+    combined_results,
+    filter_optimizer,
+    grid_results,
+    registry,
+    screener_results,
+    simple_screener,
+    data,
+)
 from app.services.polygon_client import PolygonAPIError
 from app.services.database import db_pool
 
@@ -192,6 +201,12 @@ app.include_router(
     # No prefix needed - router already has /api/v2/backtest
     tags=["backtest"]
 )
+
+# Registry metadata
+app.include_router(registry.router, tags=["registry"])
+
+# Data ingestion
+app.include_router(data.router, tags=["data"])
 
 # Include screener results router
 app.include_router(

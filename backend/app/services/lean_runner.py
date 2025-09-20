@@ -223,7 +223,156 @@ class LeanRunner:
         except Exception as e:
             logger.error(f"Failed to start backtest {backtest_id}: {e}")
             raise
-    
+
+
+    async def run_optimize(
+        self,
+        job_id: str,
+        request: BacktestRequest,
+        project_name: str,
+        optimize_config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Run a LEAN optimization using the CLI."""
+
+        try:
+            if request.use_screener_results:
+                strategy_path = self.lean_project_path / "flexible_main.py"
+                if not strategy_path.exists():
+                    raise Exception("Flexible strategy not found for screener results")
+
+                from ..services.screener_results import screener_results_manager
+
+                latest_results = screener_results_manager.get_latest_results()
+                if latest_results:
+                    results_files = screener_results_manager.list_results()
+                    if results_files:
+                        screener_file = results_files[0]["filepath"]
+                        request.parameters["screener_results_file"] = screener_file
+                        logger.info(f"Using screener results from {screener_file}")
+
+            project_path = self.lean_project_path / project_name
+            base_config_path = project_path / "config.json"
+            temp_config_path = project_path / f"config_{job_id}.json"
+
+            config_data = {}
+            if base_config_path.exists():
+                with open(base_config_path, 'r') as f:
+                    config_data = json.load(f)
+
+            if "parameters" not in config_data:
+                config_data["parameters"] = {}
+
+            config_data["parameters"]["startDate"] = request.start_date.strftime("%Y%m%d")
+            config_data["parameters"]["endDate"] = request.end_date.strftime("%Y%m%d")
+            config_data["parameters"]["cash"] = str(request.initial_cash)
+
+            if request.symbols and not request.use_screener_results:
+                config_data["parameters"]["symbols"] = ",".join(request.symbols)
+
+            config_data["parameters"]["lower_timeframe"] = request.lower_timeframe
+            config_data["parameters"]["pivot_bars"] = str(request.pivot_bars)
+
+            for key, value in request.parameters.items():
+                config_data["parameters"][key] = str(value)
+
+            with open(temp_config_path, 'w') as f:
+                json.dump(config_data, f, indent=4)
+
+            lock_path = base_config_path.with_suffix('.lock')
+            lock_acquired = False
+            start_lock_time = time.time()
+
+            while not lock_acquired and (time.time() - start_lock_time) < 30:
+                try:
+                    lock_file = open(lock_path, 'w')
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    lock_acquired = True
+                    shutil.copy2(temp_config_path, base_config_path)
+                except (IOError, OSError):
+                    await asyncio.sleep(0.1)
+                finally:
+                    if lock_acquired:
+                        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                        lock_file.close()
+                        try:
+                            lock_path.unlink()
+                        except Exception:
+                            pass
+
+            if not lock_acquired:
+                raise Exception("Failed to acquire config lock after 30 seconds")
+
+            lean_bin = "/home/ahmed/TheUltimate/backend/lean_venv/bin/lean"
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            unique_suffix = job_id[:8]
+            output_dir = self.lean_project_path / project_name / "optimizations" / f"{timestamp}_{unique_suffix}"
+
+            target_metric = optimize_config.get("target_metric", "SharpeRatio")
+            direction = optimize_config.get("target_direction", "maximize")
+
+            lean_cmd: List[str] = [
+                lean_bin,
+                "optimize",
+                project_name,
+                "--output",
+                str(output_dir),
+                "--target",
+                target_metric,
+                direction,
+            ]
+
+            max_concurrent = optimize_config.get("max_concurrent_backtests")
+            if max_concurrent:
+                lean_cmd.extend([
+                    "--max-concurrent-backtests",
+                    str(max_concurrent),
+                ])
+
+            for parameter in optimize_config.get("parameters", []):
+                name = parameter.get("name")
+                min_value = parameter.get("min")
+                max_value = parameter.get("max")
+                step = parameter.get("step")
+                if name is None or min_value is None or max_value is None or step is None:
+                    continue
+                lean_cmd.extend([
+                    "--parameter",
+                    str(name),
+                    str(min_value),
+                    str(max_value),
+                    str(step),
+                ])
+
+            process = await asyncio.create_subprocess_exec(
+                *lean_cmd,
+                cwd=str(self.lean_project_path),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+
+            stdout, stderr = await process.communicate()
+
+            try:
+                temp_config_path.unlink()
+            except Exception:
+                pass
+
+            if process.returncode != 0:
+                error_msg = stderr.decode() if stderr else stdout.decode()
+                logger.error(f"LEAN optimize failed: {error_msg}")
+                raise Exception(f"LEAN optimize failed: {error_msg}")
+
+            if not output_dir.exists():
+                logger.warning("Optimization output directory not found: %s", output_dir)
+
+            return {
+                "result_path": str(output_dir),
+            }
+
+        except Exception as exc:  # pragma: no cover - heavy IO path
+            logger.error("Failed to run optimization %s: %s", job_id, exc)
+            raise
+
     
     async def get_container_status(self, container_id: str) -> Dict[str, Any]:
         """Get the status of a running container."""

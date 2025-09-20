@@ -4,9 +4,14 @@ from .stock import StockData, StockBar
 from .backtest import (
     BacktestRequest, BacktestResult, BacktestStatus, 
     BacktestStatistics, BacktestRunInfo, BacktestProgress,
-    DatabaseBacktestResult, BacktestListResponse, StrategyInfo
+    DatabaseBacktestResult, BacktestListResponse, StrategyInfo,
+    GridBacktestSweepRequest, OptimizationParameterRange, OptimizationRequest,
+    JobTypeSummary, MetricSummary, TargetSummary, RunSummaryResponse,
 )
+from .ingestion import DataIngestionRequest
 from .simple_requests import (
+    RegistryFilterState,
+    RegistryScreenRequest,
     SimpleScreenRequest,
     SimplePriceRangeParams,
     GapParams,
@@ -35,8 +40,18 @@ __all__ = [
     'DatabaseBacktestResult',
     'BacktestListResponse',
     'StrategyInfo',
+    'GridBacktestSweepRequest',
+    'OptimizationParameterRange',
+    'OptimizationRequest',
+    'JobTypeSummary',
+    'MetricSummary',
+    'TargetSummary',
+    'RunSummaryResponse',
+    'DataIngestionRequest',
     
     # Simple request models
+    'RegistryFilterState',
+    'RegistryScreenRequest',
     'SimpleScreenRequest',
     'SimplePriceRangeParams',
     'GapParams',

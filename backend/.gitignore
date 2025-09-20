@@ -169,11 +169,6 @@ Thumbs.db
 migrations/
 *checkpoint.json
 
-# Test files and scripts
-test_*.py
-check_*.py
-simple_migrate.py
-
 # Setup scripts
 setup_*.sh
 install_*.sh

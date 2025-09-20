@@ -1,14 +1,11 @@
-import { SimpleStockScreener } from './components/SimpleStockScreener'
-import { ScreenerProvider } from './contexts/ScreenerContext'
-import { ErrorBoundary } from './components/ErrorBoundary'
+import { AppProviders } from './app/AppProviders'
+import { AppRoutes } from './app/AppRoutes'
 
 function App() {
   return (
-    <ErrorBoundary>
-      <ScreenerProvider>
-        <SimpleStockScreener />
-      </ScreenerProvider>
-    </ErrorBoundary>
+    <AppProviders>
+      <AppRoutes />
+    </AppProviders>
   )
 }
 

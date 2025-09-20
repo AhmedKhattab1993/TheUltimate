@@ -119,11 +119,73 @@ class ScreenerBacktestRequest(BaseModel):
         return v
 
 
+class GridBacktestSweepRequest(BaseModel):
+    """Parameter sweep definition for grid runs backed by the strategy registry."""
+
+    base_request: BacktestRequest = Field(..., description="Seed request shared across sweeps")
+    parameter_sweeps: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Parameter overrides merged onto the base request per job",
+    )
+
+    @field_validator("parameter_sweeps")
+    @classmethod
+    def validate_parameter_sweeps(
+        cls, value: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        if not value:
+            raise ValueError("parameter_sweeps must contain at least one entry")
+        return value
+
+
+class OptimizationParameterRange(BaseModel):
+    """Value range for an optimization sweep parameter."""
+
+    name: str = Field(..., description="Parameter name")
+    min: float = Field(..., description="Minimum value")
+    max: float = Field(..., description="Maximum value")
+    step: float = Field(..., gt=0, description="Increment between values")
+
+    @field_validator("max")
+    @classmethod
+    def validate_range(cls, value: float, info: FieldValidationInfo) -> float:
+        minimum = info.data.get("min")
+        if minimum is not None and value < minimum:
+            raise ValueError("max must be greater than or equal to min")
+        return value
+
+
+class OptimizationRequest(BaseModel):
+    """Request payload for Lean optimization jobs."""
+
+    base_request: BacktestRequest = Field(..., description="Seed request shared across optimization runs")
+    target_metric: str = Field(..., description="Optimization target metric (e.g., SharpeRatio)")
+    target_direction: Literal["maximize", "minimize"] = Field(
+        "maximize", description="Optimization extremum"
+    )
+    parameters: List[OptimizationParameterRange] = Field(
+        ..., description="Parameter ranges to explore"
+    )
+    max_concurrent_backtests: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Maximum number of parallel backtests to run during optimization",
+    )
+
+    @field_validator("parameters")
+    @classmethod
+    def ensure_parameters(cls, value: List[OptimizationParameterRange]) -> List[OptimizationParameterRange]:
+        if not value:
+            raise ValueError("parameters must contain at least one range")
+        return value
+
+
 class BacktestRunInfo(BaseModel):
     """Information about a running or queued backtest with enhanced metadata."""
     backtest_id: str = Field(..., description="Unique backtest identifier")
     status: BacktestStatus = Field(..., description="Current status")
     request: BacktestRequest = Field(..., description="Original request")
+    job_type: str = Field("backtest", description="Type of Lean job (backtest/grid/optimize/data)")
     created_at: datetime = Field(..., description="When the backtest was created")
     started_at: Optional[datetime] = Field(None, description="When execution started")
     completed_at: Optional[datetime] = Field(None, description="When execution completed")
@@ -131,6 +193,12 @@ class BacktestRunInfo(BaseModel):
     container_id: Optional[str] = Field(None, description="Docker container ID")
     result_path: Optional[str] = Field(None, description="Path to results if completed")
     cache_hit: Optional[bool] = Field(None, description="Whether result was retrieved from cache")
+    metrics: Optional[Dict[str, Decimal]] = Field(
+        None, description="Numeric metrics captured for this run"
+    )
+    targets: Optional[List[str]] = Field(
+        None, description="Symbol targets that were part of this run"
+    )
     execution_time_ms: Optional[int] = Field(None, description="Execution time in milliseconds")
 
 
@@ -274,9 +342,10 @@ class BacktestStatistics(BaseModel):
         },
     )
 
-    @model_serializer(mode='json')
-    def serialize_model(self) -> Dict[str, Any]:
-        return _convert_for_json(self.model_dump(mode='python'))
+    @model_serializer(mode='wrap')
+    def serialize_model(self, handler):
+        data = handler(self)
+        return _convert_for_json(data)
 
 
 class BacktestResult(BaseModel):
@@ -317,9 +386,10 @@ class BacktestResult(BaseModel):
         populate_by_name=True,
     )
 
-    @model_serializer(mode='json')
-    def serialize_model(self) -> Dict[str, Any]:
-        return _convert_for_json(self.model_dump(mode='python'))
+    @model_serializer(mode='wrap')
+    def serialize_model(self, handler):
+        data = handler(self)
+        return _convert_for_json(data)
 
 
 class DatabaseBacktestResult(BaseModel):
@@ -433,19 +503,57 @@ class DatabaseBacktestResult(BaseModel):
             raise ValueError('Monetary values cannot be negative')
         return v
 
-    @model_serializer(mode='json')
-    def serialize_model(self) -> Dict[str, Any]:
-        return _convert_for_json(self.model_dump(mode='python'))
+    @model_serializer(mode='wrap')
+    def serialize_model(self, handler):
+        data = handler(self)
+        return _convert_for_json(data)
 
 
 class BacktestListResponse(BaseModel):
-    """Response containing list of backtest results."""
-    results: List[BacktestResult] = Field(..., description="List of backtest results")
+    """Paginated response for recent backtest runs."""
+    runs: List[BacktestRunInfo] = Field(..., description="Recent backtest runs")
     total_count: int = Field(..., description="Total number of results")
     page: int = Field(1, description="Current page")
     page_size: int = Field(20, description="Results per page")
-    
+
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
     )
+
+
+class JobTypeSummary(BaseModel):
+    """Aggregated counts per job type."""
+
+    job_type: str
+    total_runs: int
+    completed_runs: int
+    failed_runs: int
+    last_run_id: Optional[str] = None
+    last_run_at: Optional[datetime] = None
+
+
+class MetricSummary(BaseModel):
+    """Best metric per job type."""
+
+    job_type: str
+    metric_key: str
+    metric_value: Decimal
+    run_id: str
+    strategy_name: str
+    created_at: datetime
+
+
+class TargetSummary(BaseModel):
+    """Aggregated target counts per job type."""
+
+    job_type: str
+    target_count: int
+
+
+class RunSummaryResponse(BaseModel):
+    """Summary combining counts, metrics, and targets."""
+
+    job_types: List[JobTypeSummary] = Field(default_factory=list)
+    metrics: List[MetricSummary] = Field(default_factory=list)
+    targets: List[TargetSummary] = Field(default_factory=list)
