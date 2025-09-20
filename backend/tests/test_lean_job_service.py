@@ -3,6 +3,7 @@ import sys
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 
@@ -51,8 +52,31 @@ class FakeIngestionRunner:
         return {"result_path": f"/tmp/{job_id}-data.log"}
 
 
+class FakeBacktestRepository:
+    def __init__(self):
+        self.records = []
+
+    async def upsert_result(self, run_id, *, symbol, parameters, metrics, status):  # noqa: D401 - test helper
+        self.records.append(
+            {
+                "run_id": run_id,
+                "symbol": symbol,
+                "parameters": parameters,
+                "metrics": metrics,
+                "status": status,
+            }
+        )
+
+
+@pytest.fixture(autouse=True)
+def patched_backtest_repository(monkeypatch):
+    repo = FakeBacktestRepository()
+    monkeypatch.setattr('app.services.lean_job_service.backtest_repository', repo)
+    return repo
+
+
 @pytest.mark.asyncio
-async def test_submit_backtest_completes_job():
+async def test_submit_backtest_completes_job(patched_backtest_repository):
     service = LeanJobService(
         runner=FakeRunner(),
         storage=InMemoryRunStorage(),
@@ -82,6 +106,11 @@ async def test_submit_backtest_completes_job():
     assert runs[0].status == BacktestStatus.COMPLETED
     assert runs[0].job_type == "backtest"
     assert job.result_path.endswith(run_info.backtest_id)
+    assert patched_backtest_repository.records
+    record = patched_backtest_repository.records[0]
+    assert record["run_id"] == UUID(run_info.backtest_id)
+    assert record["status"] == BacktestStatus.COMPLETED.value
+    assert record["metrics"]["statistics"]["total_return"] == 1.0
 
 
 @pytest.mark.asyncio

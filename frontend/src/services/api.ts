@@ -11,12 +11,11 @@ import type {
   DataIngestionRequestPayload,
   RegistryResponse,
   GridResultsListResponse,
-  GridResultDetail,
+  GridRunDetail,
   CombinedResultsResponse,
-  CombinedScreenerBacktestRow,
-  GridResultSummary,
-  GridScreeningResult,
-  GridBacktestResultRow,
+  CombinedRow,
+  GridRunSummary,
+  GridRunResult,
   RunSummaryResponse,
   JobTypeSummary,
   MetricSummary,
@@ -148,53 +147,37 @@ type RawOptimizationRequest = {
   max_concurrent_backtests?: number
 }
 
-type RawGridResultSummary = {
-  date: string
-  screening_symbols: number
-  backtest_count: number
-  backtest_completed: number
-  backtest_failed: number
-  screening_time_ms?: number | null
-  backtest_time_ms?: number | null
+type RawGridRunSummary = {
+  run_id: string
+  strategy_name: string
+  status: string
+  job_type: string
+  created_at: string
+  started_at?: string | null
+  completed_at?: string | null
+  duration_ms?: number | null
+  target_count: number
+  metrics: Record<string, number | string | null>
+  metadata: Record<string, unknown>
 }
 
 type RawGridResultsListResponse = {
-  results: RawGridResultSummary[]
+  results: RawGridRunSummary[]
   total_count: number
   page: number
   page_size: number
 }
 
-type RawGridScreeningResult = {
-  symbol: string
-  price: number
-  ma_20: number
-  ma_50: number
-  ma_200: number
-  rsi_14: number
-  gap_percent: number
-  prev_day_dollar_volume: number
-  relative_volume: number
-}
-
-type RawGridBacktestResultRow = {
-  symbol: string
-  pivot_bars: number
+type RawGridRunResult = {
+  symbol?: string | null
   status: string
-  total_return: number
-  sharpe_ratio: number
-  max_drawdown: number
-  win_rate: number
-  total_trades: number
-  backtest_id?: string | null
+  created_at: string
+  parameters: Record<string, unknown>
+  metrics: Record<string, unknown>
 }
 
-type RawGridResultDetail = {
-  date: string
-  screening_results: RawGridScreeningResult[]
-  backtest_results: RawGridBacktestResultRow[]
-  total_screening_symbols: number
-  total_backtests: number
+type RawGridRunDetail = RawGridRunSummary & {
+  results: RawGridRunResult[]
 }
 
 type RawCombinedResultsResponse = {
@@ -354,65 +337,53 @@ const mapRunSummary = (data: RawRunSummaryResponse): RunSummaryResponse => ({
   targets: data.targets.map(mapTargetSummary),
 })
 
-const mapGridSummary = (summary: RawGridResultSummary): GridResultSummary => ({
-  date: summary.date,
-  screeningSymbols: summary.screening_symbols,
-  backtestCount: summary.backtest_count,
-  backtestCompleted: summary.backtest_completed,
-  backtestFailed: summary.backtest_failed,
-  screeningTimeMs: summary.screening_time_ms ?? undefined,
-  backtestTimeMs: summary.backtest_time_ms ?? undefined,
+const mapGridSummary = (summary: RawGridRunSummary): GridRunSummary => ({
+  runId: summary.run_id,
+  strategyName: summary.strategy_name,
+  status: summary.status,
+  jobType: summary.job_type,
+  createdAt: summary.created_at,
+  startedAt: summary.started_at ?? undefined,
+  completedAt: summary.completed_at ?? undefined,
+  durationMs: summary.duration_ms ?? undefined,
+  targetCount: summary.target_count,
+  metrics: Object.entries(summary.metrics ?? {}).reduce<Record<string, number>>((acc, [key, value]) => {
+    const numeric = Number(value)
+    if (!Number.isNaN(numeric)) {
+      acc[key] = numeric
+    }
+    return acc
+  }, {}),
+  metadata: summary.metadata ?? {},
 })
 
-const mapGridScreeningResult = (result: RawGridScreeningResult): GridScreeningResult => ({
-  symbol: result.symbol,
-  price: result.price,
-  ma20: result.ma_20,
-  ma50: result.ma_50,
-  ma200: result.ma_200,
-  rsi14: result.rsi_14,
-  gapPercent: result.gap_percent,
-  prevDayDollarVolume: result.prev_day_dollar_volume,
-  relativeVolume: result.relative_volume,
-})
-
-const mapGridBacktestResult = (result: RawGridBacktestResultRow): GridBacktestResultRow => ({
-  symbol: result.symbol,
-  pivotBars: result.pivot_bars,
+const mapGridResult = (result: RawGridRunResult): GridRunResult => ({
+  symbol: result.symbol ?? undefined,
   status: result.status,
-  totalReturn: result.total_return,
-  sharpeRatio: result.sharpe_ratio,
-  maxDrawdown: result.max_drawdown,
-  winRate: result.win_rate,
-  totalTrades: result.total_trades,
-  backtestId: result.backtest_id ?? undefined,
+  createdAt: result.created_at,
+  parameters: result.parameters ?? {},
+  metrics: result.metrics ?? {},
 })
 
-const mapGridDetail = (detail: RawGridResultDetail): GridResultDetail => ({
-  date: detail.date,
-  screeningResults: detail.screening_results.map(mapGridScreeningResult),
-  backtestResults: detail.backtest_results.map(mapGridBacktestResult),
-  totalScreeningSymbols: detail.total_screening_symbols,
-  totalBacktests: detail.total_backtests,
+const mapGridDetail = (detail: RawGridRunDetail): GridRunDetail => ({
+  ...mapGridSummary(detail),
+  results: detail.results.map(mapGridResult),
 })
 
-const mapCombinedRow = (row: Record<string, any>): CombinedScreenerBacktestRow => ({
+const mapCombinedRow = (row: Record<string, any>): CombinedRow => ({
+  screenerResultId: row.screener_result_id,
+  screenerRunId: row.screener_run_id,
   symbol: row.symbol,
-  screeningDate: row.screening_date ?? undefined,
-  source: row.source ?? undefined,
-  companyName: row.company_name ?? undefined,
-  screenedAt: row.screened_at ?? undefined,
-  backtestId: row.backtest_id ?? undefined,
-  backtestCreatedAt: row.backtest_created_at ?? undefined,
+  screenerCreatedAt: row.screener_created_at,
+  screenerMetrics: row.screener_metrics ?? {},
+  filters: row.filters ?? {},
+  screenerMetadata: row.screener_metadata ?? {},
+  runId: row.run_id ?? undefined,
+  runCreatedAt: row.run_created_at ?? undefined,
+  runStatus: row.run_status ?? undefined,
   strategyName: row.strategy_name ?? undefined,
-  totalReturn: row.total_return ?? undefined,
-  sharpeRatio: row.sharpe_ratio ?? undefined,
-  maxDrawdown: row.max_drawdown ?? undefined,
-  winRate: row.win_rate ?? undefined,
-  totalTrades: row.total_trades ?? undefined,
-  pivotBars: row.pivot_bars ?? undefined,
-  lowerTimeframe: row.lower_timeframe ?? undefined,
-  initialCash: row.initial_cash ?? undefined,
+  backtestParameters: row.backtest_parameters ?? {},
+  backtestMetrics: row.backtest_metrics ?? {},
 })
 
 const mapCombinedResponse = (data: RawCombinedResultsResponse): CombinedResultsResponse => ({
@@ -605,7 +576,14 @@ export const dataApi = {
 }
 
 export const gridResultsApi = {
-  list: async (params: { page: number; pageSize: number; startDate?: string; endDate?: string; symbol?: string }) => {
+  list: async (params: {
+    page: number
+    pageSize: number
+    startDate?: string
+    endDate?: string
+    symbol?: string
+    strategyName?: string
+  }): Promise<GridResultsListResponse> => {
     const response = await api.get<RawGridResultsListResponse>('/api/v2/grid/results', {
       params: {
         page: params.page,
@@ -613,6 +591,7 @@ export const gridResultsApi = {
         start_date: params.startDate,
         end_date: params.endDate,
         symbol: params.symbol,
+        strategy_name: params.strategyName,
       },
     })
     return {
@@ -620,10 +599,10 @@ export const gridResultsApi = {
       totalCount: response.data.total_count,
       page: response.data.page,
       pageSize: response.data.page_size,
-    } as GridResultsListResponse
+    }
   },
-  detail: async (date: string) => {
-    const response = await api.get<RawGridResultDetail>(`/api/v2/grid/results/${date}/detail`)
+  detail: async (runId: string): Promise<GridRunDetail> => {
+    const response = await api.get<RawGridRunDetail>(`/api/v2/grid/results/${runId}`)
     return mapGridDetail(response.data)
   },
 }

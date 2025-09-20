@@ -5,7 +5,7 @@ This service provides methods to check cache, store results, and manage cache li
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from decimal import Decimal
 from typing import List, Dict, Any, Optional, Tuple
 from uuid import UUID, uuid4
@@ -17,6 +17,11 @@ from app.models.cache_models import (
     CachedBacktestResult
 )
 from app.services.database import db_pool
+from app.services.screener_repository import (
+    ScreenerRunDetail,
+    ScreenerResultEntry,
+    screener_repository,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,124 +56,55 @@ class CacheService:
     ) -> Optional[List[CachedScreenerResult]]:
         """
         Retrieve cached screener results if available.
-        
+
         Args:
             request: Screener request parameters
-            
+
         Returns:
             List of CachedScreenerResult if cache hit, None if cache miss
         """
-        # Calculate hash for the parameters
         hash_value = request.calculate_hash()
-        
+
         try:
-            # Look for cached results by matching all filter parameters
-            query = """
-                SELECT 
-                    id, symbol, company_name, screened_at, data_date,
-                    filter_min_price, filter_max_price,
-                    filter_price_vs_ma_enabled, filter_price_vs_ma_period, filter_price_vs_ma_condition,
-                    filter_rsi_enabled, filter_rsi_period, filter_rsi_threshold, filter_rsi_condition,
-                    filter_gap_enabled, filter_gap_threshold, filter_gap_direction,
-                    filter_prev_day_dollar_volume_enabled, filter_prev_day_dollar_volume,
-                    filter_relative_volume_enabled, filter_relative_volume_recent_days,
-                    filter_relative_volume_lookback_days, filter_relative_volume_min_ratio,
-                    session_id, created_at
-                FROM screener_results 
-                WHERE data_date >= $1 AND data_date <= $2
-                AND (filter_min_price = $3 OR (filter_min_price IS NULL AND $3 IS NULL))
-                AND (filter_max_price = $4 OR (filter_max_price IS NULL AND $4 IS NULL))
-                AND filter_price_vs_ma_enabled = $5
-                AND (filter_price_vs_ma_period = $6 OR (filter_price_vs_ma_period IS NULL AND $6 IS NULL))
-                AND (filter_price_vs_ma_condition = $7 OR (filter_price_vs_ma_condition IS NULL AND $7 IS NULL))
-                AND filter_rsi_enabled = $8
-                AND (filter_rsi_period = $9 OR (filter_rsi_period IS NULL AND $9 IS NULL))
-                AND (filter_rsi_threshold = $10 OR (filter_rsi_threshold IS NULL AND $10 IS NULL))
-                AND (filter_rsi_condition = $11 OR (filter_rsi_condition IS NULL AND $11 IS NULL))
-                AND filter_gap_enabled = $12
-                AND (filter_gap_threshold = $13 OR (filter_gap_threshold IS NULL AND $13 IS NULL))
-                AND (filter_gap_direction = $14 OR (filter_gap_direction IS NULL AND $14 IS NULL))
-                AND filter_prev_day_dollar_volume_enabled = $15
-                AND (filter_prev_day_dollar_volume = $16 OR (filter_prev_day_dollar_volume IS NULL AND $16 IS NULL))
-                AND filter_relative_volume_enabled = $17
-                AND (filter_relative_volume_recent_days = $18 OR (filter_relative_volume_recent_days IS NULL AND $18 IS NULL))
-                AND (filter_relative_volume_lookback_days = $19 OR (filter_relative_volume_lookback_days IS NULL AND $19 IS NULL))
-                AND (filter_relative_volume_min_ratio = $20 OR (filter_relative_volume_min_ratio IS NULL AND $20 IS NULL))
-                AND screened_at > NOW() - INTERVAL '{} hours'
-                ORDER BY screened_at DESC, symbol
-            """.format(self.screener_ttl_hours)
-            
-            rows = await db_pool.fetch(
-                query,
-                request.start_date,
-                request.end_date,
-                self._convert_decimal_to_float(request.min_price),
-                self._convert_decimal_to_float(request.max_price),
-                request.price_vs_ma_enabled,
-                request.price_vs_ma_period,
-                request.price_vs_ma_condition,
-                request.rsi_enabled,
-                request.rsi_period,
-                self._convert_decimal_to_float(request.rsi_threshold),
-                request.rsi_condition,
-                request.gap_enabled,
-                self._convert_decimal_to_float(request.gap_threshold),
-                request.gap_direction,
-                request.prev_day_dollar_volume_enabled,
-                self._convert_decimal_to_float(request.prev_day_dollar_volume),
-                request.relative_volume_enabled,
-                request.relative_volume_recent_days,
-                request.relative_volume_lookback_days,
-                self._convert_decimal_to_float(request.relative_volume_min_ratio)
+            row = await db_pool.fetchrow(
+                """
+                SELECT id, created_at
+                FROM screener_runs
+                WHERE metadata->>'cache_hash' = $1
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                hash_value,
             )
-            
-            if rows:
-                # Update cache hit statistics
-                await self._update_cache_stats('screener', hit=True)
-                logger.info(f"Cache hit for screener with hash {hash_value}")
-                
-                # Convert rows to CachedScreenerResult objects
-                results = []
-                for row in rows:
-                    result = CachedScreenerResult(
-                        id=row['id'],
-                        symbol=row['symbol'],
-                        company_name=row['company_name'],
-                        screened_at=row['screened_at'],
-                        data_date=row['data_date'],
-                        filter_min_price=self._convert_float_to_decimal(row['filter_min_price']),
-                        filter_max_price=self._convert_float_to_decimal(row['filter_max_price']),
-                        filter_price_vs_ma_enabled=row['filter_price_vs_ma_enabled'],
-                        filter_price_vs_ma_period=row['filter_price_vs_ma_period'],
-                        filter_price_vs_ma_condition=row['filter_price_vs_ma_condition'],
-                        filter_rsi_enabled=row['filter_rsi_enabled'],
-                        filter_rsi_period=row['filter_rsi_period'],
-                        filter_rsi_threshold=self._convert_float_to_decimal(row['filter_rsi_threshold']),
-                        filter_rsi_condition=row['filter_rsi_condition'],
-                        filter_gap_enabled=row['filter_gap_enabled'],
-                        filter_gap_threshold=self._convert_float_to_decimal(row['filter_gap_threshold']),
-                        filter_gap_direction=row['filter_gap_direction'],
-                        filter_prev_day_dollar_volume_enabled=row['filter_prev_day_dollar_volume_enabled'],
-                        filter_prev_day_dollar_volume=self._convert_float_to_decimal(row['filter_prev_day_dollar_volume']),
-                        filter_relative_volume_enabled=row['filter_relative_volume_enabled'],
-                        filter_relative_volume_recent_days=row['filter_relative_volume_recent_days'],
-                        filter_relative_volume_lookback_days=row['filter_relative_volume_lookback_days'],
-                        filter_relative_volume_min_ratio=self._convert_float_to_decimal(row['filter_relative_volume_min_ratio']),
-                        session_id=row['session_id'],
-                        created_at=row['created_at']
-                    )
-                    results.append(result)
-                
-                return results
-            else:
-                # Update cache miss statistics
-                await self._update_cache_stats('screener', hit=False)
-                logger.info(f"Cache miss for screener with hash {hash_value}")
-                return None
-                
-        except Exception as e:
-            logger.error(f"Error retrieving cached screener results: {e}")
+        except Exception as exc:
+            logger.error("Error looking up screener cache entry: %s", exc)
             return None
+
+        if not row:
+            await self._update_cache_stats('screener', hit=False)
+            logger.info(f"Cache miss for screener with hash {hash_value}")
+            return None
+
+        created_at: datetime = row['created_at']
+        if created_at < datetime.utcnow() - timedelta(hours=self.screener_ttl_hours):
+            await self._update_cache_stats('screener', hit=False)
+            logger.info(f"Cache entry expired for screener hash {hash_value}")
+            return None
+
+        run_detail = await screener_repository.get_run(row['id'])
+        if not run_detail:
+            await self._update_cache_stats('screener', hit=False)
+            logger.info(f"Cache lookup missing run detail for hash {hash_value}")
+            return None
+
+        await self._update_cache_stats('screener', hit=True)
+        logger.info(f"Cache hit for screener with hash {hash_value}")
+
+        results: List[CachedScreenerResult] = [
+            self._build_cached_screener_result(run_detail, entry)
+            for entry in run_detail.results
+        ]
+        return results or None
     
     async def save_screener_results(
         self, 
@@ -190,73 +126,159 @@ class CacheService:
         if not results:
             logger.warning("No results to save to cache")
             return False
-            
-        # Generate session ID if not provided
-        if hasattr(request, 'session_id') and request.session_id is not None:
-            session_id = request.session_id
-        else:
-            session_id = uuid4()
-        
+
+        session_id = request.session_id or uuid4()
+        cache_hash = request.calculate_hash()
+        filters_payload = self._filters_from_request(request)
+        metadata = {
+            "cache_hash": cache_hash,
+            "source": source,
+            "start_date": request.start_date.isoformat(),
+            "end_date": request.end_date.isoformat(),
+            "screener_ttl_hours": self.screener_ttl_hours,
+        }
+
         try:
-            # Insert all results in a batch
-            query = """
-                INSERT INTO screener_results (
-                    id, symbol, company_name, screened_at, data_date,
-                    filter_min_price, filter_max_price,
-                    filter_price_vs_ma_enabled, filter_price_vs_ma_period, filter_price_vs_ma_condition,
-                    filter_rsi_enabled, filter_rsi_period, filter_rsi_threshold, filter_rsi_condition,
-                    filter_gap_enabled, filter_gap_threshold, filter_gap_direction,
-                    filter_prev_day_dollar_volume_enabled, filter_prev_day_dollar_volume,
-                    filter_relative_volume_enabled, filter_relative_volume_recent_days,
-                    filter_relative_volume_lookback_days, filter_relative_volume_min_ratio,
-                    session_id, created_at, source
-                ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-                    $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26
-                )
-            """
-            
-            # Prepare batch data
-            batch_data = []
-            for result in results:
-                batch_data.append((
-                    result.id,
-                    result.symbol,
-                    result.company_name,
-                    result.screened_at,
-                    result.data_date,
-                    self._convert_decimal_to_float(request.min_price),
-                    self._convert_decimal_to_float(request.max_price),
-                    request.price_vs_ma_enabled,
-                    request.price_vs_ma_period,
-                    request.price_vs_ma_condition,
-                    request.rsi_enabled,
-                    request.rsi_period,
-                    self._convert_decimal_to_float(request.rsi_threshold),
-                    request.rsi_condition,
-                    request.gap_enabled,
-                    self._convert_decimal_to_float(request.gap_threshold),
-                    request.gap_direction,
-                    request.prev_day_dollar_volume_enabled,
-                    self._convert_decimal_to_float(request.prev_day_dollar_volume),
-                    request.relative_volume_enabled,
-                    request.relative_volume_recent_days,
-                    request.relative_volume_lookback_days,
-                    self._convert_decimal_to_float(request.relative_volume_min_ratio),
-                    session_id,
-                    result.created_at,
-                    source
-                ))
-            
-            # Execute batch insert
-            await db_pool.executemany(query, batch_data)
-            
-            logger.info(f"Saved {len(results)} screener results to cache with session_id {session_id}")
+            summary = await screener_repository.create_run(
+                filters=filters_payload,
+                metadata=metadata,
+                symbol_count=len(results),
+                session_id=session_id,
+            )
+
+            await screener_repository.save_results(
+                summary.id,
+                [
+                    {
+                        "id": result.id,
+                        "symbol": result.symbol,
+                        "metrics": self._metrics_from_result(result, source),
+                        "rank": None,
+                    }
+                    for result in results
+                ],
+            )
+
+            logger.info(
+                "Saved %d screener results to cache run %s (session %s)",
+                len(results),
+                summary.id,
+                session_id,
+            )
             return True
-            
-        except Exception as e:
-            logger.error(f"Error saving screener results to cache: {e}")
+        except Exception as exc:
+            logger.error("Error saving screener results to cache: %s", exc)
             return False
+
+    # ------------------------------------------------------------------
+    # Screener helper utilities
+    # ------------------------------------------------------------------
+    def _filters_from_request(self, request: CachedScreenerRequest) -> Dict[str, Any]:
+        return {
+            "date_range": {
+                "start": request.start_date.isoformat(),
+                "end": request.end_date.isoformat(),
+            },
+            "min_price": self._convert_decimal_to_float(request.min_price),
+            "max_price": self._convert_decimal_to_float(request.max_price),
+            "price_vs_ma": {
+                "enabled": request.price_vs_ma_enabled,
+                "period": request.price_vs_ma_period,
+                "condition": request.price_vs_ma_condition,
+            },
+            "rsi": {
+                "enabled": request.rsi_enabled,
+                "period": request.rsi_period,
+                "threshold": self._convert_decimal_to_float(request.rsi_threshold),
+                "condition": request.rsi_condition,
+            },
+            "gap": {
+                "enabled": request.gap_enabled,
+                "threshold": self._convert_decimal_to_float(request.gap_threshold),
+                "direction": request.gap_direction,
+            },
+            "prev_day_dollar_volume": {
+                "enabled": request.prev_day_dollar_volume_enabled,
+                "value": self._convert_decimal_to_float(request.prev_day_dollar_volume),
+            },
+            "relative_volume": {
+                "enabled": request.relative_volume_enabled,
+                "recent_days": request.relative_volume_recent_days,
+                "lookback_days": request.relative_volume_lookback_days,
+                "min_ratio": self._convert_decimal_to_float(request.relative_volume_min_ratio),
+            },
+        }
+
+    @staticmethod
+    def _metrics_from_result(result: CachedScreenerResult, source: str) -> Dict[str, Any]:
+        return {
+            "company_name": result.company_name,
+            "screened_at": result.screened_at.isoformat(),
+            "data_date": result.data_date.isoformat(),
+            "source": source,
+        }
+
+    def _build_cached_screener_result(
+        self,
+        run: ScreenerRunDetail,
+        entry: ScreenerResultEntry,
+    ) -> CachedScreenerResult:
+        filters = run.filters or {}
+        price_vs_ma = filters.get("price_vs_ma", {})
+        rsi = filters.get("rsi", {})
+        gap = filters.get("gap", {})
+        prev_day = filters.get("prev_day_dollar_volume", {})
+        rel_vol = filters.get("relative_volume", {})
+        metrics = entry.metrics or {}
+
+        screened_at = self._parse_datetime(metrics.get("screened_at")) or run.created_at
+        data_date = self._parse_date(metrics.get("data_date")) or screened_at.date()
+
+        return CachedScreenerResult(
+            id=entry.id,
+            symbol=entry.symbol,
+            company_name=metrics.get("company_name"),
+            screened_at=screened_at,
+            data_date=data_date,
+            filter_min_price=self._convert_float_to_decimal(filters.get("min_price")),
+            filter_max_price=self._convert_float_to_decimal(filters.get("max_price")),
+            filter_price_vs_ma_enabled=bool(price_vs_ma.get("enabled")),
+            filter_price_vs_ma_period=price_vs_ma.get("period"),
+            filter_price_vs_ma_condition=price_vs_ma.get("condition"),
+            filter_rsi_enabled=bool(rsi.get("enabled")),
+            filter_rsi_period=rsi.get("period"),
+            filter_rsi_threshold=self._convert_float_to_decimal(rsi.get("threshold")),
+            filter_rsi_condition=rsi.get("condition"),
+            filter_gap_enabled=bool(gap.get("enabled")),
+            filter_gap_threshold=self._convert_float_to_decimal(gap.get("threshold")),
+            filter_gap_direction=gap.get("direction"),
+            filter_prev_day_dollar_volume_enabled=bool(prev_day.get("enabled")),
+            filter_prev_day_dollar_volume=self._convert_float_to_decimal(prev_day.get("value")),
+            filter_relative_volume_enabled=bool(rel_vol.get("enabled")),
+            filter_relative_volume_recent_days=rel_vol.get("recent_days"),
+            filter_relative_volume_lookback_days=rel_vol.get("lookback_days"),
+            filter_relative_volume_min_ratio=self._convert_float_to_decimal(rel_vol.get("min_ratio")),
+            session_id=run.session_id,
+            created_at=entry.created_at,
+        )
+
+    @staticmethod
+    def _parse_datetime(value: Optional[str]) -> Optional[datetime]:
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _parse_date(value: Optional[str]) -> Optional[date]:
+        if not value:
+            return None
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            return None
     
     async def get_backtest_results(
         self,
@@ -537,44 +559,33 @@ class CacheService:
             logger.error(f"Error updating cache statistics: {e}")
     
     async def clean_expired_cache(self) -> Tuple[int, int]:
-        """
-        Clean expired cache entries.
-        
-        Returns:
-            Tuple of (screener_deleted, backtest_deleted) counts
-        """
+        """Clean expired cache entries and return deleted screener/backtest counts."""
+
         try:
-            # Delete old screener results based on TTL
-            screener_query = """
-                DELETE FROM screener_results 
-                WHERE screened_at < NOW() - INTERVAL '{} hours'
+            screener_deleted = await db_pool.fetch(
+                """
+                DELETE FROM screener_runs
+                WHERE created_at <= NOW() - make_interval(hours => $1::int)
                 RETURNING id
-            """.format(self.screener_ttl_hours)
-            screener_result = await db_pool.fetch(screener_query)
-            screener_count = len(screener_result)
-            
-            # Delete old backtest results based on TTL
-            backtest_query = """
-                DELETE FROM market_structure_results 
-                WHERE created_at < NOW() - INTERVAL '{} days'
-                RETURNING id
-            """.format(self.backtest_ttl_days)
-            backtest_result = await db_pool.fetch(backtest_query)
-            backtest_count = len(backtest_result)
-            
-            # Update cleanup timestamp
-            update_query = """
-                UPDATE cache_metadata 
+                """,
+                int(self.screener_ttl_hours),
+            )
+
+            await db_pool.execute(
+                """
+                UPDATE cache_metadata
                 SET last_cleanup = NOW(), updated_at = NOW()
-                WHERE cache_type IN ('screener', 'market_structure')
-            """
-            await db_pool.execute(update_query)
-            
-            logger.info(f"Cleaned {screener_count} screener and {backtest_count} backtest cache entries")
-            return screener_count, backtest_count
-            
-        except Exception as e:
-            logger.error(f"Error cleaning expired cache: {e}")
+                WHERE cache_type = 'screener'
+                """
+            )
+
+            logger.info(
+                "Cleaned %d screener cache entries; backtest cleanup pending new storage",
+                len(screener_deleted),
+            )
+            return len(screener_deleted), 0
+        except Exception as exc:
+            logger.error(f"Error cleaning expired cache: {exc}")
             return 0, 0
     
     async def get_cache_stats(self) -> Dict[str, Any]:
@@ -595,19 +606,12 @@ class CacheService:
             
             # Count active entries
             screener_count_query = """
-                SELECT COUNT(*) as count 
-                FROM screener_results 
-                WHERE screened_at > NOW() - INTERVAL '{} hours'
-            """.format(self.screener_ttl_hours)
-            screener_count = await db_pool.fetchval(screener_count_query)
-            
-            backtest_count_query = """
-                SELECT COUNT(*) as count 
-                FROM market_structure_results 
-                WHERE created_at > NOW() - INTERVAL '{} days'
-            """.format(self.backtest_ttl_days)
-            backtest_count = await db_pool.fetchval(backtest_count_query)
-            
+                SELECT COUNT(*) AS count
+                FROM screener_runs
+                WHERE created_at > NOW() - make_interval(hours => $1::int)
+            """
+            screener_count = await db_pool.fetchval(screener_count_query, int(self.screener_ttl_hours))
+
             # Process metadata
             stats = {
                 'screener': {
@@ -618,7 +622,7 @@ class CacheService:
                     'last_cleanup': None
                 },
                 'backtest': {
-                    'active_entries': backtest_count or 0,
+                    'active_entries': 0,
                     'total_hits': 0,
                     'total_misses': 0,
                     'hit_rate': 0,

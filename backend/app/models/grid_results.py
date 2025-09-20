@@ -3,59 +3,45 @@ Pydantic models for grid analysis results API.
 """
 
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
-from datetime import date, datetime
+from typing import Dict, List, Optional, Any
+from datetime import datetime
 
 
-class GridScreeningResult(BaseModel):
-    """Individual screening result for a symbol."""
-    symbol: str
-    price: float
-    ma_20: float
-    ma_50: float
-    ma_200: float
-    rsi_14: float
-    gap_percent: float
-    prev_day_dollar_volume: float
-    relative_volume: float
+class GridRunSummary(BaseModel):
+    """Summary of a grid job execution."""
+
+    run_id: str = Field(..., description="Unique identifier of the grid job")
+    strategy_name: str = Field(..., description="Lean strategy that executed")
+    status: str = Field(..., description="Final status of the job")
+    job_type: str = Field(..., description="Job type emitted by the scheduler")
+    created_at: datetime = Field(..., description="When the job was queued")
+    started_at: Optional[datetime] = Field(None, description="When execution started")
+    completed_at: Optional[datetime] = Field(None, description="When execution completed")
+    duration_ms: Optional[float] = Field(None, description="Execution duration in milliseconds")
+    target_count: int = Field(..., description="Number of symbol targets processed")
+    metrics: Dict[str, float] = Field(default_factory=dict, description="Numeric metrics tracked for the run")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata captured during the run")
 
 
-class GridMarketStructureResult(BaseModel):
-    """Individual market structure backtest result."""
-    symbol: str
-    pivot_bars: int
-    status: str
-    total_return: float = Field(description="Total net profit from backtest")
-    sharpe_ratio: float
-    max_drawdown: float
-    win_rate: float
-    total_trades: int
-    backtest_id: Optional[str] = None
+class GridRunResult(BaseModel):
+    """Per-symbol (or aggregate) result for a grid run."""
+
+    symbol: Optional[str] = Field(None, description="Target symbol for the run")
+    status: str = Field(..., description="Result status for the target")
+    created_at: datetime = Field(..., description="When the result was recorded")
+    parameters: Dict[str, Any] = Field(default_factory=dict, description="Parameters used for the backtest")
+    metrics: Dict[str, Any] = Field(default_factory=dict, description="Metrics returned by Lean")
 
 
-class GridResultSummary(BaseModel):
-    """Summary of grid results for a date."""
-    date: date
-    screening_symbols: int = Field(description="Number of symbols screened")
-    backtest_count: int = Field(description="Total number of backtests")
-    backtest_completed: int = Field(description="Number of completed backtests")
-    backtest_failed: int = Field(description="Number of failed backtests")
-    screening_time_ms: Optional[float] = Field(None, description="Time to complete screening in ms")
-    backtest_time_ms: Optional[float] = Field(None, description="Time to complete all backtests in ms")
+class GridRunDetail(GridRunSummary):
+    """Detailed view of a grid run including per-target metrics."""
 
-
-class GridResultDetail(BaseModel):
-    """Detailed grid results for a specific date."""
-    date: date
-    screening_results: List[GridScreeningResult]
-    backtest_results: List[GridMarketStructureResult]
-    total_screening_symbols: int
-    total_backtests: int
+    results: List[GridRunResult] = Field(default_factory=list, description="Per-target results")
 
 
 class GridResultsListResponse(BaseModel):
     """Paginated list of grid result summaries."""
-    results: List[GridResultSummary]
+    results: List[GridRunSummary]
     total_count: int
     page: int
     page_size: int

@@ -190,76 +190,57 @@ export interface RunSummaryResponse {
   targets: TargetSummary[]
 }
 
-export interface GridResultSummary {
-  date: string
-  screeningSymbols: number
-  backtestCount: number
-  backtestCompleted: number
-  backtestFailed: number
-  screeningTimeMs?: number | null
-  backtestTimeMs?: number | null
+export interface GridRunSummary {
+  runId: string
+  strategyName: string
+  status: string
+  jobType: string
+  createdAt: string
+  startedAt?: string | null
+  completedAt?: string | null
+  durationMs?: number | null
+  targetCount: number
+  metrics: Record<string, number>
+  metadata: Record<string, unknown>
 }
 
 export interface GridResultsListResponse {
-  results: GridResultSummary[]
+  results: GridRunSummary[]
   totalCount: number
   page: number
   pageSize: number
 }
 
-export interface GridScreeningResult {
-  symbol: string
-  price: number
-  ma20: number
-  ma50: number
-  ma200: number
-  rsi14: number
-  gapPercent: number
-  prevDayDollarVolume: number
-  relativeVolume: number
-}
-
-export interface GridBacktestResultRow {
-  symbol: string
-  pivotBars: number
+export interface GridRunResult {
+  symbol?: string | null
   status: string
-  totalReturn: number
-  sharpeRatio: number
-  maxDrawdown: number
-  winRate: number
-  totalTrades: number
-  backtestId?: string | null
+  createdAt: string
+  parameters: Record<string, unknown>
+  metrics: Record<string, unknown>
 }
 
-export interface GridResultDetail {
-  date: string
-  screeningResults: GridScreeningResult[]
-  backtestResults: GridBacktestResultRow[]
-  totalScreeningSymbols: number
-  totalBacktests: number
+export interface GridRunDetail extends GridRunSummary {
+  results: GridRunResult[]
 }
 
-export interface CombinedScreenerBacktestRow {
+export interface CombinedRow {
+  screenerResultId: string
+  screenerRunId: string
   symbol: string
-  screeningDate?: string | null
-  source?: string | null
-  companyName?: string | null
-  screenedAt?: string | null
-  backtestId?: string | null
-  backtestCreatedAt?: string | null
+  screenerCreatedAt: string
+  screenerMetrics: Record<string, unknown>
+  filters: Record<string, unknown>
+  screenerMetadata: Record<string, unknown>
+  runId?: string | null
+  runCreatedAt?: string | null
+  runStatus?: string | null
   strategyName?: string | null
-  totalReturn?: number | null
-  sharpeRatio?: number | null
-  maxDrawdown?: number | null
-  winRate?: number | null
-  totalTrades?: number | null
-  pivotBars?: number | null
-  lowerTimeframe?: string | null
-  initialCash?: number | null
+  backtestParameters: Record<string, unknown>
+  backtestMetrics: Record<string, unknown>
 }
 
 export interface CombinedResultsResponse {
-  results: CombinedScreenerBacktestRow[]
+  results: CombinedRow[]
   totalCount: number
   limit: number
   offset: number

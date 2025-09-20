@@ -24,6 +24,7 @@ from ..models.ingestion import DataIngestionRequest
 from ..models.simple_requests import SimpleFilters
 from ..registry import filter_registry, strategy_registry
 from .lean_runner import LeanRunner
+from .backtest_repository import backtest_repository
 from .run_storage import DatabaseRunStorage
 from .data_ingestion_runner import DataIngestionRunner
 
@@ -379,13 +380,65 @@ class LeanJobService:
         if not self._storage:
             return
         try:
+            run_info = job.to_run_info()
+            metrics_payload = job.metadata.get("result")
+
             await self._storage.record_update(
                 job.job_id,
-                job.to_run_info(),
-                job.metadata.get("result"),
+                run_info,
+                metrics_payload,
             )
+
+            if metrics_payload:
+                await self._persist_backtest_result(job, run_info, metrics_payload)
         except Exception:  # pragma: no cover - defensive
             logger.debug("Failed to record job update for %s", job.job_id, exc_info=True)
+
+    async def _persist_backtest_result(
+        self,
+        job: LeanJob,
+        run_info: BacktestRunInfo,
+        metrics_payload: Dict[str, Any],
+    ) -> None:
+        """Persist aggregated Lean results into the backtest repository."""
+
+        try:
+            run_uuid = UUID(run_info.backtest_id)
+        except ValueError:
+            logger.debug("Skipping backtest persistence for non-UUID id %s", run_info.backtest_id)
+            return
+
+        parameters_payload: Dict[str, Any] = {
+            "strategy": job.strategy_name,
+            "job_type": job.job_type.value,
+            "start_date": job.request.start_date.isoformat(),
+            "end_date": job.request.end_date.isoformat(),
+            "resolution": job.request.resolution,
+            "pivot_bars": job.request.pivot_bars,
+            "lower_timeframe": job.request.lower_timeframe,
+            "use_screener_results": job.request.use_screener_results,
+            "request_parameters": job.request.parameters or {},
+        }
+
+        if job.request.symbols:
+            parameters_payload["symbols"] = job.request.symbols
+        if job.job_config:
+            parameters_payload["job_config"] = job.job_config
+
+        symbol = None
+        if job.request.symbols and len(job.request.symbols) == 1:
+            symbol = job.request.symbols[0]
+
+        metrics_payload = dict(metrics_payload)
+        metrics_payload.setdefault("result_path", job.result_path)
+
+        await backtest_repository.upsert_result(
+            run_uuid,
+            symbol=symbol,
+            parameters=parameters_payload,
+            metrics=metrics_payload,
+            status=job.status.value,
+        )
 
 
 lean_job_service = LeanJobService()

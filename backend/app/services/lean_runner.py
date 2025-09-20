@@ -19,6 +19,7 @@ import fcntl
 import time
 
 from ..models.backtest import BacktestRequest, BacktestStatus
+from .screener_repository import screener_repository
 
 
 logger = logging.getLogger(__name__)
@@ -32,10 +33,12 @@ class LeanRunner:
         self.docker_client = docker.from_env()
         self.lean_image = "quantconnect/lean:latest"
         
-    async def run_backtest(self, 
-                          backtest_id: str,
-                          request: BacktestRequest,
-                          project_name: str) -> Dict[str, Any]:
+    async def run_backtest(
+        self,
+        backtest_id: str,
+        request: BacktestRequest,
+        project_name: str,
+    ) -> Dict[str, Any]:
         """
         Run a LEAN backtest using LEAN CLI.
         
@@ -50,21 +53,33 @@ class LeanRunner:
         try:
             # Check if we should use flexible strategy for screener results
             if request.use_screener_results:
-                # Use the flexible strategy that can read screener results
                 strategy_path = self.lean_project_path / "flexible_main.py"
                 if not strategy_path.exists():
                     raise Exception("Flexible strategy not found for screener results")
-                
-                # Get the latest screener results file
-                from ..services.screener_results import screener_results_manager
-                latest_results = screener_results_manager.get_latest_results()
-                if latest_results:
-                    # Save the filepath in parameters
-                    results_files = screener_results_manager.list_results()
-                    if results_files:
-                        screener_file = results_files[0]["filepath"]
-                        request.parameters["screener_results_file"] = screener_file
-                        logger.info(f"Using screener results from {screener_file}")
+
+                _, runs = await screener_repository.list_runs(limit=1)
+                if not runs:
+                    raise Exception("No screener runs available for Lean backtest")
+
+                run_detail = await screener_repository.get_run(runs[0].id)
+                if not run_detail or not run_detail.results:
+                    raise Exception("Latest screener run does not contain any symbols")
+
+                export_payload = {
+                    "timestamp": run_detail.created_at.isoformat(),
+                    "symbols": [result.symbol for result in run_detail.results],
+                    "filters": run_detail.filters,
+                    "metadata": run_detail.metadata,
+                    "count": len(run_detail.results),
+                }
+
+                results_dir = self.lean_project_path.parent / "screener_results"
+                results_dir.mkdir(parents=True, exist_ok=True)
+                screener_file = results_dir / f"screener_results_{run_detail.id}.json"
+                screener_file.write_text(json.dumps(export_payload, indent=2))
+
+                request.parameters["screener_results_file"] = str(screener_file)
+                logger.info(f"Using screener results from {screener_file}")
             
             # Record timestamp before running LEAN for deterministic folder detection
             start_time = datetime.now()
@@ -215,10 +230,17 @@ class LeanRunner:
             
             logger.info(f"Completed backtest {backtest_id} at {result_path}")
             
-            return {
+            result_payload: Dict[str, Any] = {
                 "container_id": container_id,
-                "result_path": str(result_path)
+                "result_path": str(result_path),
             }
+
+            backtest_payload = self._load_backtest_output(result_path)
+            if backtest_payload:
+                backtest_payload.setdefault("result_path", str(result_path))
+                result_payload["result"] = backtest_payload
+
+            return result_payload
             
         except Exception as e:
             logger.error(f"Failed to start backtest {backtest_id}: {e}")
@@ -239,16 +261,29 @@ class LeanRunner:
                 strategy_path = self.lean_project_path / "flexible_main.py"
                 if not strategy_path.exists():
                     raise Exception("Flexible strategy not found for screener results")
+                _, runs = await screener_repository.list_runs(limit=1)
+                if not runs:
+                    raise Exception("No screener runs available for Lean optimization")
 
-                from ..services.screener_results import screener_results_manager
+                run_detail = await screener_repository.get_run(runs[0].id)
+                if not run_detail or not run_detail.results:
+                    raise Exception("Latest screener run does not contain any symbols")
 
-                latest_results = screener_results_manager.get_latest_results()
-                if latest_results:
-                    results_files = screener_results_manager.list_results()
-                    if results_files:
-                        screener_file = results_files[0]["filepath"]
-                        request.parameters["screener_results_file"] = screener_file
-                        logger.info(f"Using screener results from {screener_file}")
+                export_payload = {
+                    "timestamp": run_detail.created_at.isoformat(),
+                    "symbols": [result.symbol for result in run_detail.results],
+                    "filters": run_detail.filters,
+                    "metadata": run_detail.metadata,
+                    "count": len(run_detail.results),
+                }
+
+                results_dir = self.lean_project_path.parent / "screener_results"
+                results_dir.mkdir(parents=True, exist_ok=True)
+                screener_file = results_dir / f"screener_results_{run_detail.id}.json"
+                screener_file.write_text(json.dumps(export_payload, indent=2))
+
+                request.parameters["screener_results_file"] = str(screener_file)
+                logger.info(f"Using screener results from {screener_file}")
 
             project_path = self.lean_project_path / project_name
             base_config_path = project_path / "config.json"
@@ -365,9 +400,13 @@ class LeanRunner:
             if not output_dir.exists():
                 logger.warning("Optimization output directory not found: %s", output_dir)
 
-            return {
-                "result_path": str(output_dir),
-            }
+            result_payload: Dict[str, Any] = {"result_path": str(output_dir)}
+            backtest_payload = self._load_backtest_output(output_dir)
+            if backtest_payload:
+                backtest_payload.setdefault("result_path", str(output_dir))
+                result_payload["result"] = backtest_payload
+
+            return result_payload
 
         except Exception as exc:  # pragma: no cover - heavy IO path
             logger.error("Failed to run optimization %s: %s", job_id, exc)
@@ -472,20 +511,20 @@ class LeanRunner:
     async def cleanup_backtest_logs(self, result_paths: List[str], keep_results: bool = True):
         """
         Clean up LEAN backtest log directories.
-        
+
         Args:
             result_paths: List of backtest result directory paths
             keep_results: If True, keep result JSON files and only delete logs
         """
         cleaned_count = 0
-        
+
         for result_path in result_paths:
             try:
                 path = Path(result_path)
                 if not path.exists():
                     logger.warning(f"Result path does not exist: {result_path}")
                     continue
-                
+
                 if keep_results:
                     # Only delete log files, keep JSON results
                     log_files = list(path.glob("*.txt")) + list(path.glob("*.log"))
@@ -498,9 +537,70 @@ class LeanRunner:
                     shutil.rmtree(path)
                     logger.info(f"Deleted backtest directory: {path}")
                     cleaned_count += 1
-                    
+
             except Exception as e:
                 logger.error(f"Failed to clean up {result_path}: {e}")
-        
+
         logger.info(f"Cleaned up {cleaned_count} backtest directories")
         return cleaned_count
+
+    # ------------------------------------------------------------------
+    # Result parsing helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _load_backtest_output(result_path: Path) -> Optional[Dict[str, Any]]:
+        """Load Lean backtest output (statistics/runtime stats) from result directory."""
+
+        payload: Optional[Dict[str, Any]] = None
+        for candidate in ("backtest.json", "result.json", "backtest-result.json"):
+            file_path = result_path / candidate
+            if file_path.exists():
+                try:
+                    payload = json.loads(file_path.read_text())
+                    break
+                except Exception:  # pragma: no cover - IO heavy path
+                    logger.warning("Failed to read %s", file_path, exc_info=True)
+        if not payload:
+            return None
+
+        stats_raw = payload.get("Statistics") or payload.get("statistics") or {}
+        runtime_raw = payload.get("RuntimeStatistics") or payload.get("runtime_statistics") or {}
+
+        statistics = LeanRunner._normalise_numeric_map(stats_raw)
+        runtime_statistics = LeanRunner._normalise_numeric_map(runtime_raw)
+
+        return {
+            "statistics": statistics,
+            "raw_statistics": stats_raw,
+            "runtime_statistics": runtime_statistics,
+            "raw_runtime_statistics": runtime_raw,
+            "start_time": payload.get("StartTime") or payload.get("StartDate"),
+            "end_time": payload.get("EndTime") or payload.get("EndDate"),
+            "interpreted_parameters": payload.get("Parameters"),
+            "source_file": candidate,
+        }
+
+    @staticmethod
+    def _normalise_numeric_map(data: Dict[str, Any]) -> Dict[str, float]:
+        normalised: Dict[str, float] = {}
+        for key, value in (data or {}).items():
+            numeric = LeanRunner._to_float(value)
+            if numeric is not None:
+                normalised[key] = numeric
+        return normalised
+
+    @staticmethod
+    def _to_float(value: Any) -> Optional[float]:
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            cleaned = value.strip().replace("%", "").replace(",", "")
+            if not cleaned:
+                return None
+            try:
+                return float(cleaned)
+            except ValueError:
+                return None
+        return None

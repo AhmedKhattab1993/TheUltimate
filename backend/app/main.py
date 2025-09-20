@@ -17,7 +17,6 @@ from app.config import settings
 from app.api import (
     backtest,
     combined_results,
-    filter_optimizer,
     grid_results,
     registry,
     screener_results,
@@ -25,7 +24,7 @@ from app.api import (
     data,
 )
 from app.services.polygon_client import PolygonAPIError
-from app.services.database import db_pool
+from app.services.database import db_pool, run_migrations
 
 # Configure logging
 logging.basicConfig(
@@ -51,6 +50,11 @@ async def lifespan(app: FastAPI):
     try:
         await db_pool.initialize()
         logger.info("Database pool initialized successfully")
+        try:
+            await run_migrations()
+            logger.info("Database migrations applied")
+        except Exception as migration_error:
+            logger.error(f"Failed to apply database migrations: {migration_error}")
     except Exception as e:
         logger.error(f"Failed to initialize database pool: {e}")
         # Continue without database - API endpoints will still work
@@ -225,15 +229,7 @@ app.include_router(
 # Include grid results router
 app.include_router(
     grid_results.router,
-    # No prefix needed - router already has /api/v2/grid/results
-    tags=["grid-results"]
-)
-
-# Include filter optimizer router
-app.include_router(
-    filter_optimizer.router,
-    # No prefix needed - router already has /api/v2/filter-optimizer
-    tags=["filter-optimizer"]
+    tags=["grid-results"],
 )
 
 
@@ -261,7 +257,8 @@ async def root():
             "screener_results_detail": "/api/v2/screener/results/{result_id}",
             # Grid results endpoints (v2)
             "grid_results_list": "/api/v2/grid/results",
-            "grid_results_detail": "/api/v2/grid/results/{date}/detail",
-            "grid_symbol_results": "/api/v2/grid/results/{date}/symbols/{symbol}"
+            "grid_results_detail": "/api/v2/grid/results/{run_id}",
+            # Combined results
+            "combined_results_list": "/api/v2/combined-results/",
         }
     }

@@ -56,3 +56,12 @@
 5. Replace ingestion scripts with the managed service and remove obsolete data folders. *(Minute ingestion now queues through the job service; remaining scripts can be folded into the same runner.)*
 6. Re-enable full automated testing and smoke Lean workflows before further cleanup tasks.
 7. Expose aggregated run metrics for dashboards. *(Summary endpoints now provide per-job counts, best metrics, and target totals for the UI.)*
+
+## Upcoming Focus
+- ✅ Lean run persistence now pushes parsed statistics into `backtest_results` (LeanRunner parses outputs; LeanJobService writes via `BacktestRepository`).
+- ✅ `/api/v2/grid/*` now reads from `run_sessions`, `run_targets`, and `backtest_results` via `GridRepository`; legacy `grid_*` tables are no longer used.
+- ✅ Frontend grid dashboard consumes the new API contract (run-based summaries/detail) and TypeScript build passes with updated models.
+- ✅ Extended backend tests monkeypatch the repository to verify persistence without touching the database.
+- ✅ Combined results API/UI now aggregate screener runs with latest Lean metrics via `combined_repository`, replacing the legacy SQL view.
+- ✅ Removed legacy grid/screener implementations (old services, CLI scripts, filter optimizer) and added a migration to drop the unused tables/views.
+- Next: flesh out richer analytics (trend stats, multi-run history) and evaluate background tasks (automated cleanups, billing) once UX settles.

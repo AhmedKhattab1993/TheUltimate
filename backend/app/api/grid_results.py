@@ -1,600 +1,112 @@
-"""
-API endpoints for grid backtest results.
-Provides combined access to grid screening and market structure backtest results.
-"""
+"""Grid results API backed by normalized run tables."""
 
-from fastapi import APIRouter, HTTPException, Query, Depends
-from typing import List, Optional, Dict, Any
-from datetime import datetime, date
-import logging
-import asyncpg
-import json
+from __future__ import annotations
 
-from ..services.database import db_pool
-from ..models.grid_results import (
-    GridResultSummary,
-    GridResultDetail,
-    GridScreeningResult,
-    GridMarketStructureResult,
-    GridResultsListResponse
-)
+from datetime import date
+from typing import Dict, Optional
+from uuid import UUID
+
+from fastapi import APIRouter, HTTPException, Query
+
+from ..models.grid_results import GridRunDetail, GridRunResult, GridRunSummary, GridResultsListResponse
+from ..services.grid_repository import grid_repository
 
 router = APIRouter(prefix="/api/v2/grid/results", tags=["grid-results"])
-logger = logging.getLogger(__name__)
 
-# Define sortable columns whitelist
-SORTABLE_COLUMNS = {
-    # Direct columns from grid_screening
-    'symbol': 'symbol',
-    'date': 'date', 
-    'price': 'price',
-    'ma_20': 'ma_20',
-    'ma_50': 'ma_50',
-    'ma_200': 'ma_200',
-    'rsi_14': 'rsi_14',
-    'gap_percent': 'gap_percent',
-    'prev_day_dollar_volume': 'prev_day_dollar_volume',
-    'relative_volume': 'relative_volume',
-    
-    # Direct columns from grid_market_structure
-    'pivot_bars': 'pivot_bars',
-    'backtest_date': 'backtest_date',
-    
-    # JSON fields from statistics column
-    'total_return': "(statistics->>'total_return')::numeric",
-    'sharpe_ratio': "(statistics->>'sharpe_ratio')::numeric",
-    'max_drawdown': "(statistics->>'max_drawdown')::numeric",
-    'win_rate': "(statistics->>'win_rate')::numeric",
-    'profit_factor': "(statistics->>'profit_factor')::numeric",
-    'total_trades': "(statistics->>'total_trades')::integer"
-}
 
-def validate_sort_params(sort_by: Optional[str], sort_order: Optional[str]) -> tuple[Optional[str], str]:
-    """
-    Validate sorting parameters and return SQL-safe column and order.
-    Returns (column_sql, order) or (None, 'DESC') for default.
-    """
-    if not sort_by:
-        return None, 'DESC'
-        
-    if sort_by not in SORTABLE_COLUMNS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid sort column: {sort_by}. Allowed columns: {list(SORTABLE_COLUMNS.keys())}"
-        )
-    
-    order = 'DESC'
-    if sort_order:
-        sort_order_upper = sort_order.upper()
-        if sort_order_upper not in ['ASC', 'DESC']:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid sort order: {sort_order}. Must be 'asc' or 'desc'"
-            )
-        order = sort_order_upper
-    
-    return SORTABLE_COLUMNS[sort_by], order
+def _duration_ms(started_at, completed_at) -> Optional[float]:
+    if started_at and completed_at:
+        return (completed_at - started_at).total_seconds() * 1000
+    return None
+
+
+def _to_float_map(payload: Dict[str, object]) -> Dict[str, float]:
+    output: Dict[str, float] = {}
+    for key, value in (payload or {}).items():
+        try:
+            output[key] = float(value)
+        except (TypeError, ValueError):
+            continue
+    return output
 
 
 @router.get("", response_model=GridResultsListResponse)
-async def list_grid_results(
+async def list_grid_runs(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Results per page"),
-    start_date: Optional[date] = Query(None, description="Filter results after this date"),
-    end_date: Optional[date] = Query(None, description="Filter results before this date"),
-    symbol: Optional[str] = Query(None, description="Filter by symbol")
+    start_date: Optional[date] = Query(None, description="Filter runs created after this date"),
+    end_date: Optional[date] = Query(None, description="Filter runs created before this date"),
+    strategy_name: Optional[str] = Query(None, description="Filter by strategy"),
+    symbol: Optional[str] = Query(None, description="Filter runs that targeted a specific symbol"),
 ):
-    """
-    List grid backtest results with pagination and filtering.
-    
-    Returns combined screening and backtest results grouped by date.
-    """
-    try:
-        # Build the query to get unique dates
-        date_query = """
-        SELECT DISTINCT data_date
-        FROM (
-            SELECT DISTINCT date as data_date FROM grid_screening
-            UNION
-            SELECT DISTINCT backtest_date as data_date FROM grid_market_structure
-        ) dates
-        WHERE 1=1
-        """
-        
-        params = []
-        param_count = 0
-        
-        # Add date filters
-        if start_date:
-            param_count += 1
-            date_query += f" AND data_date >= ${param_count}"
-            params.append(start_date)
-            
-        if end_date:
-            param_count += 1
-            date_query += f" AND data_date <= ${param_count}"
-            params.append(end_date)
-        
-        # Add ordering and pagination
-        date_query += f"""
-        ORDER BY data_date DESC
-        LIMIT ${param_count + 1}
-        OFFSET ${param_count + 2}
-        """
-        
-        params.extend([page_size, (page - 1) * page_size])
-        
-        # Get paginated dates
-        date_rows = await db_pool.fetch(date_query, *params)
-        
-        if not date_rows:
-            return GridResultsListResponse(
-                results=[],
-                total_count=0,
-                page=page,
-                page_size=page_size
-            )
-        
-        # Get total count
-        count_query = """
-        SELECT COUNT(DISTINCT data_date)
-        FROM (
-            SELECT DISTINCT date as data_date FROM grid_screening
-            UNION
-            SELECT DISTINCT backtest_date as data_date FROM grid_market_structure
-        ) dates
-        WHERE 1=1
-        """
-        if start_date:
-            count_query += " AND data_date >= $1"
-        if end_date:
-            count_query += f" AND data_date <= ${2 if start_date else 1}"
-        
-        total_count = await db_pool.fetchval(count_query, *params[:param_count])
-        
-        # For each date, get summary data
-        summaries = []
-        for row in date_rows:
-            process_date = row['data_date']
-            
-            # Get screening summary for this date
-            screening_query = """
-            SELECT 
-                COUNT(DISTINCT symbol) as symbol_count,
-                MIN(created_at) as first_created,
-                MAX(created_at) as last_created
-            FROM grid_screening
-            WHERE date = $1
-            """
-            
-            # Add symbol filter if provided
-            if symbol:
-                screening_query += " AND symbol = $2"
-                screening_result = await db_pool.fetchrow(screening_query, process_date, symbol)
-            else:
-                screening_result = await db_pool.fetchrow(screening_query, process_date)
-            
-            # Get backtest summary for this date
-            backtest_query = """
-            SELECT 
-                COUNT(*) as backtest_count,
-                COUNT(DISTINCT symbol) as symbol_count,
-                COUNT(DISTINCT pivot_bars) as pivot_bars_count,
-                COUNT(*) as completed_count,
-                0 as failed_count,
-                MIN(created_at) as first_created,
-                MAX(created_at) as last_created
-            FROM grid_market_structure
-            WHERE backtest_date = $1
-            """
-            
-            if symbol:
-                backtest_query += " AND symbol = $2"
-                backtest_result = await db_pool.fetchrow(backtest_query, process_date, symbol)
-            else:
-                backtest_result = await db_pool.fetchrow(backtest_query, process_date)
-            
-            # Calculate timing info
-            screening_time = None
-            if screening_result and screening_result['first_created'] and screening_result['last_created']:
-                duration = (screening_result['last_created'] - screening_result['first_created']).total_seconds()
-                screening_time = duration * 1000  # Convert to ms
-            
-            backtest_time = None
-            if backtest_result and backtest_result['first_created'] and backtest_result['last_created']:
-                duration = (backtest_result['last_created'] - backtest_result['first_created']).total_seconds()
-                backtest_time = duration * 1000  # Convert to ms
-            
-            # Create summary
-            summary = GridResultSummary(
-                date=process_date,
-                screening_symbols=screening_result['symbol_count'] if screening_result else 0,
-                backtest_count=backtest_result['backtest_count'] if backtest_result else 0,
-                backtest_completed=backtest_result['completed_count'] if backtest_result else 0,
-                backtest_failed=backtest_result['failed_count'] if backtest_result else 0,
-                screening_time_ms=screening_time,
-                backtest_time_ms=backtest_time
-            )
-            summaries.append(summary)
-        
-        return GridResultsListResponse(
-            results=summaries,
-            total_count=total_count,
-            page=page,
-            page_size=page_size
+    total, rows = await grid_repository.list_runs(
+        page=page,
+        page_size=page_size,
+        start_date=start_date,
+        end_date=end_date,
+        strategy_name=strategy_name,
+        symbol=symbol,
+    )
+
+    summaries = [
+        GridRunSummary(
+            run_id=str(row.run_id),
+            strategy_name=row.strategy_name,
+            status=row.status,
+            job_type=row.job_type,
+            created_at=row.created_at,
+            started_at=row.started_at,
+            completed_at=row.completed_at,
+            duration_ms=_duration_ms(row.started_at, row.completed_at),
+            target_count=row.target_count,
+            metrics=_to_float_map(row.metrics),
+            metadata=row.metadata,
         )
-        
-    except Exception as e:
-        logger.error(f"Error listing grid results: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        for row in rows
+    ]
+
+    return GridResultsListResponse(
+        results=summaries,
+        total_count=total,
+        page=page,
+        page_size=page_size,
+    )
 
 
-@router.get("/{date}/detail", response_model=GridResultDetail)
-async def get_grid_result_detail(
-    date: date,
-    symbol: Optional[str] = Query(None, description="Filter by specific symbol"),
-    sort_by: Optional[str] = Query(None, description="Column to sort by"),
-    sort_order: Optional[str] = Query(None, description="Sort order: asc or desc")
-):
-    """
-    Get detailed grid results for a specific date.
-    
-    Returns all screening results and backtest results for the date.
-    """
+@router.get("/{run_id}", response_model=GridRunDetail)
+async def get_grid_run(run_id: str) -> GridRunDetail:
     try:
-        # Validate sort parameters
-        sort_column, sort_direction = validate_sort_params(sort_by, sort_order)
-        
-        # Get screening results
-        screening_query = """
-        SELECT 
-            symbol,
-            price,
-            ma_20,
-            ma_50,
-            ma_200,
-            rsi_14,
-            gap_percent,
-            prev_day_dollar_volume,
-            relative_volume,
-            date,
-            created_at
-        FROM grid_screening
-        WHERE date = $1
-        """
-        
-        if symbol:
-            screening_query += " AND symbol = $2"
-        
-        # Add sorting for screening queries
-        if sort_column and sort_by in ['symbol', 'price', 'ma_20', 'ma_50', 'ma_200', 
-                                       'rsi_14', 'gap_percent', 'prev_day_dollar_volume', 
-                                       'relative_volume']:
-            screening_query += f" ORDER BY {sort_column} {sort_direction} NULLS LAST"
-        else:
-            screening_query += " ORDER BY symbol"
-        
-        if symbol:
-            screening_rows = await db_pool.fetch(screening_query, date, symbol)
-        else:
-            screening_rows = await db_pool.fetch(screening_query, date)
-        
-        # Get backtest results
-        backtest_query = """
-        SELECT 
-            symbol,
-            pivot_bars,
-            statistics,
-            backtest_date,
-            created_at
-        FROM grid_market_structure
-        WHERE backtest_date = $1
-        """
-        
-        if symbol:
-            backtest_query += " AND symbol = $2"
-            
-        # Add sorting for backtest queries 
-        if sort_column and sort_by in ['pivot_bars', 'total_return', 'sharpe_ratio', 
-                                       'max_drawdown', 'win_rate', 'profit_factor', 
-                                       'total_trades']:
-            backtest_query += f" ORDER BY {sort_column} {sort_direction} NULLS LAST"
-        else:
-            backtest_query += " ORDER BY symbol, pivot_bars"
-            
-        if symbol:
-            backtest_rows = await db_pool.fetch(backtest_query, date, symbol)
-        else:
-            backtest_rows = await db_pool.fetch(backtest_query, date)
-        
-        # Convert to response models
-        screening_results = []
-        for row in screening_rows:
-            screening_results.append(GridScreeningResult(
-                symbol=row['symbol'],
-                price=float(row['price']) if row['price'] else 0,
-                ma_20=float(row['ma_20']) if row['ma_20'] else 0,
-                ma_50=float(row['ma_50']) if row['ma_50'] else 0,
-                ma_200=float(row['ma_200']) if row['ma_200'] else 0,
-                rsi_14=float(row['rsi_14']) if row['rsi_14'] else 0,
-                gap_percent=float(row['gap_percent']) if row['gap_percent'] else 0,
-                prev_day_dollar_volume=float(row['prev_day_dollar_volume']) if row['prev_day_dollar_volume'] else 0,
-                relative_volume=float(row['relative_volume']) if row['relative_volume'] else 0
-            ))
-        
-        backtest_results = []
-        for row in backtest_rows:
-            # Extract key statistics
-            stats = json.loads(row['statistics']) if row['statistics'] else {}
-            
-            backtest_results.append(GridMarketStructureResult(
-                symbol=row['symbol'],
-                pivot_bars=row['pivot_bars'],
-                status='completed',
-                total_return=stats.get('total_return', 0),
-                sharpe_ratio=stats.get('sharpe_ratio', 0),
-                max_drawdown=stats.get('max_drawdown', 0),
-                win_rate=stats.get('win_rate', 0),
-                total_trades=stats.get('total_trades', 0),
-                backtest_id=None
-            ))
-        
-        return GridResultDetail(
-            date=date,
-            screening_results=screening_results,
-            backtest_results=backtest_results,
-            total_screening_symbols=len(screening_results),
-            total_backtests=len(backtest_results)
+        run_uuid = UUID(run_id)
+    except ValueError as exc:  # pragma: no cover - FastAPI handles response formatting
+        raise HTTPException(status_code=400, detail="Invalid grid run id") from exc
+
+    run = await grid_repository.get_run(run_uuid)
+    if not run:
+        raise HTTPException(status_code=404, detail="Grid run not found")
+
+    results_rows = await grid_repository.list_results(run_uuid)
+    results = [
+        GridRunResult(
+            symbol=row.symbol,
+            status=row.status,
+            created_at=row.created_at,
+            parameters=row.parameters,
+            metrics=row.metrics,
         )
-        
-    except Exception as e:
-        logger.error(f"Error getting grid result detail: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        for row in results_rows
+    ]
 
-
-@router.get("/{date}/symbols/{symbol}")
-async def get_symbol_grid_results(
-    date: date,
-    symbol: str
-):
-    """
-    Get grid results for a specific symbol on a specific date.
-    
-    Returns both screening and all backtest results for the symbol.
-    """
-    try:
-        # Get screening result
-        screening_query = """
-        SELECT 
-            symbol,
-            price,
-            ma_20,
-            ma_50,
-            ma_200,
-            rsi_14,
-            gap_percent,
-            prev_day_dollar_volume,
-            relative_volume,
-            date,
-            created_at
-        FROM grid_screening
-        WHERE date = $1 AND symbol = $2
-        """
-        
-        screening_row = await db_pool.fetchrow(screening_query, date, symbol)
-        
-        if not screening_row:
-            raise HTTPException(
-                status_code=404, 
-                detail=f"No screening results found for {symbol} on {date}"
-            )
-        
-        # Get all backtest results for this symbol
-        backtest_query = """
-        SELECT 
-            symbol,
-            pivot_bars,
-            statistics,
-            backtest_date,
-            created_at
-        FROM grid_market_structure
-        WHERE backtest_date = $1 AND symbol = $2
-        ORDER BY pivot_bars
-        """
-        
-        backtest_rows = await db_pool.fetch(backtest_query, date, symbol)
-        
-        # Build response
-        screening = GridScreeningResult(
-            symbol=screening_row['symbol'],
-            price=float(screening_row['price']) if screening_row['price'] else 0,
-            ma_20=float(screening_row['ma_20']) if screening_row['ma_20'] else 0,
-            ma_50=float(screening_row['ma_50']) if screening_row['ma_50'] else 0,
-            ma_200=float(screening_row['ma_200']) if screening_row['ma_200'] else 0,
-            rsi_14=float(screening_row['rsi_14']) if screening_row['rsi_14'] else 0,
-            gap_percent=float(screening_row['gap_percent']) if screening_row['gap_percent'] else 0,
-            prev_day_dollar_volume=float(screening_row['prev_day_dollar_volume']) if screening_row['prev_day_dollar_volume'] else 0,
-            relative_volume=float(screening_row['relative_volume']) if screening_row['relative_volume'] else 0
-        )
-        
-        backtests = []
-        for row in backtest_rows:
-            import json
-            stats = json.loads(row['statistics']) if row['statistics'] else {}
-            
-            backtests.append({
-                "pivot_bars": row['pivot_bars'],
-                "status": 'completed',
-                "total_return": stats.get('TotalNetProfit', 0),
-                "sharpe_ratio": stats.get('SharpeRatio', 0),
-                "max_drawdown": stats.get('Drawdown', 0),
-                "win_rate": stats.get('WinRate', 0),
-                "total_trades": stats.get('TotalNumberOfTrades', 0),
-                "backtest_id": None,
-                "parameters": {}
-            })
-        
-        return {
-            "symbol": symbol,
-            "date": date,
-            "screening": screening,
-            "backtests": backtests
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting symbol grid results: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/{date}/trades")
-async def get_grid_trades(
-    date: date,
-    symbol: Optional[str] = None,
-    pivot_bars: Optional[int] = None,
-    limit: int = Query(50, description="Maximum number of trades to return", ge=1, le=500)
-):
-    """
-    Get trades for grid backtest results.
-    
-    Can filter by symbol and/or pivot_bars value.
-    Returns the last N trades (default 50) ordered by trade time descending.
-    """
-    try:
-        # Build query
-        query = """
-            SELECT 
-                t.symbol,
-                t.pivot_bars,
-                t.trade_time AT TIME ZONE 'America/New_York' as trade_time_et,
-                t.direction,
-                t.quantity,
-                t.fill_price,
-                t.fill_quantity,
-                t.order_fee,
-                t.position_value,
-                t.trade_type,
-                t.signal_reason,
-                EXTRACT(EPOCH FROM t.trade_time)::BIGINT as trade_time_unix
-            FROM grid_market_structure_trades t
-            WHERE t.backtest_date = $1
-        """
-        
-        params = [date]
-        param_count = 1
-        
-        if symbol:
-            param_count += 1
-            query += f" AND t.symbol = ${param_count}"
-            params.append(symbol)
-        
-        if pivot_bars is not None:
-            param_count += 1
-            query += f" AND t.pivot_bars = ${param_count}"
-            params.append(pivot_bars)
-        
-        query += " ORDER BY t.trade_time DESC"
-        param_count += 1
-        query += f" LIMIT ${param_count}"
-        params.append(limit)
-        
-        rows = await db_pool.fetch(query, *params)
-        
-        # Convert to list of dicts with formatted data
-        trades = []
-        for row in rows:
-            trades.append({
-                "symbol": row['symbol'],
-                "pivotBars": row['pivot_bars'],
-                "tradeTime": row['trade_time_et'].isoformat(),
-                "tradeTimeUnix": row['trade_time_unix'],
-                "direction": row['direction'],
-                "quantity": abs(float(row['quantity'])),
-                "fillPrice": float(row['fill_price']) if row['fill_price'] else 0,
-                "fillQuantity": float(row['fill_quantity']) if row['fill_quantity'] else abs(float(row['quantity'])),
-                "orderFee": float(row['order_fee']) if row['order_fee'] else 0,
-                "positionValue": float(row['position_value']) if row['position_value'] else 0,
-                "tradeType": row['trade_type'],
-                "signalReason": row['signal_reason']
-            })
-        
-        return trades
-        
-    except Exception as e:
-        logger.error(f"Error getting grid trades: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/{date}/symbols/{symbol}/pivot/{pivot_bars}/trades")
-async def get_symbol_pivot_trades(
-    date: date,
-    symbol: str,
-    pivot_bars: int,
-    limit: int = Query(50, description="Maximum number of trades to return", ge=1, le=500)
-):
-    """
-    Get trades for a specific symbol and pivot_bars combination.
-    
-    Returns the last N trades (default 50) ordered by trade time descending.
-    """
-    try:
-        # Verify the grid result exists
-        result_exists = await db_pool.fetchval("""
-            SELECT EXISTS(
-                SELECT 1 FROM grid_market_structure 
-                WHERE symbol = $1 AND backtest_date = $2 AND pivot_bars = $3
-            )
-        """, symbol, date, pivot_bars)
-        
-        if not result_exists:
-            raise HTTPException(
-                status_code=404, 
-                detail=f"Grid result not found for {symbol} on {date} with pivot_bars={pivot_bars}"
-            )
-        
-        # Fetch trades
-        query = """
-            SELECT 
-                t.trade_time AT TIME ZONE 'America/New_York' as trade_time_et,
-                t.direction,
-                t.quantity,
-                t.fill_price,
-                t.fill_quantity,
-                t.order_fee,
-                t.position_value,
-                t.trade_type,
-                t.signal_reason,
-                EXTRACT(EPOCH FROM t.trade_time)::BIGINT as trade_time_unix
-            FROM grid_market_structure_trades t
-            WHERE t.symbol = $1 AND t.backtest_date = $2 AND t.pivot_bars = $3
-            ORDER BY t.trade_time DESC
-            LIMIT $4
-        """
-        
-        rows = await db_pool.fetch(query, symbol, date, pivot_bars, limit)
-        
-        # Convert to list of dicts with formatted data
-        trades = []
-        for row in rows:
-            trades.append({
-                "symbol": symbol,
-                "tradeTime": row['trade_time_et'].isoformat(),
-                "tradeTimeUnix": row['trade_time_unix'],
-                "direction": row['direction'],
-                "quantity": abs(float(row['quantity'])),
-                "fillPrice": float(row['fill_price']) if row['fill_price'] else 0,
-                "fillQuantity": float(row['fill_quantity']) if row['fill_quantity'] else abs(float(row['quantity'])),
-                "orderFee": float(row['order_fee']) if row['order_fee'] else 0,
-                "positionValue": float(row['position_value']) if row['position_value'] else 0,
-                "tradeType": row['trade_type'],
-                "signalReason": row['signal_reason']
-            })
-        
-        return trades
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting symbol pivot trades: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return GridRunDetail(
+        run_id=str(run.run_id),
+        strategy_name=run.strategy_name,
+        status=run.status,
+        job_type=run.job_type,
+        created_at=run.created_at,
+        started_at=run.started_at,
+        completed_at=run.completed_at,
+        duration_ms=_duration_ms(run.started_at, run.completed_at),
+        target_count=run.target_count,
+        metrics=_to_float_map(run.metrics),
+        metadata=run.metadata,
+        results=results,
+    )

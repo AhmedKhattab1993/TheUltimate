@@ -116,6 +116,32 @@ class DatabasePool:
 db_pool = DatabasePool()
 
 
+async def run_migrations() -> None:
+    """Run SQL migrations sequentially."""
+    from pathlib import Path
+
+    migrations_dir = Path(__file__).resolve().parents[2] / 'migrations'
+    if not migrations_dir.exists():
+        logger.warning("Migrations directory %s not found", migrations_dir)
+        return
+
+    files = sorted(f for f in migrations_dir.glob('*.sql'))
+    if not files:
+        logger.info("No SQL migrations found in %s", migrations_dir)
+        return
+
+    await db_pool.initialize()
+
+    for file in files:
+        sql = file.read_text()
+        try:
+            await db_pool.execute(sql)
+            logger.info("Applied migration %s", file.name)
+        except Exception as exc:  # pragma: no cover
+            logger.error("Failed to apply migration %s: %s", file.name, exc)
+            raise
+
+
 def convert_to_et(dt: datetime) -> datetime:
     """Convert datetime to Eastern Time"""
     if dt.tzinfo is None:

@@ -34,7 +34,6 @@ from ..services.db_prefilter_optimized import OptimizedDataLoader
 from ..models.stock import StockData
 from ..services.fast_data_converter import rows_to_numpy
 from ..config import settings
-from ..services.screener_results import screener_results_manager
 from ..services.cache_service import CacheService
 from ..models.cache_models import CachedScreenerRequest, CachedScreenerResult
 from ..services.lean_job_service import lean_job_service
@@ -332,21 +331,6 @@ async def _process_single_day(
                 logger.info(f"[{trading_date}] Saved {len(cache_results)} results to database with source='ui'")
             else:
                 logger.warning(f"[{trading_date}] Failed to save results to database")
-            
-            # Also save to file for backward compatibility
-            metadata = {
-                "screening_date": str(trading_date),
-                "total_symbols_screened": len(data_by_symbol),
-                "total_qualifying_stocks": total_qualifying,
-                "execution_time_ms": (time.time() - single_day_start_time) * 1000
-            }
-            
-            results_file = screener_results_manager.save_results(
-                symbols=list(symbol_results.keys()),
-                filters=request_filters.model_dump() if hasattr(request_filters, 'model_dump') else {},
-                metadata=metadata
-            )
-            logger.info(f"[{trading_date}] Saved results to {results_file}")
             
         except Exception as e:
             logger.error(f"[{trading_date}] Failed to save results: {e}")

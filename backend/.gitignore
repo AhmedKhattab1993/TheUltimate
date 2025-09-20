@@ -166,7 +166,6 @@ Thumbs.db
 *.temp
 
 # Database migration checkpoints
-migrations/
 *checkpoint.json
 
 # Setup scripts
