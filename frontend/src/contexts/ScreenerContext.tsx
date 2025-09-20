@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useReducer, type ReactNode } from 'react'
+import { createContext, useContext, useReducer } from 'react'
+import type { Dispatch, ReactNode } from 'react'
 
 // State interface
 export interface ScreenerState {
@@ -231,7 +232,7 @@ function screenerReducer(state: ScreenerState, action: ScreenerAction): Screener
 // Context
 interface ScreenerContextValue {
   state: ScreenerState
-  dispatch: React.Dispatch<ScreenerAction>
+  dispatch: Dispatch<ScreenerAction>
 }
 
 const ScreenerContext = createContext<ScreenerContextValue | undefined>(undefined)

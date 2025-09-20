@@ -1,13 +1,15 @@
 // Types for filter optimization
 
-export enum OptimizationTarget {
-  SHARPE_RATIO = "sharpe_ratio",
-  TOTAL_RETURN = "total_return",
-  WIN_RATE = "win_rate",
-  PROFIT_FACTOR = "profit_factor",
-  MIN_DRAWDOWN = "min_drawdown",
-  CUSTOM = "custom"
-}
+export const OptimizationTarget = {
+  SHARPE_RATIO: 'sharpe_ratio',
+  TOTAL_RETURN: 'total_return',
+  WIN_RATE: 'win_rate',
+  PROFIT_FACTOR: 'profit_factor',
+  MIN_DRAWDOWN: 'min_drawdown',
+  CUSTOM: 'custom'
+} as const
+
+export type OptimizationTarget = typeof OptimizationTarget[keyof typeof OptimizationTarget]
 
 export interface FilterRange {
   min_value: number

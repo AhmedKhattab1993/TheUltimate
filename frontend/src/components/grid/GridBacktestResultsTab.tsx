@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
+import type { ReactNode } from 'react'
 import { format, parseISO } from 'date-fns'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -9,8 +10,6 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { RefreshCw, BarChart2, AlertCircle, Eye, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { GridResultsService } from '@/services/gridResults'
-import type { GridResultSummary, GridResultDetail } from '@/types/gridResults'
-
 interface CombinedGridRow {
   date: string
   symbol: string
@@ -196,7 +195,7 @@ export function GridBacktestResultsTab() {
   }
   
   // Helper component for sortable table headers
-  const SortableHeader = ({ column, children }: { column: string, children: React.ReactNode }) => {
+  const SortableHeader = ({ column, children }: { column: string, children: ReactNode }) => {
     const isSorted = sortBy === column
     const isCenter = column === 'pivot_bars'
     const isLeft = column === 'symbol' || column === 'date'

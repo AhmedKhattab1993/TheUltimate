@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { format, parseISO } from 'date-fns'
-import { Eye, Download, Filter, BarChart, Activity } from 'lucide-react'
+import { Eye, Download, Filter, BarChart } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'

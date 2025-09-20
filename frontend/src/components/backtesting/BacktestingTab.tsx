@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { StrategySelector } from './StrategySelector'
@@ -7,16 +7,68 @@ import { BacktestMonitor } from './BacktestMonitor'
 import { CombinedResultsView } from '../results/CombinedResultsView'
 import { MarketStructureForm } from './MarketStructureForm'
 import { useBacktestContext } from '@/contexts/BacktestContext'
+import type { BacktestResult, BacktestStatistics } from '@/contexts/BacktestContext'
 import { useResultsContext } from '@/contexts/ResultsContext'
 import { Play, RefreshCw, AlertCircle } from 'lucide-react'
 import { format } from 'date-fns'
 import { getApiUrl } from '@/services/api'
 
-interface BacktestingTabProps {
-  screenerResults?: string[]
+const toBacktestStatistics = (stats: any): BacktestStatistics => ({
+  totalReturn: stats?.total_return ?? 0,
+  netProfit: stats?.net_profit ?? 0,
+  netProfitCurrency: stats?.net_profit_currency ?? 0,
+  compoundingAnnualReturn: stats?.compounding_annual_return ?? 0,
+  sharpeRatio: stats?.sharpe_ratio ?? 0,
+  sortinoRatio: stats?.sortino_ratio ?? 0,
+  maxDrawdown: stats?.max_drawdown ?? 0,
+  probabilisticSharpeRatio: stats?.probabilistic_sharpe_ratio ?? 0,
+  totalOrders: stats?.total_orders ?? 0,
+  totalTrades: stats?.total_trades ?? 0,
+  winRate: stats?.win_rate ?? 0,
+  lossRate: stats?.loss_rate ?? 0,
+  averageWin: stats?.average_win ?? 0,
+  averageLoss: stats?.average_loss ?? 0,
+  averageWinCurrency: stats?.average_win_currency ?? 0,
+  averageLossCurrency: stats?.average_loss_currency ?? 0,
+  profitFactor: stats?.profit_factor ?? 0,
+  profitLossRatio: stats?.profit_loss_ratio ?? 0,
+  expectancy: stats?.expectancy ?? 0,
+  alpha: stats?.alpha ?? 0,
+  beta: stats?.beta ?? 0,
+  annualStandardDeviation: stats?.annual_standard_deviation ?? 0,
+  annualVariance: stats?.annual_variance ?? 0,
+  informationRatio: stats?.information_ratio ?? 0,
+  trackingError: stats?.tracking_error ?? 0,
+  treynorRatio: stats?.treynor_ratio ?? 0,
+  startEquity: stats?.start_equity ?? 0,
+  endEquity: stats?.end_equity ?? 0,
+  totalFees: stats?.total_fees ?? 0,
+  estimatedStrategyCapacity: stats?.estimated_strategy_capacity ?? 0,
+  lowestCapacityAsset: stats?.lowest_capacity_asset ?? '',
+  portfolioTurnover: stats?.portfolio_turnover ?? 0,
+  profitableTrades: stats?.profitable_trades ?? stats?.winning_trades ?? 0
+})
+
+const mapBacktestResult = (result: any): BacktestResult => {
+  const backtestId = String(result.backtest_id ?? result.backtestId ?? result.timestamp ?? '')
+  return {
+    backtest_id: backtestId,
+    backtestId,
+    timestamp: String(result.timestamp ?? backtestId),
+    statistics: toBacktestStatistics(result.statistics ?? {}),
+    equityCurve: result.equity_curve ?? [],
+    orders: result.trades ?? result.orders ?? [],
+    logs: result.logs,
+    strategy_name: result.strategy_name ?? result.strategyName,
+    strategyName: result.strategyName ?? result.strategy_name,
+    start_date: result.start_date,
+    end_date: result.end_date,
+    initial_cash: result.initial_cash,
+    final_value: result.final_value
+  }
 }
 
-export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
+export function BacktestingTab() {
   const { state, dispatch } = useBacktestContext()
   const { dispatch: resultsDispatch } = useResultsContext()
   const { parameters, isRunning, error, strategies } = state
@@ -48,57 +100,14 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
       resultsDispatch({
         type: 'SET_BACKTEST_RESULTS',
         data: data.results,
-        totalCount: data.total_count,
-        page: data.page,
-        pageSize: data.page_size
+        totalCount: data.total_count
       })
+      if (typeof data.page === 'number') {
+        resultsDispatch({ type: 'SET_BACKTEST_PAGE', page: data.page })
+      }
       
       // Map API response to frontend format
-      const mappedResults = data.results.map((result: any) => {
-        // Convert snake_case statistics to camelCase
-        const statistics = result.statistics ? {
-          totalReturn: result.statistics.total_return,
-          netProfit: result.statistics.net_profit,
-          netProfitCurrency: result.statistics.net_profit_currency,
-          compoundingAnnualReturn: result.statistics.compounding_annual_return,
-          sharpeRatio: result.statistics.sharpe_ratio,
-          sortinoRatio: result.statistics.sortino_ratio,
-          maxDrawdown: result.statistics.max_drawdown,
-          probabilisticSharpeRatio: result.statistics.probabilistic_sharpe_ratio,
-          totalOrders: result.statistics.total_orders,
-          totalTrades: result.statistics.total_trades,
-          winRate: result.statistics.win_rate,
-          lossRate: result.statistics.loss_rate,
-          averageWin: result.statistics.average_win,
-          averageLoss: result.statistics.average_loss,
-          averageWinCurrency: result.statistics.average_win_currency,
-          averageLossCurrency: result.statistics.average_loss_currency,
-          profitFactor: result.statistics.profit_factor,
-          profitLossRatio: result.statistics.profit_loss_ratio,
-          expectancy: result.statistics.expectancy,
-          alpha: result.statistics.alpha,
-          beta: result.statistics.beta,
-          annualStandardDeviation: result.statistics.annual_standard_deviation,
-          annualVariance: result.statistics.annual_variance,
-          informationRatio: result.statistics.information_ratio,
-          trackingError: result.statistics.tracking_error,
-          treynorRatio: result.statistics.treynor_ratio,
-          startEquity: result.statistics.start_equity,
-          endEquity: result.statistics.end_equity,
-          totalFees: result.statistics.total_fees,
-          estimatedStrategyCapacity: result.statistics.estimated_strategy_capacity,
-          lowestCapacityAsset: result.statistics.lowest_capacity_asset,
-          portfolioTurnover: result.statistics.portfolio_turnover
-        } : {}
-        
-        return {
-          ...result,
-          statistics,
-          timestamp: result.backtest_id, // For backward compatibility
-          equityCurve: result.equity_curve || [],
-          orders: result.trades || []
-        }
-      })
+      const mappedResults: BacktestResult[] = data.results.map((result: any) => mapBacktestResult(result))
       
       dispatch({ type: 'SET_HISTORICAL_RESULTS', results: mappedResults })
     } catch (err) {
@@ -320,7 +329,7 @@ export function BacktestingTab({ screenerResults = [] }: BacktestingTabProps) {
       <StrategySelector />
 
       {/* Backtest Parameters */}
-      <BacktestForm screenerSymbols={screenerResults} />
+      <BacktestForm />
 
       {/* Strategy-specific parameters */}
       {parameters.strategy && strategies.find(s => s.file_path === parameters.strategy)?.name === 'MarketStructure' && (

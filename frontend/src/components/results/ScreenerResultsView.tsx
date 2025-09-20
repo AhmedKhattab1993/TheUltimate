@@ -1,6 +1,6 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { format, parseISO } from 'date-fns'
-import { Eye, Trash2, Clock, Filter, Hash } from 'lucide-react'
+import { Eye, Trash2, Filter } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -34,113 +34,6 @@ export function ScreenerResultsView() {
     } catch (error) {
       console.error('Failed to delete result:', error)
     }
-  }
-
-  const formatFilters = (filters: any) => {
-    // Use the description from the API if available (new structure)
-    if (filters.description) {
-      return filters.description
-    }
-
-    // Fallback to detailed formatting for comprehensive display
-    const descriptions = []
-    
-    // Price range
-    if (filters.min_price !== undefined || filters.max_price !== undefined) {
-      if (filters.min_price !== undefined && filters.max_price !== undefined) {
-        descriptions.push(`Price: $${filters.min_price.toFixed(2)} - $${filters.max_price.toFixed(2)}`)
-      } else if (filters.min_price !== undefined) {
-        descriptions.push(`Price: ≥ $${filters.min_price.toFixed(2)}`)
-      } else if (filters.max_price !== undefined) {
-        descriptions.push(`Price: ≤ $${filters.max_price.toFixed(2)}`)
-      }
-    }
-    
-    // Price vs MA
-    if (filters.price_vs_ma?.enabled) {
-      const period = filters.price_vs_ma.ma_period || 20
-      const condition = filters.price_vs_ma.condition || 'above'
-      descriptions.push(`Price ${condition} SMA${period}`)
-    }
-    
-    // Price vs VWAP
-    if (filters.price_vs_vwap?.enabled) {
-      const condition = filters.price_vs_vwap.condition || 'above'
-      descriptions.push(`Price ${condition} VWAP`)
-    }
-    
-    // Market Cap
-    if (filters.market_cap?.enabled) {
-      const mc = filters.market_cap
-      if (mc.min_market_cap !== undefined && mc.max_market_cap !== undefined) {
-        const minMc = mc.min_market_cap / 1_000_000 // Convert to millions
-        const maxMc = mc.max_market_cap / 1_000_000
-        descriptions.push(`Market Cap: $${minMc.toFixed(0)}M - $${maxMc.toFixed(0)}M`)
-      } else if (mc.min_market_cap !== undefined) {
-        const minMc = mc.min_market_cap / 1_000_000
-        descriptions.push(`Market Cap: ≥ $${minMc.toFixed(0)}M`)
-      } else if (mc.max_market_cap !== undefined) {
-        const maxMc = mc.max_market_cap / 1_000_000
-        descriptions.push(`Market Cap: ≤ $${maxMc.toFixed(0)}M`)
-      }
-    }
-    
-    // Change (Daily percentage change)
-    if (filters.change?.enabled) {
-      const change = filters.change
-      if (change.min_change !== undefined && change.max_change !== undefined) {
-        descriptions.push(`Change: ${change.min_change.toFixed(1)}% - ${change.max_change.toFixed(1)}%`)
-      } else if (change.min_change !== undefined) {
-        descriptions.push(`Change: ≥ ${change.min_change.toFixed(1)}%`)
-      } else if (change.max_change !== undefined) {
-        descriptions.push(`Change: ≤ ${change.max_change.toFixed(1)}%`)
-      }
-    }
-    
-    // ATR
-    if (filters.atr?.enabled) {
-      const minAtr = filters.atr.min_atr || 0
-      descriptions.push(`ATR ≥ $${minAtr.toFixed(2)}`)
-    }
-    
-    // RSI
-    if (filters.rsi?.enabled) {
-      const period = filters.rsi.rsi_period || 14
-      const threshold = filters.rsi.threshold || 0
-      const condition = filters.rsi.condition || 'below'
-      descriptions.push(`RSI${period} ${condition} ${threshold}`)
-    }
-    
-    // Gap
-    if (filters.gap?.enabled) {
-      const threshold = filters.gap.gap_threshold || 0
-      const direction = filters.gap.direction || 'any'
-      if (direction === 'any') {
-        descriptions.push(`Gap ≥ ${threshold}%`)
-      } else {
-        descriptions.push(`Gap ${direction} ≥ ${threshold}%`)
-      }
-    }
-    
-    // Previous Day Dollar Volume
-    if (filters.prev_day_dollar_volume?.enabled) {
-      const minVol = filters.prev_day_dollar_volume.min_dollar_volume || 0
-      if (minVol >= 1000000) {
-        descriptions.push(`Volume ≥ $${(minVol / 1000000).toFixed(1)}M`)
-      } else if (minVol >= 1000) {
-        descriptions.push(`Volume ≥ $${(minVol / 1000).toFixed(0)}K`)
-      } else {
-        descriptions.push(`Volume ≥ $${minVol.toLocaleString()}`)
-      }
-    }
-    
-    // Relative Volume
-    if (filters.relative_volume?.enabled) {
-      const ratio = filters.relative_volume.min_ratio || 1.0
-      descriptions.push(`RelVol ≥ ${ratio}x`)
-    }
-    
-    return descriptions.length > 0 ? descriptions.join('; ') : 'No filters applied'
   }
 
   if (state.screenerResults.loading) {
@@ -208,10 +101,10 @@ export function ScreenerResultsView() {
                     <TableCell>
                       {/* Show created date from timestamp/created_at */}
                       <div className="text-sm">
-                        {result.timestamp || result.created_at ? 
-                          format(parseISO(result.timestamp || result.created_at), 'MMM d, yyyy HH:mm') : 
-                          'N/A'
-                        }
+                        {(() => {
+                          const createdAt = result.timestamp ?? (result as any).created_at
+                          return createdAt ? format(parseISO(createdAt), 'MMM d, yyyy HH:mm') : 'N/A'
+                        })()}
                       </div>
                     </TableCell>
                     
@@ -337,10 +230,11 @@ export function ScreenerResultsView() {
           <DialogHeader>
             <DialogTitle>Screener Result Details</DialogTitle>
             <DialogDescription>
-              {selectedResult && (selectedResult.timestamp || selectedResult.created_at) ? 
-                format(parseISO(selectedResult.timestamp || selectedResult.created_at), 'PPPp') : 
-                'Date not available'
-              }
+              {(() => {
+                if (!selectedResult) return 'Date not available'
+                const createdAt = selectedResult.timestamp ?? selectedResult.created_at
+                return createdAt ? format(parseISO(createdAt), 'PPPp') : 'Date not available'
+              })()}
             </DialogDescription>
           </DialogHeader>
           {selectedResult && (

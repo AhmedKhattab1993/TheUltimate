@@ -59,6 +59,14 @@ interface SimpleScreenerRequest {
       gap_threshold: number
       direction: 'up' | 'down' | 'both'
     }
+    prev_day_dollar_volume?: {
+      min_dollar_volume: number
+    }
+    relative_volume?: {
+      recent_days: number
+      lookback_days: number
+      min_ratio: number
+    }
   }
 }
 

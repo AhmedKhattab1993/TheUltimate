@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { render, screen, fireEvent } from '@/test/test-utils'
 import { SimplePriceRangeFilter } from './SimplePriceRangeFilter'
 import userEvent from '@testing-library/user-event'

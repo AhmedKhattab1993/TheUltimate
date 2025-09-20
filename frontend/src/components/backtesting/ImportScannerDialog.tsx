@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -8,7 +8,6 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Calendar, FileSearch, AlertCircle } from 'lucide-react'
@@ -110,8 +109,6 @@ export function ImportScannerDialog({
         throw new Error(error.detail || 'Failed to start backtests')
       }
 
-      const data = await response.json()
-      
       // Success - close dialog and let parent handle the response
       onImport(dateRange)
       onClose()

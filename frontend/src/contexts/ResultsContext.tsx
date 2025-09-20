@@ -1,9 +1,11 @@
-import React, { createContext, useContext, useReducer, ReactNode } from 'react'
+import { createContext, useContext, useReducer } from 'react'
+import type { Dispatch, ReactNode } from 'react'
 
 // Types
 export interface ScreenerResultSummary {
   id: string
   timestamp: string
+  created_at?: string
   symbol_count: number
   filters: any
   execution_time_ms: number
@@ -254,7 +256,7 @@ function resultsReducer(state: ResultsState, action: ResultsAction): ResultsStat
 // Context
 const ResultsContext = createContext<{
   state: ResultsState
-  dispatch: React.Dispatch<ResultsAction>
+  dispatch: Dispatch<ResultsAction>
 } | undefined>(undefined)
 
 // Provider

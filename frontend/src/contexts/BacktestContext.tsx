@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useReducer } from 'react'
-import type { ReactNode } from 'react'
+import { createContext, useContext, useReducer } from 'react'
+import type { Dispatch, ReactNode } from 'react'
 
 // Types
 export interface Strategy {
@@ -17,6 +17,7 @@ export interface BacktestParameters {
   endDate: Date | null
   symbols: string[]
   useScreenerResults?: boolean
+  strategyParameters?: Record<string, unknown>
 }
 
 // Simplified - just track running state
@@ -87,11 +88,13 @@ export interface Order {
 
 export interface BacktestResult {
   backtest_id: string
+  backtestId?: string
   timestamp: string
   statistics: BacktestStatistics
   equityCurve: EquityPoint[]
   orders: Order[]
   logs?: string[]
+  strategyName?: string
   strategy_name?: string
   start_date?: string
   end_date?: string
@@ -142,7 +145,8 @@ const initialState: BacktestState = {
     initialCash: 100000,
     startDate: new Date(new Date().getFullYear() - 1, 0, 1), // Default to January 1st of last year
     endDate: new Date(), // Default to today
-    symbols: []
+    symbols: [],
+    strategyParameters: {}
   },
   isRunning: false,
   currentResult: null,
@@ -247,7 +251,7 @@ function backtestReducer(state: BacktestState, action: BacktestAction): Backtest
 // Context
 const BacktestContext = createContext<{
   state: BacktestState
-  dispatch: React.Dispatch<BacktestAction>
+  dispatch: Dispatch<BacktestAction>
 } | undefined>(undefined)
 
 // Provider

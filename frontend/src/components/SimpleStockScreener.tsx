@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { format, subDays } from 'date-fns'
 import { Search, RefreshCw, AlertCircle, Calendar, TrendingUp, History, BarChart2, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -27,13 +27,12 @@ import { ResultsProvider } from '@/contexts/ResultsContext'
 export function SimpleStockScreener() {
   const { state, dispatch } = useScreenerContext()
   const { runScreener } = useScreener()
-  const [localLoading, setLocalLoading] = React.useState(false)
-  const [activeTab, setActiveTab] = React.useState('screener')
+  const [localLoading, setLocalLoading] = useState(false)
+  const [activeTab, setActiveTab] = useState('screener')
   
   console.log('Loading state:', state.results.loading, 'Local loading:', localLoading)
 
   // Get screener result symbols for backtesting
-  const screenerSymbols = state.results.data?.results ? state.results.data.results.map((result: any) => result.symbol) : []
 
   // Set default dates on mount
   useEffect(() => {
@@ -259,7 +258,7 @@ export function SimpleStockScreener() {
           </TabsContent>
 
           <TabsContent value="backtesting">
-            <BacktestingTab screenerResults={screenerSymbols} />
+            <BacktestingTab />
           </TabsContent>
 
           <TabsContent value="results">

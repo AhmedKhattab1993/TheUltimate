@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { Menu, X, Filter, Calendar, Download } from 'lucide-react'
+import { useState } from 'react'
+import { Menu, Filter, Calendar, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 

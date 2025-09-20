@@ -1,7 +1,6 @@
-import React from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useBacktestContext } from '@/contexts/BacktestContext'
-import { Activity, CheckCircle } from 'lucide-react'
+import { Activity } from 'lucide-react'
 
 export function BacktestMonitor() {
   const { state } = useBacktestContext()

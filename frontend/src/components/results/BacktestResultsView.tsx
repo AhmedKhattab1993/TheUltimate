@@ -1,4 +1,5 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
+import type { ReactNode } from 'react'
 import { format, parseISO } from 'date-fns'
 import { Eye, Trash2, TrendingUp, TrendingDown, Activity, Info, DollarSign, BarChart, Target, Settings, Clock } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -64,7 +65,7 @@ function MetricCard({ label, value, isPositive, isNegative, tooltip }: MetricPro
 // Section component for grouping metrics
 interface MetricsSectionProps {
   title: string
-  icon: React.ReactNode
+  icon: ReactNode
   metrics: MetricProps[]
 }
 

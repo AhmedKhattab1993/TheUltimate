@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { ScreenerProvider, useScreenerContext } from './ScreenerContext'
-import { ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
 // Wrapper component for testing
 const wrapper = ({ children }: { children: ReactNode }) => (

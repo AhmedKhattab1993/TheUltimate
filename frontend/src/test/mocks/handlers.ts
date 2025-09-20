@@ -5,7 +5,7 @@ const API_BASE_URL = 'http://localhost:8000'
 export const handlers = [
   // Simple screener endpoint
   http.post(`${API_BASE_URL}/api/v2/simple-screener/screen`, async ({ request }) => {
-    const body = await request.json()
+    const body = (await request.json()) as Record<string, any>
     
     // Mock successful response
     return HttpResponse.json({
@@ -87,7 +87,7 @@ export const handlers = [
 
   // Error response handler
   http.post(`${API_BASE_URL}/api/v2/simple-screener/screen`, async ({ request }) => {
-    const body = await request.json()
+    const body = (await request.json()) as Record<string, any>
     
     // Return error for specific test cases
     if (body.filters?.simple_price_range?.min_price === 999999) {

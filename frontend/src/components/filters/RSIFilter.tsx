@@ -1,10 +1,10 @@
-import React, { memo } from 'react'
+import { memo } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
-import { Activity, AlertCircle } from 'lucide-react'
+import { Activity } from 'lucide-react'
 import { HelpTooltip } from '@/components/HelpTooltip'
 import { useScreenerContext } from '@/contexts/ScreenerContext'
 

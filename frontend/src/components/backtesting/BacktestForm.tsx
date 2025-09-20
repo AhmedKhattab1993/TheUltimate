@@ -1,4 +1,5 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
+import type { ChangeEvent, KeyboardEvent } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,17 +12,13 @@ import { DollarSign, Plus, X, FileSearch } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { ScreenerResultsPreviewDialog } from './ScreenerResultsPreviewDialog'
 
-interface BacktestFormProps {
-  screenerSymbols?: string[]
-}
-
-export function BacktestForm({ screenerSymbols = [] }: BacktestFormProps) {
+export function BacktestForm() {
   const { state, dispatch } = useBacktestContext()
   const { parameters } = state
   const [symbolInput, setSymbolInput] = useState('')
   const [showPreviewDialog, setShowPreviewDialog] = useState(false)
 
-  const handleCashChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCashChange = (e: ChangeEvent<HTMLInputElement>) => {
     const value = parseFloat(e.target.value) || 0
     dispatch({ type: 'SET_PARAMETER', field: 'initialCash', value })
   }
@@ -41,7 +38,7 @@ export function BacktestForm({ screenerSymbols = [] }: BacktestFormProps) {
     })
   }
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyPress = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault()
       handleAddSymbol()

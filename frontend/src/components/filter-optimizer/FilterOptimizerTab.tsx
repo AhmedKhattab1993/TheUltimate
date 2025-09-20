@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -12,7 +12,7 @@ import { DatePicker } from '@/components/ui/date-picker'
 import { Switch } from '@/components/ui/switch'
 import { 
   TrendingUp, Settings, AlertCircle, RefreshCw, Search, 
-  ChevronRight, Download, BarChart3, Target
+  Download, BarChart3, Target
 } from 'lucide-react'
 import { format, subDays } from 'date-fns'
 import { filterOptimizerService } from '@/services/filterOptimizer'
@@ -380,6 +380,33 @@ export function FilterOptimizerTab() {
                     />
                   </div>
                 )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Minimum Symbols Required</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={minSymbols}
+                      onChange={(e) => setMinSymbols(Math.max(1, Number(e.target.value) || 1))}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Only keep combinations that match at least this many symbols.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Maximum Results</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={maxResults}
+                      onChange={(e) => setMaxResults(Math.max(1, Number(e.target.value) || 1))}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Limit the number of optimized combinations returned.
+                    </p>
+                  </div>
+                </div>
               </div>
               
               {/* Search Space Configuration */}

@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom'
 import { cleanup } from '@testing-library/react'
-import { afterEach, beforeAll, afterAll } from 'vitest'
+import { afterEach, beforeAll, afterAll, vi } from 'vitest'
 import { server } from './mocks/server'
 
 // Start MSW server
@@ -14,7 +14,7 @@ afterAll(() => server.close())
 // Mock window.matchMedia
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
-  value: vi.fn().mockImplementation(query => ({
+  value: vi.fn().mockImplementation((query: string) => ({
     matches: false,
     media: query,
     onchange: null,

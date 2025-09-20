@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import { validateFilters } from './validation'
-import { ScreenerState } from '@/contexts/ScreenerContext'
+import type { ScreenerState } from '@/contexts/ScreenerContext'
 
 describe('validateFilters', () => {
-  const createMockState = (overrides?: Partial<ScreenerState>): ScreenerState => ({
-    filters: {
+  type FilterOverrides = Partial<ScreenerState['filters']>
+  type StateOverrides = Partial<Omit<ScreenerState, 'filters'>> & { filters?: FilterOverrides }
+
+  const createMockState = (overrides?: StateOverrides): ScreenerState => {
+    const baseFilters: ScreenerState['filters'] = {
       simplePriceRange: {
         enabled: false,
         minPrice: '1.00',
@@ -20,27 +23,54 @@ describe('validateFilters', () => {
         period: '14',
         threshold: '30',
         condition: 'below'
+      },
+      gap: {
+        enabled: false,
+        threshold: '2.0',
+        direction: 'both'
+      },
+      prevDayDollarVolume: {
+        enabled: false,
+        minDollarVolume: '10000000'
+      },
+      relativeVolume: {
+        enabled: false,
+        recentDays: '2',
+        lookbackDays: '20',
+        minRatio: '1.5'
       }
-    },
-    dateRange: {
-      startDate: new Date('2024-01-01'),
-      endDate: new Date('2024-01-31')
-    },
-    stockSelection: {
-      useAllStocks: true
-    },
-    results: {
-      data: null,
-      loading: false,
-      error: null
-    },
-    ui: {
-      sortColumn: 'symbol',
-      sortDirection: 'asc',
-      resultsView: 'table'
-    },
-    ...overrides
-  })
+    }
+
+    const baseState: ScreenerState = {
+      filters: baseFilters,
+      dateRange: {
+        startDate: new Date('2024-01-01'),
+        endDate: new Date('2024-01-31')
+      },
+      stockSelection: {
+        useAllStocks: true
+      },
+      results: {
+        data: null,
+        loading: false,
+        error: null
+      },
+      ui: {
+        sortColumn: 'symbol',
+        sortDirection: 'asc',
+        resultsView: 'table'
+      }
+    }
+
+    return {
+      ...baseState,
+      ...overrides,
+      filters: {
+        ...baseFilters,
+        ...(overrides?.filters ?? {})
+      }
+    }
+  }
 
   describe('Simple Price Range Validation', () => {
     it('should pass validation when price range is disabled', () => {

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import { useEffect } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useResultsContext } from '@/contexts/ResultsContext'
 import { useResults } from '@/hooks/useResults'
