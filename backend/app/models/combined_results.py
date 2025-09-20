@@ -2,7 +2,7 @@
 Models for combined screener and backtest results.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, List
 from uuid import UUID
 
@@ -99,8 +99,7 @@ class CombinedScreenerBacktestRow(BaseModel):
     pivot_bars: Optional[int]
     lower_timeframe: Optional[str]
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CombinedScreenerBacktestResponse(BaseModel):
@@ -111,5 +110,4 @@ class CombinedScreenerBacktestResponse(BaseModel):
     limit: int
     offset: int
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

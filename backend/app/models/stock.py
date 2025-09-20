@@ -17,13 +17,6 @@ class StockBar(BaseModel):
     vwap: Optional[float] = None
     transactions: Optional[int] = None  # Number of transactions for minute bars
     
-    class Config:
-        json_encoders = {
-            date: lambda v: v.isoformat(),
-            datetime: lambda v: v.isoformat() if v else None
-        }
-
-
 class StockData(BaseModel):
     """Stock data for a single symbol"""
     symbol: str

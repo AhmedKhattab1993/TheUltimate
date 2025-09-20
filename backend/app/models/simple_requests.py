@@ -2,7 +2,7 @@
 Simplified request models for the 3 basic trading filters.
 """
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, FieldValidationInfo, field_validator, ConfigDict
 from datetime import date
 from typing import List, Optional, Literal, Dict, Any
 from enum import Enum
@@ -13,9 +13,11 @@ class SimplePriceRangeParams(BaseModel):
     min_price: float = Field(1.0, ge=0, description="Minimum OPEN price")
     max_price: float = Field(100.0, ge=0, description="Maximum OPEN price")
     
-    @validator('max_price')
-    def validate_max_greater_than_min(cls, v, values):
-        if 'min_price' in values and v < values['min_price']:
+    @field_validator('max_price')
+    @classmethod
+    def validate_max_greater_than_min(cls, v: float, info: FieldValidationInfo) -> float:
+        min_price = info.data.get('min_price')
+        if min_price is not None and v < min_price:
             raise ValueError('max_price must be greater than or equal to min_price')
         return v
 
@@ -39,14 +41,16 @@ class RSIParams(BaseModel):
     condition: Literal["above", "below"] = Field("below", description="RSI condition")
     threshold: float = Field(30.0, ge=0, le=100, description="RSI threshold (e.g., 30 for oversold, 70 for overbought)")
     
-    @validator('threshold')
-    def validate_threshold_makes_sense(cls, v, values):
+    @field_validator('threshold')
+    @classmethod
+    def validate_threshold_makes_sense(cls, v: float, info: FieldValidationInfo) -> float:
         """Warn if threshold doesn't match typical usage."""
-        if 'condition' in values:
-            if values['condition'] == 'below' and v > 50:
+        condition = info.data.get('condition')
+        if condition:
+            if condition == 'below' and v > 50:
                 # Usually looking for oversold when below threshold
                 pass  # Allow but could log warning
-            elif values['condition'] == 'above' and v < 50:
+            elif condition == 'above' and v < 50:
                 # Usually looking for overbought when above threshold
                 pass  # Allow but could log warning
         return v
@@ -88,9 +92,11 @@ class RelativeVolumeParams(BaseModel):
     lookback_days: int = Field(20, ge=5, le=200, description="Number of historical days for average")
     min_ratio: float = Field(1.5, ge=0.1, le=10, description="Minimum ratio of recent/historical volume")
     
-    @validator('lookback_days')
-    def validate_lookback_greater_than_recent(cls, v, values):
-        if 'recent_days' in values and v <= values['recent_days']:
+    @field_validator('lookback_days')
+    @classmethod
+    def validate_lookback_greater_than_recent(cls, v: int, info: FieldValidationInfo) -> int:
+        recent_days = info.data.get('recent_days')
+        if recent_days is not None and v <= recent_days:
             raise ValueError('lookback_days must be greater than recent_days')
         return v
 
@@ -117,19 +123,21 @@ class SimpleScreenRequest(BaseModel):
     # Performance options
     enable_db_prefiltering: bool = Field(True, description="Use database pre-filtering where possible")
     
-    @validator('end_date')
-    def validate_date_range(cls, v, values):
-        if 'start_date' in values and v < values['start_date']:
+    @field_validator('end_date')
+    @classmethod
+    def validate_date_range(cls, v, info: FieldValidationInfo):
+        start_date = info.data.get('start_date')
+        if start_date and v < start_date:
             raise ValueError('end_date must be on or after start_date')
         # Limit date range for performance
-        if 'start_date' in values:
-            days = (v - values['start_date']).days
+        if start_date:
+            days = (v - start_date).days
             if days > 365:
                 raise ValueError('Date range cannot exceed 365 days')
         return v
     
-    
-    @validator('filters')
+    @field_validator('filters')
+    @classmethod
     def validate_at_least_one_filter(cls, v):
         if not any([v.price_range, v.price_vs_ma, v.rsi, v.min_avg_volume, v.min_avg_dollar_volume, v.gap, v.prev_day_dollar_volume, v.relative_volume]):
             raise ValueError('At least one filter must be specified')
@@ -151,11 +159,6 @@ class SimpleScreenResult(BaseModel):
             return 0.0
         return (self.qualifying_days_count / self.total_days_analyzed) * 100
     
-    class Config:
-        json_encoders = {
-            date: lambda v: v.isoformat()
-        }
-
 
 class TimingBreakdown(BaseModel):
     """Detailed timing breakdown for screening operations."""
@@ -186,7 +189,4 @@ class SimpleScreenResponse(BaseModel):
         description="Detailed timing breakdown by date (date -> timing details)"
     )
     
-    class Config:
-        json_encoders = {
-            date: lambda v: v.isoformat()
-        }
+    model_config = ConfigDict()

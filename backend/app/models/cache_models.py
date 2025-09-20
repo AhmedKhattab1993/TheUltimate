@@ -12,7 +12,7 @@ from decimal import Decimal
 from typing import List, Optional
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 
 
 class CachedScreenerRequest(BaseModel):
@@ -155,13 +155,11 @@ class CachedScreenerResult(BaseModel):
     # Metadata
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
-    class Config:
-        json_encoders = {
-            Decimal: lambda v: float(v),
-            UUID: lambda v: str(v),
-            datetime: lambda v: v.isoformat(),
-            date: lambda v: v.isoformat()
-        }
+    model_config = ConfigDict()
+
+    @model_serializer(mode='json')
+    def serialize_model(self):
+        return _convert_for_json(self.model_dump(mode='python'))
 
 
 class CachedBacktestRequest(BaseModel):
@@ -296,33 +294,42 @@ class CachedBacktestResult(BaseModel):
     # Metadata
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
-    @validator('win_rate', 'loss_rate')
-    def validate_rate_percentages(cls, v):
+    @field_validator('win_rate', 'loss_rate')
+    @classmethod
+    def validate_rate_percentages(cls, v: Optional[Decimal]) -> Optional[Decimal]:
         if v is not None and (v < 0 or v > 100):
             raise ValueError('Rate percentages must be between 0 and 100')
         return v
-    
-    @validator('total_trades', 'winning_trades', 'losing_trades', 'total_orders', 
-               'pivot_highs_detected', 'pivot_lows_detected', 'bos_signals_generated',
-               'position_flips', 'liquidation_events')
-    def validate_counts(cls, v):
+
+    @field_validator(
+        'total_trades',
+        'winning_trades',
+        'losing_trades',
+        'total_orders',
+        'pivot_highs_detected',
+        'pivot_lows_detected',
+        'bos_signals_generated',
+        'position_flips',
+        'liquidation_events',
+    )
+    @classmethod
+    def validate_counts(cls, v: Optional[int]) -> Optional[int]:
         if v is not None and v < 0:
             raise ValueError('Count values cannot be negative')
         return v
-    
-    @validator('pivot_bars')
-    def validate_pivot_bars(cls, v):
+
+    @field_validator('pivot_bars')
+    @classmethod
+    def validate_pivot_bars(cls, v: int) -> int:
         if v <= 0:
             raise ValueError('pivot_bars must be greater than 0')
         return v
-    
-    class Config:
-        json_encoders = {
-            Decimal: lambda v: float(v),
-            UUID: lambda v: str(v),
-            datetime: lambda v: v.isoformat(),
-            date: lambda v: v.isoformat()
-        }
+
+    model_config = ConfigDict()
+
+    @model_serializer(mode='json')
+    def serialize_model(self):
+        return _convert_for_json(self.model_dump(mode='python'))
 
 
 class CacheMetadata(BaseModel):
@@ -336,13 +343,28 @@ class CacheMetadata(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     
-    class Config:
-        json_encoders = {
-            UUID: lambda v: str(v),
-            datetime: lambda v: v.isoformat()
-        }
+    model_config = ConfigDict()
+
+    @model_serializer(mode='json')
+    def serialize_model(self):
+        return _convert_for_json(self.model_dump(mode='python'))
 
 
 # Legacy model names for backwards compatibility
 ScreenerResults = CachedScreenerResult
 MarketStructureResults = CachedBacktestResult
+
+
+def _convert_for_json(value):
+    """Recursively convert values to JSON-friendly primitives."""
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, list):
+        return [_convert_for_json(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _convert_for_json(val) for key, val in value.items()}
+    return value

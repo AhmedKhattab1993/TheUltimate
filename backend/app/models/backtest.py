@@ -2,18 +2,40 @@
 Models for backtesting functionality.
 """
 
-from pydantic import BaseModel, Field, validator
 from datetime import date, datetime
 from typing import List, Optional, Dict, Any, Literal
 from enum import Enum
 from decimal import Decimal
 from uuid import UUID
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    FieldValidationInfo,
+    field_validator,
+    model_serializer,
+)
 
 
 def to_camel(string: str) -> str:
     """Convert snake_case to camelCase."""
     components = string.split('_')
     return components[0] + ''.join(x.title() for x in components[1:])
+
+
+def _convert_for_json(value: Any) -> Any:
+    """Recursively convert dataclasses to JSON-friendly primitives."""
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, list):
+        return [_convert_for_json(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _convert_for_json(val) for key, val in value.items()}
+    return value
 
 
 class BacktestStatus(str, Enum):
@@ -47,30 +69,36 @@ class BacktestRequest(BaseModel):
     symbols: List[str] = Field(default_factory=list, description="Symbols to trade")
     use_screener_results: bool = Field(False, description="Use latest screener results for symbols")
     
-    @validator('end_date')
-    def validate_date_range(cls, v, values):
-        if 'start_date' in values and v < values['start_date']:
+    @field_validator('end_date')
+    @classmethod
+    def validate_date_range(cls, v: date, info: FieldValidationInfo) -> date:
+        start_date = info.data.get('start_date')
+        if start_date and v < start_date:
             raise ValueError('end_date must be on or after start_date')
         return v
-    
-    @validator('pivot_bars')
-    def validate_pivot_bars(cls, v):
+
+    @field_validator('pivot_bars')
+    @classmethod
+    def validate_pivot_bars(cls, v: int) -> int:
         if v <= 0:
             raise ValueError('pivot_bars must be greater than 0')
         return v
-    
-    @validator('initial_cash')
-    def validate_initial_cash(cls, v):
+
+    @field_validator('initial_cash')
+    @classmethod
+    def validate_initial_cash(cls, v: Decimal) -> Decimal:
         if v <= 0:
             raise ValueError('initial_cash must be greater than 0')
         return v
-    
-    @validator('lower_timeframe')
-    def validate_lower_timeframe(cls, v):
+
+    @field_validator('lower_timeframe')
+    @classmethod
+    def validate_lower_timeframe(cls, v: str) -> str:
         valid_timeframes = ['1min', '5min', '15min', '30min', '1hour', '4hour', 'daily']
-        if v.lower() not in valid_timeframes:
+        lowered = v.lower()
+        if lowered not in valid_timeframes:
             raise ValueError(f'lower_timeframe must be one of: {", ".join(valid_timeframes)}')
-        return v.lower()
+        return lowered
 
 
 class ScreenerBacktestRequest(BaseModel):
@@ -83,8 +111,9 @@ class ScreenerBacktestRequest(BaseModel):
     start_date: Optional[date] = Field(None, description="Start date for screener results (if not using latest session)")
     end_date: Optional[date] = Field(None, description="End date for screener results (if not using latest session)")
     
-    @validator('initial_cash')
-    def validate_initial_cash(cls, v):
+    @field_validator('initial_cash')
+    @classmethod
+    def validate_initial_cash(cls, v: Decimal) -> Decimal:
         if v <= 0:
             raise ValueError('initial_cash must be greater than 0')
         return v
@@ -170,28 +199,38 @@ class BacktestStatistics(BaseModel):
     position_flips: Optional[int] = Field(None, description="Number of position flips")
     liquidation_events: Optional[int] = Field(None, description="Number of liquidation events")
     
-    @validator('win_rate', 'loss_rate')
-    def validate_rate_percentages(cls, v):
+    @field_validator(
+        'win_rate',
+        'loss_rate',
+    )
+    @classmethod
+    def validate_rate_percentages(cls, v: Optional[Decimal]) -> Optional[Decimal]:
         if v is not None and (v < 0 or v > 100):
             raise ValueError('Rate percentages must be between 0 and 100')
         return v
-    
-    @validator('total_orders', 'total_trades', 'winning_trades', 'losing_trades',
-               'pivot_highs_detected', 'pivot_lows_detected', 'bos_signals_generated',
-               'position_flips', 'liquidation_events')
-    def validate_counts(cls, v):
+
+    @field_validator(
+        'total_orders',
+        'total_trades',
+        'winning_trades',
+        'losing_trades',
+        'pivot_highs_detected',
+        'pivot_lows_detected',
+        'bos_signals_generated',
+        'position_flips',
+        'liquidation_events',
+    )
+    @classmethod
+    def validate_counts(cls, v: Optional[int]) -> Optional[int]:
         if v is not None and v < 0:
             raise ValueError('Count values cannot be negative')
         return v
-    
-    class Config:
-        alias_generator = to_camel
-        populate_by_name = True
-        extra = "ignore"  # Ignore unknown fields from historical data
-        json_encoders = {
-            Decimal: lambda v: float(v)
-        }
-        json_schema_extra = {
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        extra='ignore',  # Ignore unknown fields from historical data
+        json_schema_extra={
             "example": {
                 "totalReturn": -20.401,
                 "netProfit": -20.401,
@@ -232,7 +271,12 @@ class BacktestStatistics(BaseModel):
                 "positionFlips": 15,
                 "liquidationEvents": 0
             }
-        }
+        },
+    )
+
+    @model_serializer(mode='json')
+    def serialize_model(self) -> Dict[str, Any]:
+        return _convert_for_json(self.model_dump(mode='python'))
 
 
 class BacktestResult(BaseModel):
@@ -268,14 +312,14 @@ class BacktestResult(BaseModel):
     # Timestamps
     created_at: datetime = Field(..., description="When the backtest was run")
     
-    class Config:
-        alias_generator = to_camel
-        populate_by_name = True
-        json_encoders = {
-            Decimal: lambda v: float(v),
-            date: lambda v: v.isoformat(),
-            datetime: lambda v: v.isoformat()
-        }
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+    @model_serializer(mode='json')
+    def serialize_model(self) -> Dict[str, Any]:
+        return _convert_for_json(self.model_dump(mode='python'))
 
 
 class DatabaseBacktestResult(BaseModel):
@@ -350,39 +394,48 @@ class DatabaseBacktestResult(BaseModel):
     cache_hit: Optional[bool] = Field(None, description="Whether result was from cache")
     created_at: Optional[datetime] = Field(None, description="When the result was created")
     
-    @validator('win_rate', 'loss_rate')
-    def validate_rate_percentages(cls, v):
+    @field_validator('win_rate', 'loss_rate')
+    @classmethod
+    def validate_rate_percentages(cls, v: Optional[Decimal]) -> Optional[Decimal]:
         if v is not None and (v < 0 or v > 100):
             raise ValueError('Rate percentages must be between 0 and 100')
         return v
-    
-    @validator('total_trades', 'winning_trades', 'losing_trades', 'total_orders',
-               'pivot_highs_detected', 'pivot_lows_detected', 'bos_signals_generated',
-               'position_flips', 'liquidation_events', 'execution_time_ms')
-    def validate_counts(cls, v):
+
+    @field_validator(
+        'total_trades',
+        'winning_trades',
+        'losing_trades',
+        'total_orders',
+        'pivot_highs_detected',
+        'pivot_lows_detected',
+        'bos_signals_generated',
+        'position_flips',
+        'liquidation_events',
+        'execution_time_ms',
+    )
+    @classmethod
+    def validate_counts(cls, v: Optional[int]) -> Optional[int]:
         if v is not None and v < 0:
             raise ValueError('Count and time values cannot be negative')
         return v
-    
-    @validator('pivot_bars')
-    def validate_pivot_bars(cls, v):
+
+    @field_validator('pivot_bars')
+    @classmethod
+    def validate_pivot_bars(cls, v: int) -> int:
         if v <= 0:
             raise ValueError('pivot_bars must be greater than 0')
         return v
-    
-    @validator('initial_cash', 'final_value', 'start_equity', 'end_equity')
-    def validate_monetary_values(cls, v):
+
+    @field_validator('initial_cash', 'final_value', 'start_equity', 'end_equity')
+    @classmethod
+    def validate_monetary_values(cls, v: Optional[Decimal]) -> Optional[Decimal]:
         if v is not None and v < 0:
             raise ValueError('Monetary values cannot be negative')
         return v
-    
-    class Config:
-        json_encoders = {
-            Decimal: lambda v: float(v),
-            UUID: lambda v: str(v),
-            date: lambda v: v.isoformat(),
-            datetime: lambda v: v.isoformat()
-        }
+
+    @model_serializer(mode='json')
+    def serialize_model(self) -> Dict[str, Any]:
+        return _convert_for_json(self.model_dump(mode='python'))
 
 
 class BacktestListResponse(BaseModel):
@@ -392,6 +445,7 @@ class BacktestListResponse(BaseModel):
     page: int = Field(1, description="Current page")
     page_size: int = Field(20, description="Results per page")
     
-    class Config:
-        alias_generator = to_camel
-        populate_by_name = True
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
