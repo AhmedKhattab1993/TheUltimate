@@ -25,11 +25,7 @@ start:
 
 # Stop all services
 stop:
-	@echo "Stopping all services..."
-	@pkill -f "python3 run.py" || true
-	@pkill -f "npm run dev" || true
-	@pkill -f "vite" || true
-	@echo "✅ All services stopped"
+	@python3 stop.py
 
 # Start only backend
 backend:
