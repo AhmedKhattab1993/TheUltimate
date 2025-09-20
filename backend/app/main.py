@@ -17,11 +17,12 @@ from app.config import settings
 from app.api import (
     backtest,
     combined_results,
+    data,
+    filter_optimizer,
     grid_results,
     registry,
     screener_results,
     simple_screener,
-    data,
 )
 from app.services.polygon_client import PolygonAPIError
 from app.services.database import db_pool, run_migrations
@@ -232,6 +233,13 @@ app.include_router(
     tags=["grid-results"],
 )
 
+# Include filter optimizer router
+app.include_router(
+    filter_optimizer.router,
+    # Router already has /api/v2/filter-optimizer prefix
+    tags=["filter-optimizer"],
+)
+
 
 # Root endpoint
 @app.get("/", tags=["root"])
@@ -260,5 +268,8 @@ async def root():
             "grid_results_detail": "/api/v2/grid/results/{run_id}",
             # Combined results
             "combined_results_list": "/api/v2/combined-results/",
+            # Filter optimizer endpoints
+            "filter_optimizer_optimize": "/api/v2/filter-optimizer/optimize",
+            "filter_optimizer_suggested_ranges": "/api/v2/filter-optimizer/suggested-ranges",
         }
     }
