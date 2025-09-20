@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parent
 PID_DIR = ROOT / ".pids"
 SERVICE_NAMES = ("backend", "frontend")
 TIMEOUT_SECONDS = 10
+FORCE_TIMEOUT_SECONDS = 5
 
 
 def read_pid(path: Path) -> int | None:
@@ -21,26 +22,48 @@ def read_pid(path: Path) -> int | None:
     except (FileNotFoundError, ValueError):
         return None
 
+def is_pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
-def kill_process_group(pid: int) -> bool:
+
+def wait_for_exit(pid: int, timeout: float) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if not is_pid_alive(pid):
+            return True
+        time.sleep(0.3)
+    return not is_pid_alive(pid)
+
+
+def kill_process_group(pid: int) -> tuple[bool, bool]:
+    if not is_pid_alive(pid):
+        return True, False
+
     try:
         os.killpg(pid, signal.SIGTERM)
     except ProcessLookupError:
-        return True
+        return True, False
+    except PermissionError:
+        return False, False
 
-    deadline = time.time() + TIMEOUT_SECONDS
-    while time.time() < deadline:
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return True
-        time.sleep(0.3)
+    if wait_for_exit(pid, TIMEOUT_SECONDS):
+        return True, False
 
+    forced = True
     try:
         os.killpg(pid, signal.SIGKILL)
     except ProcessLookupError:
-        return True
-    return False
+        return True, forced
+    except PermissionError:
+        return False, forced
+
+    return wait_for_exit(pid, FORCE_TIMEOUT_SECONDS), forced
 
 
 def stop_service(name: str) -> bool:
@@ -50,14 +73,24 @@ def stop_service(name: str) -> bool:
         print(f"{name}: no PID file, skipping")
         return True
 
+    if not is_pid_alive(pid):
+        with contextlib.suppress(FileNotFoundError):
+            pid_file.unlink()
+        print(f"{name}: PID {pid} not running, cleaned up stale file")
+        return True
+
     print(f"{name}: stopping PID {pid}")
-    success = kill_process_group(pid)
+    success, forced = kill_process_group(pid)
     if success:
         with contextlib.suppress(FileNotFoundError):
             pid_file.unlink()
-        print(f"{name}: stopped")
+        postfix = " (force killed)" if forced else ""
+        print(f"{name}: stopped{postfix}")
     else:
-        print(f"{name}: could not terminate", file=sys.stderr)
+        if forced:
+            print(f"{name}: force kill failed", file=sys.stderr)
+        else:
+            print(f"{name}: could not terminate", file=sys.stderr)
     return success
 
 
