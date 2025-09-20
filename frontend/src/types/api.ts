@@ -100,6 +100,35 @@ export interface ScreenerResponse {
   results: ScreenerResultRow[]
 }
 
+export interface ScreenerResultsListResponse {
+  results: ScreenerSummary[]
+  totalCount: number
+  page: number
+  pageSize: number
+}
+
+export interface ScreenerSummary {
+  id: string
+  timestamp: string
+  symbolCount: number
+  filters: Record<string, unknown>
+  executionTimeMs: number
+  totalSymbolsScreened: number
+}
+
+export interface ScreenerResultDetail {
+  id: string
+  timestamp: string
+  symbolCount: number
+  filters: Record<string, unknown>
+  metadata: Record<string, unknown>
+  symbols: Array<{
+    symbol: string
+    latestPrice?: number
+    latestVolume?: number
+  }>
+}
+
 export interface BacktestRequestPayload {
   strategyName: string
   startDate: string

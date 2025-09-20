@@ -3,28 +3,36 @@ import type {
   BacktestRequestPayload,
   BacktestRunInfo,
   BacktestRunListResponse,
+  CombinedResultsResponse,
+  CombinedRow,
+  DataIngestionRequestPayload,
   FilterControl,
   FilterDefinition,
   FilterOption,
+  FilterStateMap,
   GridBacktestRequestPayload,
-  OptimizeRequestPayload,
-  DataIngestionRequestPayload,
-  RegistryResponse,
   GridResultsListResponse,
   GridRunDetail,
-  CombinedResultsResponse,
-  CombinedRow,
-  GridRunSummary,
   GridRunResult,
-  RunSummaryResponse,
+  GridRunSummary,
   JobTypeSummary,
   MetricSummary,
-  TargetSummary,
+  OptimizeRequestPayload,
+  RegistryResponse,
+  RunSummaryResponse,
   ScreenerRequestPayload,
   ScreenerResponse,
+  ScreenerResultDetail,
+  ScreenerResultsListResponse,
   StrategyDefinition,
   StrategyParameter,
+  TargetSummary,
 } from '@/types/api'
+import type {
+  EnhancedScreenerRequest,
+  EnhancedScreenerResponse,
+  SimpleFilters,
+} from '@/types/screener'
 
 type RawFilterOption = {
   label: string
@@ -105,6 +113,35 @@ type RawScreenerResponse = {
     qualifying_days_count: number
     metrics: Record<string, number | string | null>
   }>
+}
+
+type RawScreenerResultSummary = {
+  id: string
+  timestamp: string
+  symbol_count: number
+  filters: Record<string, unknown>
+  execution_time_ms: number
+  total_symbols_screened: number
+}
+
+type RawScreenerResultDetail = {
+  id: string
+  timestamp: string
+  symbol_count: number
+  filters: Record<string, unknown>
+  metadata: Record<string, unknown>
+  symbols: Array<{
+    symbol: string
+    latest_price?: number
+    latest_volume?: number
+  }>
+}
+
+type RawScreenerResultsListResponse = {
+  results: RawScreenerResultSummary[]
+  total_count: number
+  page: number
+  page_size: number
 }
 
 type RawBacktestRunInfo = {
@@ -406,6 +443,28 @@ const mapScreenerResponse = (data: RawScreenerResponse): ScreenerResponse => ({
   })),
 })
 
+const mapScreenerSummary = (summary: RawScreenerResultSummary) => ({
+  id: summary.id,
+  timestamp: summary.timestamp,
+  symbolCount: summary.symbol_count,
+  filters: summary.filters ?? {},
+  executionTimeMs: summary.execution_time_ms,
+  totalSymbolsScreened: summary.total_symbols_screened,
+})
+
+const mapScreenerDetail = (detail: RawScreenerResultDetail): ScreenerResultDetail => ({
+  id: detail.id,
+  timestamp: detail.timestamp,
+  symbolCount: detail.symbol_count,
+  filters: detail.filters ?? {},
+  metadata: detail.metadata ?? {},
+  symbols: detail.symbols?.map((symbol) => ({
+    symbol: symbol.symbol,
+    latestPrice: symbol.latest_price,
+    latestVolume: symbol.latest_volume,
+  })) ?? [],
+})
+
 const mapRegistryResponse = (data: RawRegistryResponse): RegistryResponse => ({
   filters: data.filters.map(mapFilterDefinition),
   strategies: data.strategies.map(mapStrategyDefinition),
@@ -470,6 +529,91 @@ const toScreenerPayload = (payload: ScreenerRequestPayload) => ({
   }, {}),
 })
 
+const simpleFiltersToStateMap = (filters: SimpleFilters): FilterStateMap => {
+  const map: FilterStateMap = {}
+
+  const add = (id: string, values?: Record<string, string | number | boolean>) => {
+    if (values && Object.keys(values).length > 0) {
+      map[id] = { enabled: true, values }
+    } else {
+      map[id] = { enabled: false, values: {} }
+    }
+  }
+
+  const priceRange = filters.simple_price_range
+  add('simple_price_range', priceRange ? {
+    min_price: priceRange.min_price,
+    max_price: priceRange.max_price,
+  } : undefined)
+
+  const priceVsMa = filters.price_vs_ma
+  add('price_vs_ma', priceVsMa ? {
+    period: priceVsMa.period,
+    condition: priceVsMa.condition,
+  } : undefined)
+
+  const rsi = filters.rsi
+  add('rsi', rsi ? {
+    period: rsi.period,
+    threshold: rsi.threshold,
+    condition: rsi.condition,
+  } : undefined)
+
+  const gap = filters.gap
+  add('gap', gap ? {
+    gap_threshold: gap.gap_threshold,
+    direction: gap.direction,
+  } : undefined)
+
+  const prevDay = filters.prev_day_dollar_volume
+  add('prev_day_dollar_volume', prevDay ? {
+    min_dollar_volume: prevDay.min_dollar_volume,
+  } : undefined)
+
+  const relVolume = filters.relative_volume
+  add('relative_volume', relVolume ? {
+    recent_days: relVolume.recent_days,
+    lookback_days: relVolume.lookback_days,
+    min_ratio: relVolume.min_ratio,
+  } : undefined)
+
+  return map
+}
+
+const mapToEnhancedResponse = (
+  response: ScreenerResponse,
+): EnhancedScreenerResponse => ({
+  request_date: new Date().toISOString(),
+  total_symbols_screened: response.totalSymbolsScreened,
+  total_qualifying_stocks: response.totalQualifyingStocks,
+  execution_time_ms: response.executionTimeMs,
+  results: response.results.map((row) => ({
+    symbol: row.symbol,
+    qualifying_dates: row.qualifyingDates,
+    metrics: {
+      latest_price: typeof row.metrics.avg_open_price === 'number' ? Number(row.metrics.avg_open_price) : undefined,
+      latest_volume: typeof row.metrics.avg_volume === 'number' ? Number(row.metrics.avg_volume) : undefined,
+      simple_price_range: true,
+      price_vs_ma: typeof row.metrics.ma_20_mean === 'number'
+        ? Number(row.metrics.ma_20_mean)
+        : typeof row.metrics.ma_50_mean === 'number'
+          ? Number(row.metrics.ma_50_mean)
+          : typeof row.metrics.ma_200_mean === 'number'
+            ? Number(row.metrics.ma_200_mean)
+            : undefined,
+      rsi: typeof row.metrics.rsi_mean === 'number' ? Number(row.metrics.rsi_mean) : undefined,
+    },
+  })),
+  performance_metrics: {
+    data_fetch_time_ms: 0,
+    screening_time_ms: response.executionTimeMs,
+    total_execution_time_ms: response.executionTimeMs,
+    used_bulk_endpoint: false,
+    symbols_fetched: response.totalSymbolsScreened,
+    symbols_failed: 0,
+  },
+})
+
 export const screenerApi = {
   run: async (payload: ScreenerRequestPayload): Promise<ScreenerResponse> => {
     const response = await api.post<RawScreenerResponse>(
@@ -477,6 +621,28 @@ export const screenerApi = {
       toScreenerPayload(payload),
     )
     return mapScreenerResponse(response.data)
+  },
+}
+
+export const stockScreenerApi = {
+  screenEnhanced: async (request: EnhancedScreenerRequest): Promise<EnhancedScreenerResponse> => {
+    const payload: ScreenerRequestPayload = {
+      startDate: request.start_date,
+      endDate: request.end_date,
+      useAllUsStocks: request.use_all_us_stocks,
+      filters: simpleFiltersToStateMap(request.filters ?? {}),
+      enableDbPrefiltering: true,
+    }
+    const response = await screenerApi.run(payload)
+    return mapToEnhancedResponse(response)
+  },
+  getFilterInfo: async () => {
+    const response = await api.get('/api/v2/simple-screener/filters/info')
+    return response.data
+  },
+  getExamples: async () => {
+    const response = await api.get('/api/v2/simple-screener/examples')
+    return response.data
   },
 }
 
@@ -619,5 +785,29 @@ export const combinedResultsApi = {
       },
     })
     return mapCombinedResponse(response.data)
+  },
+}
+
+export const screenerResultsApi = {
+  list: async (params: { page?: number; pageSize?: number; startDate?: string; endDate?: string } = {}): Promise<ScreenerResultsListResponse> => {
+    const response = await api.get<RawScreenerResultsListResponse>('/api/v2/screener/results', {
+      params: {
+        page: params.page ?? 1,
+        page_size: params.pageSize ?? 20,
+        start_date: params.startDate,
+        end_date: params.endDate,
+      },
+    })
+
+    return {
+      results: response.data.results.map(mapScreenerSummary),
+      totalCount: response.data.total_count,
+      page: response.data.page,
+      pageSize: response.data.page_size,
+    }
+  },
+  detail: async (resultId: string): Promise<ScreenerResultDetail> => {
+    const response = await api.get<RawScreenerResultDetail>(`/api/v2/screener/results/${resultId}`)
+    return mapScreenerDetail(response.data)
   },
 }

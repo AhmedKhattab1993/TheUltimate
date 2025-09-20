@@ -1,14 +1,14 @@
 import type { ReactElement, ReactNode } from 'react'
 import { render } from '@testing-library/react'
 import type { RenderOptions } from '@testing-library/react'
-import { AppProviders } from '@/app/AppProviders'
+import { ScreenerProvider } from '@/contexts/ScreenerContext'
 
 interface CustomRenderOptions extends Omit<RenderOptions, 'wrapper'> {
   initialState?: any
 }
 
 const AllTheProviders = ({ children }: { children: ReactNode }) => {
-  return <AppProviders>{children}</AppProviders>
+  return <ScreenerProvider>{children}</ScreenerProvider>
 }
 
 const customRender = (
