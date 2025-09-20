@@ -1,3 +1,0 @@
-symbol,total_return,sharpe_ratio,max_drawdown,win_rate,total_trades,profit_factor,average_win,average_loss,compounding_annual_return,volatility,start_equity,end_equity,net_profit
-VSAT,5.19,0.0,0.0,41.67,12,2.0455,2265.756,791.2057,0.0,0.0,100000.0,105190.806,5190.805999999997
-USAR,-7.66,0.0,0.0,26.090000000000003,23,0.4945,1018.7633,727.1406,0.0,0.0,100000.0,92340.1905,-7659.809500000003

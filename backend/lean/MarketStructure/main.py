@@ -54,6 +54,25 @@ class MarketStructureAlgorithm(QCAlgorithm):
     
     def _load_parameters(self):
         """Load algorithm parameters from configuration."""
+        # Allow callers to override the mapping file and pivot options
+        self.symbol_mapping_file = self.get_parameter("symbol_mapping_file", "")
+
+        pivot_values_param = self.get_parameter("pivot_values", "")
+        if pivot_values_param:
+            separators = [";", ",", "|"]
+            raw_values = [pivot_values_param]
+            for sep in separators:
+                if sep in pivot_values_param:
+                    raw_values = pivot_values_param.split(sep)
+                    break
+            try:
+                self.pivot_options = [int(value.strip()) for value in raw_values if value.strip()]
+            except ValueError:
+                self.error(f"Invalid pivot_values parameter: {pivot_values_param}")
+                self.pivot_options = [1, 2, 3, 5, 10, 20]
+        else:
+            self.pivot_options = [1, 2, 3, 5, 10, 20]
+
         # Dates and cash
         start_date = self.get_parameter("startDate", "20240101")
         end_date = self.get_parameter("endDate", "20241231")
@@ -69,7 +88,17 @@ class MarketStructureAlgorithm(QCAlgorithm):
         self.set_cash(cash)
         
         # Strategy parameters
-        self.pivot_bars = int(self.get_parameter("pivot_bars", "20"))
+        pivot_slot_param = self.get_parameter("pivot_slot", None)
+        if pivot_slot_param is not None:
+            try:
+                slot_index = int(float(pivot_slot_param))
+            except ValueError:
+                slot_index = 0
+            slot_index = max(0, min(slot_index, len(self.pivot_options) - 1))
+            self.pivot_bars = self.pivot_options[slot_index]
+        else:
+            default_pivot = str(self.pivot_options[-1]) if self.pivot_options else "20"
+            self.pivot_bars = int(self.get_parameter("pivot_bars", default_pivot))
         self.use_screener_results = self.get_parameter("use_screener_results", "false").lower() == "true"
         self.screener_results_file = self.get_parameter("screener_results_file", "")
         
@@ -116,28 +145,21 @@ class MarketStructureAlgorithm(QCAlgorithm):
     def _load_symbol_mapping(self):
         """Load the symbol mapping from the data directory."""
         try:
-            # Try different paths for the symbol mapping file
-            possible_paths = [
-                "/data/symbol_mapping.json",  # Path in LEAN Docker container
-                os.path.join(os.path.dirname(__file__), "symbol_mapping.json"),  # Adjacent to algorithm
-                "symbol_mapping.json",  # Relative to algorithm
-                os.path.join(self.data_folder, "symbol_mapping.json") if hasattr(self, 'data_folder') else None,
-                os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "symbol_mapping.json"),
-                "/home/ahmed/TheUltimate/data/symbol_mapping.json"  # Local development path
-            ]
-            
-            data_path = None
-            for path in possible_paths:
-                if path and os.path.exists(path):
-                    data_path = path
-                    break
-            
+            candidate_paths = []
+            if getattr(self, "symbol_mapping_file", None):
+                candidate_paths.append(self.symbol_mapping_file)
+
+            candidate_paths.extend([
+                "/data/symbol_mapping.json",
+                os.path.join(os.path.dirname(__file__), "symbol_mapping.json"),
+                os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "symbol_mapping.json")
+            ])
+
+            data_path = next((path for path in candidate_paths if path and os.path.exists(path)), None)
+
             if not data_path:
-                self.debug("Symbol mapping file not found in any of the expected locations")
                 raise FileNotFoundError("symbol_mapping.json not found")
-            
-            self.debug(f"Loading symbol mapping from: {data_path}")
-            
+
             with open(data_path, 'r') as f:
                 mapping_data = json.load(f)
                 return mapping_data.get("index_to_symbol", {})

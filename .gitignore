@@ -1,9 +1,50 @@
 # PID files
 .pids/
 
-# Log files
-frontend.log
-backend.log
-
-# Checkpoint files
+# Logs and checkpoints
+*.log
 *checkpoint.json
+
+# Node/JS artifacts
+node_modules/
+frontend/node_modules/
+frontend/dist/
+dist/
+
+# Python environments
+venv/
+backend/venv/
+backend/lean_venv/
+backend/test_venv/
+
+# Lean datasets and caches
+backend/lean/data/
+backend/lean/backtest_metadata/
+backend/lean/optimizations/
+backend/lean/tmp_opt/
+backend/lean/tmp_opt_multi/
+backend/lean/isolated_backtests/
+backend/lean/storage/
+backend/lean/test-project/
+
+# Generated pipeline/backtest outputs
+backend/pipeline_results/
+backend/pipeline_results_simple_test/
+backend/screener_results/
+backend/parameter_sweep_configs/
+backend/parameter_sweep_configs_by_date/
+backend/scripts/*checkpoint*.json
+backend/scripts/parallel_test_results_*.json
+backend/scripts/grid_analysis_*.log
+backend/scripts/*.tar.gz
+
+# Archives and dumps
+backend/archives/
+backend/*.tar.gz
+backend/*.sql
+*.tar.gz
+
+# Unix sockets and runfiles
+backend/grid
+grid
+*.sock
