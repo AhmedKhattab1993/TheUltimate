@@ -1,7 +1,7 @@
 {
     "algorithm-language": "Python",
     "parameters": {
-        "startDate": "20250909",
+        "startDate": "20205909",
         "endDate": "20250909",
         "cash": "100000.0",
         "symbols": "AAPL,MSFT,GOOGL",
