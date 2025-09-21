@@ -2,6 +2,31 @@ import { createContext, useContext, useReducer } from 'react'
 import type { Dispatch, ReactNode } from 'react'
 
 // State interface
+type MAPeriod = 20 | 50 | 200
+type RSIPeriod = 3 | 14 | 21
+
+type RatioRange = {
+  enabled: boolean
+  minRatio: string
+  maxRatio: string
+}
+
+type RsiRange = {
+  enabled: boolean
+  minValue: string
+  maxValue: string
+}
+
+type PriceVsMAFilterState = {
+  enabled: boolean
+  setups: Record<MAPeriod, RatioRange>
+}
+
+type RSIFilterState = {
+  enabled: boolean
+  periods: Record<RSIPeriod, RsiRange>
+}
+
 export interface ScreenerState {
   filters: {
     simplePriceRange: {
@@ -9,18 +34,8 @@ export interface ScreenerState {
       minPrice: string
       maxPrice: string
     }
-    priceVsMA: {
-      enabled: boolean
-      period: 20 | 50 | 200
-      minRatio: string
-      maxRatio: string
-    }
-    rsi: {
-      enabled: boolean
-      period: string
-      minValue: string
-      maxValue: string
-    }
+    priceVsMA: PriceVsMAFilterState
+    rsi: RSIFilterState
     gap: {
       enabled: boolean
       minGapPercent: string
@@ -63,6 +78,10 @@ export interface ScreenerState {
 export type ScreenerAction =
   | { type: 'SET_FILTER'; filter: keyof ScreenerState['filters']; field: string; value: any }
   | { type: 'TOGGLE_FILTER'; filter: keyof ScreenerState['filters'] }
+  | { type: 'TOGGLE_MA_PERIOD'; period: MAPeriod }
+  | { type: 'SET_MA_RATIO'; period: MAPeriod; field: 'minRatio' | 'maxRatio'; value: string }
+  | { type: 'TOGGLE_RSI_PERIOD'; period: RSIPeriod }
+  | { type: 'SET_RSI_VALUE'; period: RSIPeriod; field: 'minValue' | 'maxValue'; value: string }
   | { type: 'SET_DATE_RANGE'; field: 'startDate' | 'endDate'; value: Date | null }
   | { type: 'SET_RESULTS'; data: any }
   | { type: 'SET_LOADING'; loading: boolean }
@@ -71,45 +90,51 @@ export type ScreenerAction =
   | { type: 'SET_VIEW_MODE'; mode: 'table' | 'cards' }
   | { type: 'RESET_FILTERS' }
 
+const createInitialFilters = () => ({
+  simplePriceRange: {
+    enabled: true,
+    minPrice: '1.00',
+    maxPrice: '100.00'
+  },
+  priceVsMA: {
+    enabled: false,
+    setups: {
+      20: { enabled: false, minRatio: '1.00', maxRatio: '' },
+      50: { enabled: false, minRatio: '1.00', maxRatio: '' },
+      200: { enabled: false, minRatio: '1.00', maxRatio: '' }
+    }
+  } satisfies PriceVsMAFilterState,
+  rsi: {
+    enabled: false,
+    periods: {
+      3: { enabled: false, minValue: '', maxValue: '30' },
+      14: { enabled: false, minValue: '', maxValue: '30' },
+      21: { enabled: false, minValue: '', maxValue: '30' }
+    }
+  } satisfies RSIFilterState,
+  gap: {
+    enabled: false,
+    minGapPercent: '2.0',
+    maxGapPercent: '',
+    direction: 'both'
+  },
+  prevDayDollarVolume: {
+    enabled: false,
+    minDollarVolume: '10000000',
+    maxDollarVolume: ''
+  },
+  relativeVolume: {
+    enabled: false,
+    recentDays: '2',
+    lookbackDays: '20',
+    minRatio: '1.5',
+    maxRatio: ''
+  }
+})
+
 // Initial state
 const initialState: ScreenerState = {
-  filters: {
-    simplePriceRange: {
-      enabled: true,
-      minPrice: '1.00',
-      maxPrice: '100.00'
-    },
-    priceVsMA: {
-      enabled: false,
-      period: 50,
-      minRatio: '1.00',
-      maxRatio: ''
-    },
-    rsi: {
-      enabled: false,
-      period: '14',
-      minValue: '',
-      maxValue: '30'
-    },
-    gap: {
-      enabled: false,
-      minGapPercent: '2.0',
-      maxGapPercent: '',
-      direction: 'both'
-    },
-    prevDayDollarVolume: {
-      enabled: false,
-      minDollarVolume: '10000000',
-      maxDollarVolume: ''
-    },
-    relativeVolume: {
-      enabled: false,
-      recentDays: '2',
-      lookbackDays: '20',
-      minRatio: '1.5',
-      maxRatio: ''
-    }
-  },
+  filters: createInitialFilters(),
   dateRange: {
     startDate: null,
     endDate: null
@@ -159,6 +184,98 @@ function screenerReducer(state: ScreenerState, action: ScreenerAction): Screener
         }
       }
 
+    case 'TOGGLE_MA_PERIOD': {
+      const current = state.filters.priceVsMA.setups[action.period]
+      const updatedSetups = {
+        ...state.filters.priceVsMA.setups,
+        [action.period]: {
+          ...current,
+          enabled: !current.enabled
+        }
+      }
+      const hasEnabled = Object.values(updatedSetups).some((setup) => setup.enabled)
+
+      return {
+        ...state,
+        filters: {
+          ...state.filters,
+          priceVsMA: {
+            enabled: hasEnabled,
+            setups: updatedSetups
+          }
+        }
+      }
+    }
+
+    case 'SET_MA_RATIO': {
+      const current = state.filters.priceVsMA.setups[action.period]
+      const updatedSetups = {
+        ...state.filters.priceVsMA.setups,
+        [action.period]: {
+          ...current,
+          [action.field]: action.value
+        }
+      }
+      const hasEnabled = Object.values(updatedSetups).some((setup) => setup.enabled)
+
+      return {
+        ...state,
+        filters: {
+          ...state.filters,
+          priceVsMA: {
+            enabled: hasEnabled,
+            setups: updatedSetups
+          }
+        }
+      }
+    }
+
+    case 'TOGGLE_RSI_PERIOD': {
+      const current = state.filters.rsi.periods[action.period]
+      const updatedPeriods = {
+        ...state.filters.rsi.periods,
+        [action.period]: {
+          ...current,
+          enabled: !current.enabled
+        }
+      }
+      const hasEnabled = Object.values(updatedPeriods).some((period) => period.enabled)
+
+      return {
+        ...state,
+        filters: {
+          ...state.filters,
+          rsi: {
+            enabled: hasEnabled,
+            periods: updatedPeriods
+          }
+        }
+      }
+    }
+
+    case 'SET_RSI_VALUE': {
+      const current = state.filters.rsi.periods[action.period]
+      const updatedPeriods = {
+        ...state.filters.rsi.periods,
+        [action.period]: {
+          ...current,
+          [action.field]: action.value
+        }
+      }
+      const hasEnabled = Object.values(updatedPeriods).some((period) => period.enabled)
+
+      return {
+        ...state,
+        filters: {
+          ...state.filters,
+          rsi: {
+            enabled: hasEnabled,
+            periods: updatedPeriods
+          }
+        }
+      }
+    }
+
 
     case 'SET_DATE_RANGE':
       return {
@@ -199,12 +316,12 @@ function screenerReducer(state: ScreenerState, action: ScreenerAction): Screener
         }
       }
 
-    case 'SORT_RESULTS':
-      const newDirection = 
-        state.ui.sortColumn === action.column && state.ui.sortDirection === 'asc' 
-          ? 'desc' 
+    case 'SORT_RESULTS': {
+      const newDirection =
+        state.ui.sortColumn === action.column && state.ui.sortDirection === 'asc'
+          ? 'desc'
           : 'asc'
-      
+
       return {
         ...state,
         ui: {
@@ -213,6 +330,7 @@ function screenerReducer(state: ScreenerState, action: ScreenerAction): Screener
           sortDirection: newDirection
         }
       }
+    }
 
     case 'SET_VIEW_MODE':
       return {
@@ -226,7 +344,7 @@ function screenerReducer(state: ScreenerState, action: ScreenerAction): Screener
     case 'RESET_FILTERS':
       return {
         ...state,
-        filters: initialState.filters,
+        filters: createInitialFilters(),
         ui: {
           ...state.ui
         }

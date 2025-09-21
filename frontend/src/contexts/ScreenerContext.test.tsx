@@ -21,16 +21,20 @@ describe('ScreenerContext', () => {
       
       expect(result.current.state.filters.priceVsMA).toEqual({
         enabled: false,
-        period: 50,
-        minRatio: '1.00',
-        maxRatio: ''
+        setups: {
+          20: { enabled: false, minRatio: '1.00', maxRatio: '' },
+          50: { enabled: false, minRatio: '1.00', maxRatio: '' },
+          200: { enabled: false, minRatio: '1.00', maxRatio: '' }
+        }
       })
       
       expect(result.current.state.filters.rsi).toEqual({
         enabled: false,
-        period: '14',
-        minValue: '',
-        maxValue: '30'
+        periods: {
+          3: { enabled: false, minValue: '', maxValue: '30' },
+          14: { enabled: false, minValue: '', maxValue: '30' },
+          21: { enabled: false, minValue: '', maxValue: '30' }
+        }
       })
       
       expect(result.current.state.dateRange).toEqual({
@@ -60,26 +64,28 @@ describe('ScreenerContext', () => {
       expect(result.current.state.filters.simplePriceRange.minPrice).toBe('5.00')
     })
 
-    it('should toggle filter enabled state', () => {
+    it('should toggle MA preset enabled state', () => {
       const { result } = renderHook(() => useScreenerContext(), { wrapper })
       
       act(() => {
         result.current.dispatch({
-          type: 'TOGGLE_FILTER',
-          filter: 'priceVsMA'
+          type: 'TOGGLE_MA_PERIOD',
+          period: 20
         })
       })
       
       expect(result.current.state.filters.priceVsMA.enabled).toBe(true)
+      expect(result.current.state.filters.priceVsMA.setups[20].enabled).toBe(true)
       
       act(() => {
         result.current.dispatch({
-          type: 'TOGGLE_FILTER',
-          filter: 'priceVsMA'
+          type: 'TOGGLE_MA_PERIOD',
+          period: 20
         })
       })
       
       expect(result.current.state.filters.priceVsMA.enabled).toBe(false)
+      expect(result.current.state.filters.priceVsMA.setups[20].enabled).toBe(false)
     })
 
 
@@ -95,8 +101,8 @@ describe('ScreenerContext', () => {
           value: '50.00'
         })
         result.current.dispatch({
-          type: 'TOGGLE_FILTER',
-          filter: 'rsi'
+          type: 'TOGGLE_RSI_PERIOD',
+          period: 14
         })
       })
       
@@ -107,6 +113,7 @@ describe('ScreenerContext', () => {
       
       expect(result.current.state.filters.simplePriceRange.minPrice).toBe('1.00')
       expect(result.current.state.filters.rsi.enabled).toBe(false)
+      expect(result.current.state.filters.rsi.periods[14].enabled).toBe(false)
     })
   })
 

@@ -6,7 +6,7 @@ export interface SimplePriceRangeFilter {
   step?: number
 }
 
-export interface PriceVsMAFilter {
+export interface PriceVsMAFilterConfig {
   ma_period: 20 | 50 | 200
   min_ratio?: number
   max_ratio?: number
@@ -17,7 +17,9 @@ export interface PriceVsMAFilter {
   condition?: 'above' | 'below'
 }
 
-export interface RSIFilter {
+export type PriceVsMAFilter = PriceVsMAFilterConfig | PriceVsMAFilterConfig[]
+
+export interface RSIFilterConfig {
   rsi_period: number
   min_value?: number
   max_value?: number
@@ -27,6 +29,8 @@ export interface RSIFilter {
   threshold?: number
   condition?: 'above' | 'below'
 }
+
+export type RSIFilter = RSIFilterConfig | RSIFilterConfig[]
 
 export interface GapFilter {
   min_gap_percent?: number

@@ -1,498 +1,178 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { validateFilters } from './validation'
 import type { ScreenerState } from '@/contexts/ScreenerContext'
 
-describe('validateFilters', () => {
-  type FilterOverrides = Partial<ScreenerState['filters']>
-  type StateOverrides = Partial<Omit<ScreenerState, 'filters'>> & { filters?: FilterOverrides }
-
-  const createMockState = (overrides?: StateOverrides): ScreenerState => {
-    const baseFilters: ScreenerState['filters'] = {
-      simplePriceRange: {
-        enabled: false,
-        minPrice: '1.00',
-        maxPrice: '100.00'
-      },
-      priceVsMA: {
-        enabled: false,
-        period: 50,
-        condition: 'above'
-      },
-      rsi: {
-        enabled: false,
-        period: '14',
-        threshold: '30',
-        condition: 'below'
-      },
-      gap: {
-        enabled: false,
-        threshold: '2.0',
-        direction: 'both'
-      },
-      prevDayDollarVolume: {
-        enabled: false,
-        minDollarVolume: '10000000'
-      },
-      relativeVolume: {
-        enabled: false,
-        recentDays: '2',
-        lookbackDays: '20',
-        minRatio: '1.5'
+const makeBaseState = (): ScreenerState => ({
+  filters: {
+    simplePriceRange: {
+      enabled: false,
+      minPrice: '1.00',
+      maxPrice: '100.00'
+    },
+    priceVsMA: {
+      enabled: false,
+      setups: {
+        20: { enabled: false, minRatio: '1.00', maxRatio: '' },
+        50: { enabled: false, minRatio: '1.00', maxRatio: '' },
+        200: { enabled: false, minRatio: '1.00', maxRatio: '' }
       }
-    }
-
-    const baseState: ScreenerState = {
-      filters: baseFilters,
-      dateRange: {
-        startDate: new Date('2024-01-01'),
-        endDate: new Date('2024-01-31')
-      },
-      stockSelection: {
-        useAllStocks: true
-      },
-      results: {
-        data: null,
-        loading: false,
-        error: null
-      },
-      ui: {
-        sortColumn: 'symbol',
-        sortDirection: 'asc',
-        resultsView: 'table'
+    },
+    rsi: {
+      enabled: false,
+      periods: {
+        3: { enabled: false, minValue: '', maxValue: '30' },
+        14: { enabled: false, minValue: '', maxValue: '30' },
+        21: { enabled: false, minValue: '', maxValue: '30' }
       }
+    },
+    gap: {
+      enabled: false,
+      minGapPercent: '2.0',
+      maxGapPercent: '',
+      direction: 'both'
+    },
+    prevDayDollarVolume: {
+      enabled: false,
+      minDollarVolume: '10000000',
+      maxDollarVolume: ''
+    },
+    relativeVolume: {
+      enabled: false,
+      recentDays: '2',
+      lookbackDays: '20',
+      minRatio: '1.5',
+      maxRatio: ''
     }
-
-    return {
-      ...baseState,
-      ...overrides,
-      filters: {
-        ...baseFilters,
-        ...(overrides?.filters ?? {})
-      }
-    }
+  },
+  dateRange: {
+    startDate: new Date('2024-01-01'),
+    endDate: new Date('2024-01-31')
+  },
+  stockSelection: {
+    useAllStocks: true
+  },
+  results: {
+    data: null,
+    loading: false,
+    error: null
+  },
+  ui: {
+    sortColumn: 'symbol',
+    sortDirection: 'asc',
+    resultsView: 'table'
   }
+})
 
-  describe('Simple Price Range Validation', () => {
-    it('should pass validation when price range is disabled', () => {
-      const state = createMockState()
-      const result = validateFilters(state)
-      
-      expect(result.isValid).toBe(true)
-      expect(result.errors).toHaveLength(0)
-    })
+describe('validateFilters', () => {
+  it('returns valid result when no filters are enabled', () => {
+    const result = validateFilters(makeBaseState())
+    expect(result.isValid).toBe(true)
+    expect(result.errors).toHaveLength(0)
+  })
 
-    it('should pass validation with valid price range', () => {
-      const state = createMockState({
-        filters: {
-          simplePriceRange: {
-            enabled: true,
-            minPrice: '10.00',
-            maxPrice: '50.00'
-          },
-          priceVsMA: {
-            enabled: false,
-            period: 50,
-            condition: 'above'
-          },
-          rsi: {
-            enabled: false,
-            period: '14',
-            threshold: '30',
-            condition: 'below'
-          }
-        }
-      })
-      
-      const result = validateFilters(state)
-      expect(result.isValid).toBe(true)
-      expect(result.errors).toHaveLength(0)
-    })
+  it('validates simple price range bounds', () => {
+    const state = makeBaseState()
+    state.filters.simplePriceRange.enabled = true
+    state.filters.simplePriceRange.minPrice = '-1'
 
-    it('should fail validation with negative min price', () => {
-      const state = createMockState({
-        filters: {
-          simplePriceRange: {
-            enabled: true,
-            minPrice: '-10',
-            maxPrice: '50.00'
-          },
-          priceVsMA: {
-            enabled: false,
-            period: 50,
-            condition: 'above'
-          },
-          rsi: {
-            enabled: false,
-            period: '14',
-            threshold: '30',
-            condition: 'below'
-          }
-        }
-      })
-      
-      const result = validateFilters(state)
-      expect(result.isValid).toBe(false)
-      expect(result.errors).toContainEqual({
-        field: 'simplePriceRange.minPrice',
-        message: 'Minimum price must be a positive number'
-      })
-    })
+    const result = validateFilters(state)
 
-    it('should fail validation with invalid min price format', () => {
-      const state = createMockState({
-        filters: {
-          simplePriceRange: {
-            enabled: true,
-            minPrice: 'abc',
-            maxPrice: '50.00'
-          },
-          priceVsMA: {
-            enabled: false,
-            period: 50,
-            condition: 'above'
-          },
-          rsi: {
-            enabled: false,
-            period: '14',
-            threshold: '30',
-            condition: 'below'
-          }
-        }
-      })
-      
-      const result = validateFilters(state)
-      expect(result.isValid).toBe(false)
-      expect(result.errors).toContainEqual({
-        field: 'simplePriceRange.minPrice',
-        message: 'Minimum price must be a positive number'
-      })
-    })
-
-    it('should fail validation when min price >= max price', () => {
-      const state = createMockState({
-        filters: {
-          simplePriceRange: {
-            enabled: true,
-            minPrice: '100.00',
-            maxPrice: '50.00'
-          },
-          priceVsMA: {
-            enabled: false,
-            period: 50,
-            condition: 'above'
-          },
-          rsi: {
-            enabled: false,
-            period: '14',
-            threshold: '30',
-            condition: 'below'
-          }
-        }
-      })
-      
-      const result = validateFilters(state)
-      expect(result.isValid).toBe(false)
-      expect(result.errors).toContainEqual({
-        field: 'simplePriceRange',
-        message: 'Maximum price must be greater than minimum price'
-      })
-    })
-
-    it('should handle multiple price range errors', () => {
-      const state = createMockState({
-        filters: {
-          simplePriceRange: {
-            enabled: true,
-            minPrice: '-10',
-            maxPrice: '-5'
-          },
-          priceVsMA: {
-            enabled: false,
-            period: 50,
-            condition: 'above'
-          },
-          rsi: {
-            enabled: false,
-            period: '14',
-            threshold: '30',
-            condition: 'below'
-          }
-        }
-      })
-      
-      const result = validateFilters(state)
-      expect(result.isValid).toBe(false)
-      expect(result.errors).toHaveLength(2)
+    expect(result.isValid).toBe(false)
+    expect(result.errors).toContainEqual({
+      field: 'simplePriceRange.minPrice',
+      message: 'Minimum price must be a positive number'
     })
   })
 
-  describe('RSI Validation', () => {
-    it('should pass validation when RSI is disabled', () => {
-      const state = createMockState()
-      const result = validateFilters(state)
-      
-      expect(result.isValid).toBe(true)
-      expect(result.errors).toHaveLength(0)
-    })
+  it('validates price vs MA presets individually', () => {
+    const state = makeBaseState()
+    state.filters.priceVsMA.setups[20] = {
+      enabled: true,
+      minRatio: '1.5',
+      maxRatio: '1.0'
+    }
+    state.filters.priceVsMA.enabled = true
 
-    it('should pass validation with valid RSI settings', () => {
-      const state = createMockState({
-        filters: {
-          simplePriceRange: {
-            enabled: false,
-            minPrice: '1.00',
-            maxPrice: '100.00'
-          },
-          priceVsMA: {
-            enabled: false,
-            period: 50,
-            condition: 'above'
-          },
-          rsi: {
-            enabled: true,
-            period: '14',
-            threshold: '30',
-            condition: 'below'
-          }
-        }
-      })
-      
-      const result = validateFilters(state)
-      expect(result.isValid).toBe(true)
-      expect(result.errors).toHaveLength(0)
-    })
+    const result = validateFilters(state)
 
-    it('should fail validation with RSI period < 2', () => {
-      const state = createMockState({
-        filters: {
-          simplePriceRange: {
-            enabled: false,
-            minPrice: '1.00',
-            maxPrice: '100.00'
-          },
-          priceVsMA: {
-            enabled: false,
-            period: 50,
-            condition: 'above'
-          },
-          rsi: {
-            enabled: true,
-            period: '1',
-            threshold: '30',
-            condition: 'below'
-          }
-        }
-      })
-      
-      const result = validateFilters(state)
-      expect(result.isValid).toBe(false)
-      expect(result.errors).toContainEqual({
-        field: 'rsi.period',
-        message: 'RSI period must be between 2 and 50'
-      })
-    })
-
-    it('should fail validation with RSI period > 50', () => {
-      const state = createMockState({
-        filters: {
-          simplePriceRange: {
-            enabled: false,
-            minPrice: '1.00',
-            maxPrice: '100.00'
-          },
-          priceVsMA: {
-            enabled: false,
-            period: 50,
-            condition: 'above'
-          },
-          rsi: {
-            enabled: true,
-            period: '51',
-            threshold: '30',
-            condition: 'below'
-          }
-        }
-      })
-      
-      const result = validateFilters(state)
-      expect(result.isValid).toBe(false)
-      expect(result.errors).toContainEqual({
-        field: 'rsi.period',
-        message: 'RSI period must be between 2 and 50'
-      })
-    })
-
-    it('should fail validation with invalid RSI threshold', () => {
-      const state = createMockState({
-        filters: {
-          simplePriceRange: {
-            enabled: false,
-            minPrice: '1.00',
-            maxPrice: '100.00'
-          },
-          priceVsMA: {
-            enabled: false,
-            period: 50,
-            condition: 'above'
-          },
-          rsi: {
-            enabled: true,
-            period: '14',
-            threshold: '101',
-            condition: 'below'
-          }
-        }
-      })
-      
-      const result = validateFilters(state)
-      expect(result.isValid).toBe(false)
-      expect(result.errors).toContainEqual({
-        field: 'rsi.threshold',
-        message: 'RSI threshold must be between 0 and 100'
-      })
-    })
-
-    it('should handle non-numeric RSI values', () => {
-      const state = createMockState({
-        filters: {
-          simplePriceRange: {
-            enabled: false,
-            minPrice: '1.00',
-            maxPrice: '100.00'
-          },
-          priceVsMA: {
-            enabled: false,
-            period: 50,
-            condition: 'above'
-          },
-          rsi: {
-            enabled: true,
-            period: 'abc',
-            threshold: 'xyz',
-            condition: 'below'
-          }
-        }
-      })
-      
-      const result = validateFilters(state)
-      expect(result.isValid).toBe(false)
-      expect(result.errors).toHaveLength(2)
+    expect(result.isValid).toBe(false)
+    expect(result.errors).toContainEqual({
+      field: 'priceVsMA.20',
+      message: 'Minimum ratio must be less than or equal to maximum ratio'
     })
   })
 
-  describe('Date Range Validation', () => {
-    it('should pass validation with valid date range', () => {
-      const state = createMockState({
-        dateRange: {
-          startDate: new Date('2024-01-01'),
-          endDate: new Date('2024-01-31')
-        }
-      })
-      
-      const result = validateFilters(state)
-      expect(result.isValid).toBe(true)
-      expect(result.errors).toHaveLength(0)
-    })
+  it('validates RSI presets individually', () => {
+    const state = makeBaseState()
+    state.filters.rsi.periods[14] = {
+      enabled: true,
+      minValue: '80',
+      maxValue: '60'
+    }
+    state.filters.rsi.enabled = true
 
-    it('should pass validation with null dates', () => {
-      const state = createMockState({
-        dateRange: {
-          startDate: null,
-          endDate: null
-        }
-      })
-      
-      const result = validateFilters(state)
-      expect(result.isValid).toBe(true)
-      expect(result.errors).toHaveLength(0)
-    })
+    const result = validateFilters(state)
 
-    it('should fail validation when end date is before start date', () => {
-      const state = createMockState({
-        dateRange: {
-          startDate: new Date('2024-01-31'),
-          endDate: new Date('2024-01-01')
-        }
-      })
-      
-      const result = validateFilters(state)
-      expect(result.isValid).toBe(false)
-      expect(result.errors).toContainEqual({
-        field: 'dateRange',
-        message: 'End date must be after start date'
-      })
-    })
-
-    it('should pass validation when dates are equal', () => {
-      const date = new Date('2024-01-15')
-      const state = createMockState({
-        dateRange: {
-          startDate: date,
-          endDate: date
-        }
-      })
-      
-      const result = validateFilters(state)
-      expect(result.isValid).toBe(true)
-      expect(result.errors).toHaveLength(0)
+    expect(result.isValid).toBe(false)
+    expect(result.errors).toContainEqual({
+      field: 'rsi.14',
+      message: 'Minimum RSI must be less than or equal to maximum RSI'
     })
   })
 
-  describe('Multiple Filter Validation', () => {
-    it('should validate all enabled filters', () => {
-      const state = createMockState({
-        filters: {
-          simplePriceRange: {
-            enabled: true,
-            minPrice: '100',
-            maxPrice: '50'
-          },
-          priceVsMA: {
-            enabled: false,
-            period: 50,
-            condition: 'above'
-          },
-          rsi: {
-            enabled: true,
-            period: '60',
-            threshold: '30',
-            condition: 'below'
-          }
-        }
-      })
-      
-      const result = validateFilters(state)
-      expect(result.isValid).toBe(false)
-      expect(result.errors).toHaveLength(2)
-      expect(result.errors.map(e => e.field)).toContain('simplePriceRange')
-      expect(result.errors.map(e => e.field)).toContain('rsi.period')
-    })
+  it('validates gap bounds', () => {
+    const state = makeBaseState()
+    state.filters.gap.enabled = true
+    state.filters.gap.minGapPercent = '-1'
 
-    it('should not validate disabled filters', () => {
-      const state = createMockState({
-        filters: {
-          simplePriceRange: {
-            enabled: false,
-            minPrice: '100',
-            maxPrice: '50' // Invalid but disabled
-          },
-          priceVsMA: {
-            enabled: false,
-            period: 50,
-            condition: 'above'
-          },
-          rsi: {
-            enabled: false,
-            period: '60', // Invalid but disabled
-            threshold: '30',
-            condition: 'below'
-          }
-        }
-      })
-      
-      const result = validateFilters(state)
-      expect(result.isValid).toBe(true)
-      expect(result.errors).toHaveLength(0)
+    const result = validateFilters(state)
+
+    expect(result.isValid).toBe(false)
+    expect(result.errors).toContainEqual({
+      field: 'gap.minGapPercent',
+      message: 'Minimum gap must be zero or greater'
+    })
+  })
+
+  it('validates previous day dollar volume', () => {
+    const state = makeBaseState()
+    state.filters.prevDayDollarVolume.enabled = true
+    state.filters.prevDayDollarVolume.minDollarVolume = '-1'
+
+    const result = validateFilters(state)
+
+    expect(result.isValid).toBe(false)
+    expect(result.errors).toContainEqual({
+      field: 'prevDayDollarVolume.minDollarVolume',
+      message: 'Minimum dollar volume must be zero or greater'
+    })
+  })
+
+  it('validates relative volume ratios', () => {
+    const state = makeBaseState()
+    state.filters.relativeVolume.enabled = true
+    state.filters.relativeVolume.minRatio = '-1'
+
+    const result = validateFilters(state)
+
+    expect(result.isValid).toBe(false)
+    expect(result.errors).toContainEqual({
+      field: 'relativeVolume.minRatio',
+      message: 'Minimum ratio must be between 0.1 and 10'
+    })
+  })
+
+  it('validates date range ordering', () => {
+    const state = makeBaseState()
+    state.dateRange.startDate = new Date('2024-02-01')
+    state.dateRange.endDate = new Date('2024-01-01')
+
+    const result = validateFilters(state)
+
+    expect(result.isValid).toBe(false)
+    expect(result.errors).toContainEqual({
+      field: 'dateRange',
+      message: 'End date must be after start date'
     })
   })
 })

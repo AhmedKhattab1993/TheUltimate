@@ -31,40 +31,75 @@ export function validateFilters(state: ScreenerState): ValidationResult {
     }
   }
 
-  // Validate RSI
-  if (state.filters.rsi.enabled) {
-    const period = parseInt(state.filters.rsi.period)
-    const minValue = parseFloat(state.filters.rsi.minValue)
-    const maxValue = parseFloat(state.filters.rsi.maxValue)
+  // Validate Price vs MA setups
+  Object.entries(state.filters.priceVsMA.setups).forEach(([period, config]) => {
+    if (!config.enabled) {
+      return
+    }
 
-    if (isNaN(period) || period < 2 || period > 50) {
+    const minRatio = parseFloat(config.minRatio)
+    const maxRatio = parseFloat(config.maxRatio)
+
+    if (!Number.isNaN(minRatio) && minRatio < 0) {
       errors.push({
-        field: 'rsi.period',
+        field: `priceVsMA.${period}.minRatio`,
+        message: 'Minimum ratio must be zero or greater'
+      })
+    }
+
+    if (!Number.isNaN(maxRatio) && maxRatio < 0) {
+      errors.push({
+        field: `priceVsMA.${period}.maxRatio`,
+        message: 'Maximum ratio must be zero or greater'
+      })
+    }
+
+    if (!Number.isNaN(minRatio) && !Number.isNaN(maxRatio) && minRatio > maxRatio) {
+      errors.push({
+        field: `priceVsMA.${period}`,
+        message: 'Minimum ratio must be less than or equal to maximum ratio'
+      })
+    }
+  })
+
+  // Validate RSI setups
+  Object.entries(state.filters.rsi.periods).forEach(([period, config]) => {
+    if (!config.enabled) {
+      return
+    }
+
+    const parsedPeriod = Number(period)
+    if (Number.isNaN(parsedPeriod) || parsedPeriod < 2 || parsedPeriod > 50) {
+      errors.push({
+        field: `rsi.${period}`,
         message: 'RSI period must be between 2 and 50'
       })
     }
 
-    if (!isNaN(minValue) && (minValue < 0 || minValue > 100)) {
+    const minValue = parseFloat(config.minValue)
+    const maxValue = parseFloat(config.maxValue)
+
+    if (!Number.isNaN(minValue) && (minValue < 0 || minValue > 100)) {
       errors.push({
-        field: 'rsi.minValue',
+        field: `rsi.${period}.minValue`,
         message: 'Minimum RSI must be between 0 and 100'
       })
     }
 
-    if (!isNaN(maxValue) && (maxValue < 0 || maxValue > 100)) {
+    if (!Number.isNaN(maxValue) && (maxValue < 0 || maxValue > 100)) {
       errors.push({
-        field: 'rsi.maxValue',
+        field: `rsi.${period}.maxValue`,
         message: 'Maximum RSI must be between 0 and 100'
       })
     }
 
-    if (!isNaN(minValue) && !isNaN(maxValue) && minValue > maxValue) {
+    if (!Number.isNaN(minValue) && !Number.isNaN(maxValue) && minValue > maxValue) {
       errors.push({
-        field: 'rsi',
+        field: `rsi.${period}`,
         message: 'Minimum RSI must be less than or equal to maximum RSI'
       })
     }
-  }
+  })
 
   // Validate Gap Filter
   if (state.filters.gap.enabled) {
