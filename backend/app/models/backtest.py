@@ -64,7 +64,7 @@ class BacktestRequest(BaseModel):
     initial_cash: Decimal = Field(100000.0, gt=0, description="Initial cash amount")
     resolution: Literal["Tick", "Second", "Minute", "Hour", "Daily"] = Field("Minute", description="Data resolution")
     pivot_bars: int = Field(5, gt=0, description="Number of bars for pivot detection")
-    lower_timeframe: str = Field("5min", description="Lower timeframe for analysis")
+    lower_timeframe: str = Field("1min", description="Lower timeframe for analysis")
     parameters: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Additional strategy parameters")
     symbols: List[str] = Field(default_factory=list, description="Symbols to trade")
     use_screener_results: bool = Field(False, description="Use latest screener results for symbols")
@@ -94,7 +94,7 @@ class BacktestRequest(BaseModel):
     @field_validator('lower_timeframe')
     @classmethod
     def validate_lower_timeframe(cls, v: str) -> str:
-        valid_timeframes = ['1min', '5min', '15min', '30min', '1hour', '4hour', 'daily']
+        valid_timeframes = ['1min', '5min', '10min']
         lowered = v.lower()
         if lowered not in valid_timeframes:
             raise ValueError(f'lower_timeframe must be one of: {", ".join(valid_timeframes)}')

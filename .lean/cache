@@ -1,0 +1,9 @@
+{
+    "last-update-check-announcements": 1758360121.420976,
+    "last-announcements-hash": "67d6c0534b4d91acd8149df7265386d6",
+    "last-update-check-cli": 1758364181.636531,
+    "known-lean-config-paths": [
+        "/home/ahmed/TheUltimate/backend/lean/lean.json"
+    ],
+    "last-update-check-quantconnect/lean:latest": 1758361560.849326
+}

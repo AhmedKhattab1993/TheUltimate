@@ -24,8 +24,8 @@ def test_filter_registry_builds_simple_filters():
     filters = filter_registry.build_simple_filters(payload)
 
     assert filters.price_range is not None
-    assert filters.price_range.min_price == 2.5
-    assert filters.price_range.max_price == 12.0
+    assert filters.price_range.open_price.min == 2.5
+    assert filters.price_range.open_price.max == 12.0
 
 
 def test_filter_registry_rejects_unknown_filter():

@@ -36,41 +36,72 @@ def create_filter_description(filters: dict) -> str:
     price_vs_ma = filters.get("price_vs_ma") or {}
     if price_vs_ma.get("enabled"):
         period = price_vs_ma.get("period", 20)
-        condition = price_vs_ma.get("condition", "above")
-        descriptions.append(f"Price {condition} SMA{period}")
+        min_ratio = price_vs_ma.get("min_ratio")
+        max_ratio = price_vs_ma.get("max_ratio")
+        if min_ratio is not None and max_ratio is not None:
+            descriptions.append(f"Open/MA{period} ∈ [{min_ratio}, {max_ratio}]")
+        elif min_ratio is not None:
+            descriptions.append(f"Open/MA{period} ≥ {min_ratio}")
+        elif max_ratio is not None:
+            descriptions.append(f"Open/MA{period} ≤ {max_ratio}")
 
     rsi = filters.get("rsi") or {}
     if rsi.get("enabled"):
         period = rsi.get("period", 14)
-        threshold = rsi.get("threshold", 0)
-        condition = rsi.get("condition", "above")
-        descriptions.append(f"RSI{period} {condition} {threshold}")
+        min_value = rsi.get("min_value")
+        max_value = rsi.get("max_value")
+        if min_value is not None and max_value is not None:
+            descriptions.append(f"RSI{period} ∈ [{min_value}, {max_value}]")
+        elif min_value is not None:
+            descriptions.append(f"RSI{period} ≥ {min_value}")
+        elif max_value is not None:
+            descriptions.append(f"RSI{period} ≤ {max_value}")
 
     gap = filters.get("gap") or {}
     if gap.get("enabled"):
-        threshold = gap.get("threshold", 0)
-        direction = gap.get("direction", "any")
-        if direction == "any":
-            descriptions.append(f"Gap ≥ {threshold}%")
-        else:
-            descriptions.append(f"Gap {direction} ≥ {threshold}%")
+        min_gap = gap.get("min_percent")
+        max_gap = gap.get("max_percent")
+        direction = gap.get("direction", "both")
+        if min_gap is not None and max_gap is not None:
+            descriptions.append(f"|Gap| ∈ [{min_gap}%, {max_gap}%] ({direction})")
+        elif min_gap is not None:
+            descriptions.append(f"|Gap| ≥ {min_gap}% ({direction})")
+        elif max_gap is not None:
+            descriptions.append(f"|Gap| ≤ {max_gap}% ({direction})")
 
     prev_day = filters.get("prev_day_dollar_volume") or {}
     if prev_day.get("enabled"):
-        min_vol = prev_day.get("value", 0)
-        if min_vol >= 1_000_000:
-            descriptions.append(f"Volume ≥ ${min_vol / 1_000_000:.1f}M")
-        elif min_vol >= 1_000:
-            descriptions.append(f"Volume ≥ ${min_vol / 1_000:.0f}K")
-        else:
-            descriptions.append(f"Volume ≥ ${min_vol:,.0f}")
+        min_vol = prev_day.get("min_value")
+        max_vol = prev_day.get("max_value")
+        if min_vol is not None:
+            if min_vol >= 1_000_000:
+                descriptions.append(f"Prev-day $ ≥ ${min_vol / 1_000_000:.1f}M")
+            elif min_vol >= 1_000:
+                descriptions.append(f"Prev-day $ ≥ ${min_vol / 1_000:.0f}K")
+            else:
+                descriptions.append(f"Prev-day $ ≥ ${min_vol:,.0f}")
+        if max_vol is not None:
+            if max_vol >= 1_000_000:
+                descriptions.append(f"Prev-day $ ≤ ${max_vol / 1_000_000:.1f}M")
+            elif max_vol >= 1_000:
+                descriptions.append(f"Prev-day $ ≤ ${max_vol / 1_000:.0f}K")
+            else:
+                descriptions.append(f"Prev-day $ ≤ ${max_vol:,.0f}")
 
     rel_vol = filters.get("relative_volume") or {}
     if rel_vol.get("enabled"):
-        ratio = rel_vol.get("min_ratio", 1.0)
+        min_ratio = rel_vol.get("min_ratio")
+        max_ratio = rel_vol.get("max_ratio")
         recent = rel_vol.get("recent_days", 1)
         lookback = rel_vol.get("lookback_days", 20)
-        descriptions.append(f"Relative Volume ({recent}d vs {lookback}d) ≥ {ratio}x")
+        if min_ratio is not None and max_ratio is not None:
+            descriptions.append(
+                f"Relative Volume ({recent}d vs {lookback}d) ∈ [{min_ratio}x, {max_ratio}x]"
+            )
+        elif min_ratio is not None:
+            descriptions.append(f"Relative Volume ({recent}d vs {lookback}d) ≥ {min_ratio}x")
+        elif max_ratio is not None:
+            descriptions.append(f"Relative Volume ({recent}d vs {lookback}d) ≤ {max_ratio}x")
 
     return "; ".join(descriptions) if descriptions else "No filters applied"
 

@@ -184,28 +184,32 @@ class CacheService:
             "price_vs_ma": {
                 "enabled": request.price_vs_ma_enabled,
                 "period": request.price_vs_ma_period,
-                "condition": request.price_vs_ma_condition,
+                "min_ratio": self._convert_decimal_to_float(request.price_vs_ma_min_ratio),
+                "max_ratio": self._convert_decimal_to_float(request.price_vs_ma_max_ratio),
             },
             "rsi": {
                 "enabled": request.rsi_enabled,
                 "period": request.rsi_period,
-                "threshold": self._convert_decimal_to_float(request.rsi_threshold),
-                "condition": request.rsi_condition,
+                "min_value": self._convert_decimal_to_float(request.rsi_min_value),
+                "max_value": self._convert_decimal_to_float(request.rsi_max_value),
             },
             "gap": {
                 "enabled": request.gap_enabled,
-                "threshold": self._convert_decimal_to_float(request.gap_threshold),
+                "min_percent": self._convert_decimal_to_float(request.gap_min_percent),
+                "max_percent": self._convert_decimal_to_float(request.gap_max_percent),
                 "direction": request.gap_direction,
             },
             "prev_day_dollar_volume": {
                 "enabled": request.prev_day_dollar_volume_enabled,
-                "value": self._convert_decimal_to_float(request.prev_day_dollar_volume),
+                "min_value": self._convert_decimal_to_float(request.prev_day_min_dollar_volume),
+                "max_value": self._convert_decimal_to_float(request.prev_day_max_dollar_volume),
             },
             "relative_volume": {
                 "enabled": request.relative_volume_enabled,
                 "recent_days": request.relative_volume_recent_days,
                 "lookback_days": request.relative_volume_lookback_days,
                 "min_ratio": self._convert_decimal_to_float(request.relative_volume_min_ratio),
+                "max_ratio": self._convert_decimal_to_float(request.relative_volume_max_ratio),
             },
         }
 
@@ -244,20 +248,24 @@ class CacheService:
             filter_max_price=self._convert_float_to_decimal(filters.get("max_price")),
             filter_price_vs_ma_enabled=bool(price_vs_ma.get("enabled")),
             filter_price_vs_ma_period=price_vs_ma.get("period"),
-            filter_price_vs_ma_condition=price_vs_ma.get("condition"),
+            filter_price_vs_ma_min_ratio=self._convert_float_to_decimal(price_vs_ma.get("min_ratio")),
+            filter_price_vs_ma_max_ratio=self._convert_float_to_decimal(price_vs_ma.get("max_ratio")),
             filter_rsi_enabled=bool(rsi.get("enabled")),
             filter_rsi_period=rsi.get("period"),
-            filter_rsi_threshold=self._convert_float_to_decimal(rsi.get("threshold")),
-            filter_rsi_condition=rsi.get("condition"),
+            filter_rsi_min_value=self._convert_float_to_decimal(rsi.get("min_value")),
+            filter_rsi_max_value=self._convert_float_to_decimal(rsi.get("max_value")),
             filter_gap_enabled=bool(gap.get("enabled")),
-            filter_gap_threshold=self._convert_float_to_decimal(gap.get("threshold")),
+            filter_gap_min_percent=self._convert_float_to_decimal(gap.get("min_percent")),
+            filter_gap_max_percent=self._convert_float_to_decimal(gap.get("max_percent")),
             filter_gap_direction=gap.get("direction"),
             filter_prev_day_dollar_volume_enabled=bool(prev_day.get("enabled")),
-            filter_prev_day_dollar_volume=self._convert_float_to_decimal(prev_day.get("value")),
+            filter_prev_day_min_dollar_volume=self._convert_float_to_decimal(prev_day.get("min_value")),
+            filter_prev_day_max_dollar_volume=self._convert_float_to_decimal(prev_day.get("max_value")),
             filter_relative_volume_enabled=bool(rel_vol.get("enabled")),
             filter_relative_volume_recent_days=rel_vol.get("recent_days"),
             filter_relative_volume_lookback_days=rel_vol.get("lookback_days"),
             filter_relative_volume_min_ratio=self._convert_float_to_decimal(rel_vol.get("min_ratio")),
+            filter_relative_volume_max_ratio=self._convert_float_to_decimal(rel_vol.get("max_ratio")),
             session_id=run.session_id,
             created_at=entry.created_at,
         )
@@ -676,28 +684,54 @@ class CacheService:
         """
         # Convert old format to new model
         from datetime import datetime
+        price_vs_ma_enabled = bool(filters.get('above_sma20'))
+        price_vs_ma_min_ratio = Decimal('1') if price_vs_ma_enabled else None
+
+        rsi_threshold = filters.get('rsi_threshold')
+        rsi_condition = filters.get('rsi_condition')
+        rsi_min_value = rsi_max_value = None
+        if rsi_threshold is not None:
+            threshold_decimal = Decimal(str(rsi_threshold))
+            if rsi_condition == 'above':
+                rsi_min_value = threshold_decimal
+            else:
+                rsi_max_value = threshold_decimal
+
+        gap_value = filters.get('min_gap') or filters.get('gap_threshold')
+        gap_direction = filters.get('gap_direction', 'up') if gap_value is not None else None
+
+        prev_day_volume = filters.get('prev_day_dollar_volume')
+        if prev_day_volume is None and filters.get('min_volume'):
+            prev_day_volume = Decimal(str(filters['min_volume'])) * 100  # legacy approximation
+
+        relative_min_ratio = filters.get('relative_volume_min_ratio')
+
         request = CachedScreenerRequest(
             start_date=datetime.fromisoformat(date_range['start']).date(),
             end_date=datetime.fromisoformat(date_range['end']).date(),
             min_price=filters.get('min_price'),
             max_price=filters.get('max_price'),
             # Map old filters to new schema
-            price_vs_ma_enabled=filters.get('above_sma20', False),
-            price_vs_ma_period=20 if filters.get('above_sma20', False) else None,
-            price_vs_ma_condition='above' if filters.get('above_sma20', False) else None,
+            price_vs_ma_enabled=price_vs_ma_enabled,
+            price_vs_ma_period=20 if price_vs_ma_enabled else None,
+            price_vs_ma_min_ratio=price_vs_ma_min_ratio,
+            price_vs_ma_max_ratio=None,
             rsi_enabled=filters.get('rsi_enabled', False),
             rsi_period=filters.get('rsi_period'),
-            rsi_threshold=filters.get('rsi_threshold'),
-            rsi_condition=filters.get('rsi_condition'),
-            gap_enabled=filters.get('min_gap') is not None or filters.get('gap_enabled', False),
-            gap_threshold=filters.get('min_gap') or filters.get('gap_threshold'),
-            gap_direction=filters.get('gap_direction', 'up') if filters.get('min_gap') is not None else None,
-            prev_day_dollar_volume_enabled=filters.get('min_volume') is not None or filters.get('prev_day_dollar_volume_enabled', False),
-            prev_day_dollar_volume=Decimal(str(filters['min_volume'] * 100)) if filters.get('min_volume') else filters.get('prev_day_dollar_volume'),  # Rough conversion
+            rsi_min_value=rsi_min_value,
+            rsi_max_value=rsi_max_value,
+            gap_enabled=gap_value is not None or filters.get('gap_enabled', False),
+            gap_min_percent=gap_value,
+            gap_max_percent=None,
+            gap_direction=gap_direction,
+            prev_day_dollar_volume_enabled=prev_day_volume is not None,
+            prev_day_min_dollar_volume=prev_day_volume,
+            prev_day_max_dollar_volume=None,
             relative_volume_enabled=filters.get('relative_volume_enabled', False),
             relative_volume_recent_days=filters.get('relative_volume_recent_days'),
             relative_volume_lookback_days=filters.get('relative_volume_lookback_days'),
-            relative_volume_min_ratio=filters.get('relative_volume_min_ratio')
+            relative_volume_min_ratio=relative_min_ratio,
+            relative_volume_max_ratio=None,
         )
         
         results = await self.get_screener_results(request)
@@ -730,28 +764,54 @@ class CacheService:
         """
         # Convert old format to new models
         from datetime import datetime
+        price_vs_ma_enabled = bool(filters.get('above_sma20'))
+        price_vs_ma_min_ratio = Decimal('1') if price_vs_ma_enabled else None
+
+        rsi_threshold = filters.get('rsi_threshold')
+        rsi_condition = filters.get('rsi_condition')
+        rsi_min_value = rsi_max_value = None
+        if rsi_threshold is not None:
+            threshold_decimal = Decimal(str(rsi_threshold))
+            if rsi_condition == 'above':
+                rsi_min_value = threshold_decimal
+            else:
+                rsi_max_value = threshold_decimal
+
+        gap_value = filters.get('min_gap') or filters.get('gap_threshold')
+        gap_direction = filters.get('gap_direction', 'up') if gap_value is not None else None
+
+        prev_day_volume = filters.get('prev_day_dollar_volume')
+        if prev_day_volume is None and filters.get('min_volume'):
+            prev_day_volume = Decimal(str(filters['min_volume'])) * 100
+
+        relative_min_ratio = filters.get('relative_volume_min_ratio')
+
         request = CachedScreenerRequest(
             start_date=datetime.fromisoformat(date_range['start']).date(),
             end_date=datetime.fromisoformat(date_range['end']).date(),
             min_price=filters.get('min_price'),
             max_price=filters.get('max_price'),
             # Map old filters to new schema
-            price_vs_ma_enabled=filters.get('above_sma20', False),
-            price_vs_ma_period=20 if filters.get('above_sma20', False) else None,
-            price_vs_ma_condition='above' if filters.get('above_sma20', False) else None,
+            price_vs_ma_enabled=price_vs_ma_enabled,
+            price_vs_ma_period=20 if price_vs_ma_enabled else None,
+            price_vs_ma_min_ratio=price_vs_ma_min_ratio,
+            price_vs_ma_max_ratio=None,
             rsi_enabled=filters.get('rsi_enabled', False),
             rsi_period=filters.get('rsi_period'),
-            rsi_threshold=filters.get('rsi_threshold'),
-            rsi_condition=filters.get('rsi_condition'),
-            gap_enabled=filters.get('min_gap') is not None or filters.get('gap_enabled', False),
-            gap_threshold=filters.get('min_gap') or filters.get('gap_threshold'),
-            gap_direction=filters.get('gap_direction', 'up') if filters.get('min_gap') is not None else None,
-            prev_day_dollar_volume_enabled=filters.get('min_volume') is not None or filters.get('prev_day_dollar_volume_enabled', False),
-            prev_day_dollar_volume=Decimal(str(filters['min_volume'] * 100)) if filters.get('min_volume') else filters.get('prev_day_dollar_volume'),  # Rough conversion
+            rsi_min_value=rsi_min_value,
+            rsi_max_value=rsi_max_value,
+            gap_enabled=gap_value is not None or filters.get('gap_enabled', False),
+            gap_min_percent=gap_value,
+            gap_max_percent=None,
+            gap_direction=gap_direction,
+            prev_day_dollar_volume_enabled=prev_day_volume is not None,
+            prev_day_min_dollar_volume=prev_day_volume,
+            prev_day_max_dollar_volume=None,
             relative_volume_enabled=filters.get('relative_volume_enabled', False),
             relative_volume_recent_days=filters.get('relative_volume_recent_days'),
             relative_volume_lookback_days=filters.get('relative_volume_lookback_days'),
-            relative_volume_min_ratio=filters.get('relative_volume_min_ratio')
+            relative_volume_min_ratio=relative_min_ratio,
+            relative_volume_max_ratio=None,
         )
         
         # Create minimal result objects for each symbol

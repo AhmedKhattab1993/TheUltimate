@@ -28,8 +28,14 @@ export const RelativeVolumeFilter = memo(() => {
   const recentDays = parseInt(filter.recentDays)
   const lookbackDays = parseInt(filter.lookbackDays)
   const minRatio = parseFloat(filter.minRatio)
+  const maxRatio = parseFloat(filter.maxRatio)
   const hasError = filter.enabled && !isNaN(recentDays) && !isNaN(lookbackDays) && recentDays >= lookbackDays
-  const hasRatioError = filter.enabled && (isNaN(minRatio) || minRatio <= 0)
+  const hasMinRatioError = filter.enabled && !Number.isNaN(minRatio) && minRatio <= 0
+  const hasMaxRatioError = filter.enabled && !Number.isNaN(maxRatio) && maxRatio <= 0
+  const hasRangeError = filter.enabled
+    && !Number.isNaN(minRatio)
+    && !Number.isNaN(maxRatio)
+    && minRatio > maxRatio
 
   return (
     <Card className={`transition-opacity ${filter.enabled ? 'opacity-100' : 'opacity-75'}`}>
@@ -87,29 +93,58 @@ export const RelativeVolumeFilter = memo(() => {
               </div>
             )}
 
-            <div className="space-y-2">
-              <Label htmlFor="min-ratio">Minimum Ratio</Label>
-              <Input
-                id="min-ratio"
-                type="number"
-                step="0.1"
-                min="0.1"
-                max="10"
-                placeholder="1.5"
-                value={filter.minRatio}
-                onChange={(e) => handleChange('minRatio', e.target.value)}
-                className={hasRatioError ? 'border-red-500' : ''}
-              />
-              {hasRatioError && (
-                <div className="flex items-center gap-2 text-sm text-red-600">
-                  <AlertCircle className="h-4 w-4" />
-                  <span>Minimum ratio must be greater than 0</span>
-                </div>
-              )}
-              <p className="text-sm text-muted-foreground">
-                e.g., 1.5 = 50% higher, 2.0 = 100% higher
-              </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="min-ratio">Minimum Ratio</Label>
+                <Input
+                  id="min-ratio"
+                  type="number"
+                  step="0.1"
+                  min="0.1"
+                  max="10"
+                  placeholder="1.5"
+                  value={filter.minRatio}
+                  onChange={(e) => handleChange('minRatio', e.target.value)}
+                  className={hasMinRatioError ? 'border-red-500' : ''}
+                />
+                {hasMinRatioError && (
+                  <div className="flex items-center gap-2 text-sm text-red-600">
+                    <AlertCircle className="h-4 w-4" />
+                    <span>Minimum ratio must be greater than 0</span>
+                  </div>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="max-ratio">Maximum Ratio</Label>
+                <Input
+                  id="max-ratio"
+                  type="number"
+                  step="0.1"
+                  min="0.1"
+                  max="10"
+                  placeholder="Optional"
+                  value={filter.maxRatio}
+                  onChange={(e) => handleChange('maxRatio', e.target.value)}
+                  className={hasMaxRatioError ? 'border-red-500' : ''}
+                />
+                {hasMaxRatioError && (
+                  <div className="flex items-center gap-2 text-sm text-red-600">
+                    <AlertCircle className="h-4 w-4" />
+                    <span>Maximum ratio must be greater than 0</span>
+                  </div>
+                )}
+              </div>
             </div>
+
+            {hasRangeError && (
+              <div className="flex items-center gap-2 text-sm text-red-600">
+                <AlertCircle className="h-4 w-4" />
+                <span>Min ratio must be less than or equal to max ratio</span>
+              </div>
+            )}
+            <p className="text-sm text-muted-foreground">
+              e.g., 1.5 = 50% higher, 2.0 = 100% higher
+            </p>
 
             <div className="text-sm text-muted-foreground">
               Formula: avg(last {filter.recentDays || '?'} days) / avg(last {filter.lookbackDays || '?'} days)

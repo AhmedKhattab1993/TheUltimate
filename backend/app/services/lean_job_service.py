@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
@@ -136,6 +138,254 @@ class LeanJobService:
         self._lock = asyncio.Lock()
         self._storage = storage or DatabaseRunStorage()
         self._ingestion_runner = ingestion_runner or DataIngestionRunner()
+        self._symbol_mapping: Optional[Dict[str, str]] = None
+
+    # ------------------------------------------------------------------
+    # Grid helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _coerce_decimal(value: Any) -> Decimal:
+        """Convert a grid parameter value to Decimal for canonical comparisons."""
+
+        if isinstance(value, Decimal):
+            return value
+        if isinstance(value, bool):
+            return Decimal(1 if value else 0)
+        if isinstance(value, (int, float)):
+            return Decimal(str(value))
+        if isinstance(value, str):
+            stripped = value.strip()
+            try:
+                return Decimal(stripped)
+            except (InvalidOperation, ValueError) as exc:  # pragma: no cover - defensive
+                raise ValueError(f"Value '{value}' is not numeric") from exc
+        raise ValueError(f"Unsupported value type for grid parameter: {value!r}")
+
+    @staticmethod
+    def _decimal_to_str(value: Decimal) -> str:
+        """Normalise a Decimal to a plain string without scientific notation."""
+
+        quantised = value.normalize()
+        text = format(quantised, "f")
+        if "." in text:
+            text = text.rstrip("0").rstrip(".")
+        return text or "0"
+
+    @classmethod
+    def _make_combo_key(cls, parameter_names: List[str], numeric_parameters: Dict[str, Decimal]) -> str:
+        parts: List[str] = []
+        for name in parameter_names:
+            if name not in numeric_parameters:
+                continue
+            parts.append(f"{name}={cls._decimal_to_str(numeric_parameters[name])}")
+        return "|".join(parts) if parts else "__default__"
+
+    def _build_grid_definition(
+        self,
+        request: BacktestRequest,
+        parameter_sweeps: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        if not parameter_sweeps:
+            raise ValueError("parameter_sweeps must contain at least one entry")
+
+        value_sets: Dict[str, set[Decimal]] = {}
+        first_raw_values: Dict[str, Any] = {}
+        combos_raw: List[Dict[str, Any]] = []
+
+        for index, sweep in enumerate(parameter_sweeps):
+            numeric_params: Dict[str, Decimal] = {}
+            for name, raw_value in sweep.items():
+                try:
+                    numeric_value = self._coerce_decimal(raw_value)
+                except ValueError as exc:
+                    raise ValueError(
+                        f"Grid parameter '{name}' must be numeric-compatible (value: {raw_value!r})"
+                    ) from exc
+                numeric_params[name] = numeric_value
+                value_sets.setdefault(name, set()).add(numeric_value)
+                first_raw_values.setdefault(name, raw_value)
+
+            combos_raw.append(
+                {
+                    "index": index,
+                    "parameters": sweep,
+                    "numeric": numeric_params,
+                }
+            )
+
+        parameter_names = sorted(value_sets.keys())
+        combos: List[Dict[str, Any]] = []
+        seen_keys: set[str] = set()
+
+        for raw in combos_raw:
+            key = self._make_combo_key(parameter_names, raw["numeric"])
+            if key in seen_keys:
+                raise ValueError(
+                    "Duplicate grid parameter combination detected. Ensure sweeps contain unique combinations."
+                )
+            seen_keys.add(key)
+
+            label = f"combo-{raw['index'] + 1:04d}"
+            display_parts = [
+                f"{name}={raw['parameters'][name]!r}"
+                for name in parameter_names
+                if name in raw["parameters"]
+            ]
+            display = ", ".join(display_parts)
+
+            combos.append(
+                {
+                    "key": key,
+                    "label": label,
+                    "display": display,
+                    "parameters": raw["parameters"],
+                }
+            )
+
+        parameter_ranges: List[Dict[str, Any]] = []
+        for name in parameter_names:
+            ordered = sorted(value_sets[name])
+            if len(ordered) == 1:
+                step = Decimal("1")
+            else:
+                deltas = {ordered[i + 1] - ordered[i] for i in range(len(ordered) - 1)}
+                if len(deltas) != 1:
+                    raise ValueError(
+                        f"Grid parameter '{name}' must use a consistent step size (received values: {[self._decimal_to_str(v) for v in ordered]})"
+                    )
+                step = deltas.pop()
+                if step <= 0:
+                    raise ValueError(f"Grid parameter '{name}' step must be positive (calculated {step})")
+
+            parameter_ranges.append(
+                {
+                    "name": name,
+                    "min": self._decimal_to_str(ordered[0]),
+                    "max": self._decimal_to_str(ordered[-1]),
+                    "step": self._decimal_to_str(step),
+                }
+            )
+
+        # Ensure the base request carries defaults for single-value parameters so Lean config is deterministic
+        request.parameters = request.parameters or {}
+        for name, raw_value in first_raw_values.items():
+            request.parameters.setdefault(name, raw_value)
+
+        return {
+            "parameter_names": parameter_names,
+            "parameter_ranges": parameter_ranges,
+            "combos": combos,
+            "total_combos": len(combos),
+            "defaults": first_raw_values,
+        }
+
+    def _lazy_symbol_mapping(self) -> Dict[str, str]:
+        if self._symbol_mapping is None:
+            try:
+                mapping_path = Path(__file__).resolve().parents[3] / "lean" / "MarketStructure" / "symbol_mapping.json"
+                data = json.loads(mapping_path.read_text())
+                mapping = data.get("index_to_symbol", {})
+                if not isinstance(mapping, dict):
+                    mapping = {}
+            except Exception:  # pragma: no cover - depends on filesystem
+                mapping = {}
+            if not mapping:
+                mapping = {"0": "SPY"}
+            self._symbol_mapping = mapping
+        return self._symbol_mapping
+
+    def _default_symbol(self) -> str:
+        mapping = self._lazy_symbol_mapping()
+        if "0" in mapping:
+            return mapping["0"]
+        first = next(iter(mapping.values()), None)
+        return first or "SPY"
+
+    def _normalise_symbols(self, symbols: List[str]) -> List[str]:
+        ordered: List[str] = []
+        seen: set[str] = set()
+        for symbol in symbols:
+            if not isinstance(symbol, str):
+                continue
+            upper = symbol.upper().strip()
+            if not upper or upper in seen:
+                continue
+            seen.add(upper)
+            ordered.append(upper)
+        return ordered
+
+    def _build_backtest_job_config(self, request: BacktestRequest) -> Optional[Dict[str, Any]]:
+        if request.use_screener_results:
+            symbols: List[str] = []
+        else:
+            symbols = self._normalise_symbols(request.symbols or [])
+            if not symbols:
+                symbols = [self._default_symbol()]
+
+        parameter_sweeps: List[Dict[str, Any]] = []
+        symbol_map_payload: Optional[Dict[str, str]] = None
+
+        if symbols:
+            symbol_map_payload = {str(index): symbol for index, symbol in enumerate(symbols)}
+            parameter_sweeps = [{"symbol_slot": index} for index in range(len(symbols))]
+        else:
+            parameter_sweeps = [{"symbol_slot": 0}]
+
+        grid_definition = self._build_grid_definition(request, parameter_sweeps)
+
+        if symbol_map_payload:
+            for index, combo in enumerate(grid_definition["combos"]):
+                symbol = symbol_map_payload.get(str(index))
+                if not symbol:
+                    continue
+                combo["label"] = symbol
+                combo["display"] = symbol
+
+        optimize_parameters: List[Dict[str, Any]] = []
+        min_slot = 0
+        max_slot = max(parameter_sweeps[0].get("symbol_slot", 0), parameter_sweeps[-1].get("symbol_slot", 0))
+        if parameter_sweeps:
+            slot_values = [sweep.get("symbol_slot", 0) for sweep in parameter_sweeps]
+            if slot_values:
+                min_slot = min(slot_values)
+                max_slot = max(slot_values)
+        optimize_parameters.append(
+            {
+                "name": "symbol_slot",
+                "min": self._decimal_to_str(Decimal(min_slot)),
+                "max": self._decimal_to_str(Decimal(max_slot)),
+                "step": self._decimal_to_str(Decimal("1")),
+            }
+        )
+
+        optimize_config: Dict[str, Any] = {
+            "target_metric": "SharpeRatio",
+            "target_direction": "maximize",
+            "parameters": optimize_parameters,
+        }
+
+        job_config: Dict[str, Any] = {
+            "optimize": optimize_config,
+            "grid": grid_definition,
+            "targets": [combo["label"] for combo in grid_definition["combos"]],
+        }
+
+        if symbol_map_payload:
+            job_config["symbol_map"] = {
+                "index_to_symbol": symbol_map_payload,
+                "total_symbols": len(symbol_map_payload),
+            }
+            job_config["symbol_slots"] = symbol_map_payload
+
+        defaults = grid_definition.get("defaults", {})
+        if "symbol_slot" not in defaults:
+            defaults["symbol_slot"] = 0
+            grid_definition["defaults"] = defaults
+
+        request.parameters = request.parameters or {}
+        request.parameters.setdefault("symbol_slot", defaults["symbol_slot"])
+
+        return job_config
 
     # ------------------------------------------------------------------
     # Public API
@@ -154,6 +404,9 @@ class LeanJobService:
             strategy = strategy_registry.require(request.strategy_name)
             strategy_registry.merge_request_with_defaults(request)
 
+        if job_type is JobType.BACKTEST and job_config is None:
+            job_config = self._build_backtest_job_config(request)
+
         job_id = str(uuid4())
         job = LeanJob(
             job_id=job_id,
@@ -168,6 +421,11 @@ class LeanJobService:
 
         run_info = job.to_run_info()
         await self._record_submission(job, run_info)
+
+        grid_config = (job.job_config or {}).get("grid") or {}
+        combos = grid_config.get("combos") or []
+        if job_type in (JobType.BACKTEST, JobType.GRID) and combos:
+            await self._record_grid_targets(job_id, combos)
 
         project_name = strategy.id if strategy else request.strategy_name
         task = asyncio.create_task(self._execute_job(job, project_name))
@@ -199,22 +457,46 @@ class LeanJobService:
         base_request: BacktestRequest,
         parameter_sweeps: List[Dict[str, Any]],
     ) -> List[BacktestRunInfo]:
-        """Submit multiple backtests representing a grid search."""
+        """Submit a grid run powered by Lean CLI optimize for faster execution."""
 
         strategy = strategy_registry.require(base_request.strategy_name)
-        run_infos: List[BacktestRunInfo] = []
+        strategy_registry.merge_request_with_defaults(base_request)
 
-        for sweep in parameter_sweeps:
-            request = base_request.model_copy(deep=True)
-            request.parameters = {**(request.parameters or {}), **sweep}
-            run_infos.append(
-                await self.submit_backtest(request, job_type=JobType.GRID)
-            )
+        grid_definition = self._build_grid_definition(base_request, parameter_sweeps)
+        parameter_ranges = grid_definition["parameter_ranges"]
+
+        if not parameter_ranges:
+            raise ValueError("Grid requests require at least one parameter to sweep")
+
+        optimize_config: Dict[str, Any] = {
+            "target_metric": "SharpeRatio",
+            "target_direction": "maximize",
+            "parameters": parameter_ranges,
+        }
+
+        parallelism = getattr(strategy.capabilities, "parallelism", None)
+        if parallelism:
+            optimize_config["max_concurrent_backtests"] = parallelism
+
+        job_config = {
+            "optimize": optimize_config,
+            "grid": grid_definition,
+            "targets": [combo["label"] for combo in grid_definition["combos"]],
+        }
+
+        run_info = await self.submit_backtest(
+            base_request,
+            job_type=JobType.GRID,
+            job_config=job_config,
+        )
 
         logger.info(
-            "Queued %d grid backtests for strategy %s", len(run_infos), strategy.id
+            "Queued grid optimization job %s (%d combinations) for strategy %s",
+            run_info.backtest_id,
+            grid_definition["total_combos"],
+            strategy.id,
         )
-        return run_infos
+        return [run_info]
 
     async def submit_optimize(self, request: OptimizationRequest) -> BacktestRunInfo:
         """Submit an optimization job backed by Lean CLI."""
@@ -316,7 +598,9 @@ class LeanJobService:
         logger.info("Starting Lean %s job %s", job.job_type.value, job.job_id)
 
         try:
-            if job.job_type is JobType.OPTIMIZE:
+            if job.job_type in (JobType.BACKTEST, JobType.GRID):
+                result = await self._run_grid_job(job, project_name)
+            elif job.job_type is JobType.OPTIMIZE:
                 optimize_config = job.job_config.get("optimize", {})
                 result = await self._runner.run_optimize(
                     job_id=job.job_id,
@@ -331,11 +615,7 @@ class LeanJobService:
                     ingestion_config,
                 )
             else:
-                result = await self._runner.run_backtest(
-                    backtest_id=job.job_id,
-                    request=job.request,
-                    project_name=project_name,
-                )
+                raise ValueError(f"Unsupported job type {job.job_type}")
             job.status = JobState.COMPLETED
             job.completed_at = datetime.utcnow()
             job.result_path = result.get("result_path")
@@ -393,6 +673,142 @@ class LeanJobService:
                 await self._persist_backtest_result(job, run_info, metrics_payload)
         except Exception:  # pragma: no cover - defensive
             logger.debug("Failed to record job update for %s", job.job_id, exc_info=True)
+
+    async def _record_grid_targets(self, job_id: str, combos: List[Dict[str, Any]]) -> None:
+        if not self._storage or not combos:
+            return
+        try:
+            await self._storage.record_grid_targets(job_id, combos)
+        except Exception:  # pragma: no cover - defensive
+            logger.debug("Failed to persist grid targets for %s", job_id, exc_info=True)
+
+    async def _run_grid_job(self, job: LeanJob, project_name: str) -> Dict[str, Any]:
+        grid_config = (job.job_config or {}).get("grid") or {}
+        parameter_names: List[str] = list(grid_config.get("parameter_names") or [])
+        combos: List[Dict[str, Any]] = list(grid_config.get("combos") or [])
+        defaults: Dict[str, Any] = dict(grid_config.get("defaults") or {})
+        total_expected = int(grid_config.get("total_combos") or len(combos))
+
+        combos_map = {combo.get("key"): combo for combo in combos if combo.get("key")}
+
+        symbol_slots_lookup = (job.job_config or {}).get("symbol_slots") or {}
+
+        progress_state = {
+            "seen": set(),
+            "completed": 0,
+            "total": total_expected,
+        }
+        progress_lock = asyncio.Lock()
+
+        async def handle_result(payload: Dict[str, Any]) -> None:
+            parameters = payload.get("parameters") or {}
+            numeric_map: Dict[str, Decimal] = {}
+
+            for name in parameter_names:
+                value = parameters.get(name, defaults.get(name))
+                if value is None:
+                    continue
+                try:
+                    numeric_map[name] = self._coerce_decimal(value)
+                except ValueError:
+                    continue
+
+            key = self._make_combo_key(parameter_names, numeric_map)
+            combo = combos_map.get(key)
+
+            label = combo.get("label") if combo else f"auto-{len(progress_state['seen']) + 1:04d}"
+            parameters_to_store = dict(combo.get("parameters", {})) if combo else {
+                name: parameters.get(name, defaults.get(name))
+                for name in parameter_names
+                if parameters.get(name, defaults.get(name)) is not None
+            }
+
+            actual_symbol: Optional[str] = None
+            if "symbol_slot" in numeric_map:
+                slot_index = int(numeric_map["symbol_slot"])
+                actual_symbol = symbol_slots_lookup.get(str(slot_index)) or symbol_slots_lookup.get(slot_index)
+                if actual_symbol:
+                    parameters_to_store.setdefault("symbol", actual_symbol)
+
+            status = payload.get("status", "completed")
+
+            await self._persist_grid_result(
+                job,
+                label=label,
+                parameters=parameters_to_store,
+                result_payload=payload,
+                status=status,
+                target_symbol=actual_symbol,
+            )
+
+            async with progress_lock:
+                if key not in progress_state["seen"]:
+                    progress_state["seen"].add(key)
+                    progress_state["completed"] += 1
+
+                job.metadata.setdefault("grid_progress", {})
+                job.metadata["grid_progress"]["completed"] = progress_state["completed"]
+                job.metadata["grid_progress"]["total"] = progress_state["total"]
+                job.metadata["grid_progress"]["last_label"] = label
+
+                result_path = payload.get("result_path")
+                if result_path:
+                    job.metadata.setdefault("grid_results", {})[label] = {
+                        "result_path": result_path,
+                    }
+
+                await self._record_update(job)
+
+        result = await self._runner.run_grid(
+            job_id=job.job_id,
+            request=job.request,
+            project_name=project_name,
+            job_config=job.job_config,
+            on_result=handle_result,
+        )
+
+        job.metadata.setdefault("grid_progress", {})
+        job.metadata["grid_progress"].update(
+            {
+                "completed": progress_state["completed"],
+                "total": progress_state["total"],
+                "finished": True,
+            }
+        )
+
+        return result
+
+    async def _persist_grid_result(
+        self,
+        job: LeanJob,
+        *,
+        label: str,
+        parameters: Dict[str, Any],
+        result_payload: Dict[str, Any],
+        status: str,
+        target_symbol: Optional[str] = None,
+    ) -> None:
+        try:
+            run_uuid = UUID(job.job_id)
+        except ValueError:
+            return
+
+        metrics_payload = {
+            "statistics": result_payload.get("statistics") or {},
+            "runtime_statistics": result_payload.get("runtime_statistics") or {},
+            "raw_statistics": result_payload.get("raw_statistics") or {},
+        }
+
+        try:
+            await backtest_repository.upsert_result(
+                run_uuid,
+                symbol=target_symbol or label,
+                parameters=parameters,
+                metrics=metrics_payload,
+                status=status,
+            )
+        except Exception:  # pragma: no cover - depends on DB availability
+            logger.debug("Failed to persist grid result %s for %s", label, job.job_id, exc_info=True)
 
     async def _persist_backtest_result(
         self,

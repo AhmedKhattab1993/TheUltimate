@@ -209,7 +209,9 @@ async def get_suggested_ranges(start_date: str, end_date: str) -> dict:
             max_prices.append(max_price)
 
         prev_day = filters.get("prev_day_dollar_volume") or {}
-        vol_value = _as_float(prev_day.get("value"))
+        vol_value = _as_float(prev_day.get("min_value"))
+        if vol_value is None:
+            vol_value = _as_float(prev_day.get("value"))
         if vol_value is not None:
             volumes.append(vol_value)
 

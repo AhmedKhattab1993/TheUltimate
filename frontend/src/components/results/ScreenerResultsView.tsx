@@ -140,51 +140,124 @@ export function ScreenerResultsView() {
                     {/* Price vs MA */}
                     <TableCell>
                       <div className="text-xs">
-                        {result.filters.price_vs_ma?.enabled ? 
-                          `${result.filters.price_vs_ma.condition === 'above' ? '>' : '<'} SMA${result.filters.price_vs_ma.ma_period || 20}` : 
-                          '-'
-                        }
+                        {(() => {
+                          const filter = result.filters.price_vs_ma
+                          if (!filter?.enabled) return '-'
+                          const period = filter.ma_period ?? filter.period ?? 20
+                          const minRatio = filter.min_ratio ?? filter.minRatio
+                          const maxRatio = filter.max_ratio ?? filter.maxRatio
+                          if (typeof minRatio === 'number' && typeof maxRatio === 'number') {
+                            return `${minRatio.toFixed(2)}-${maxRatio.toFixed(2)} × SMA${period}`
+                          }
+                          if (typeof minRatio === 'number') {
+                            return `≥${minRatio.toFixed(2)} × SMA${period}`
+                          }
+                          if (typeof maxRatio === 'number') {
+                            return `≤${maxRatio.toFixed(2)} × SMA${period}`
+                          }
+                          if (filter.condition) {
+                            return `${filter.condition === 'above' ? '>' : '<'} SMA${period}`
+                          }
+                          return `SMA${period}`
+                        })()}
                       </div>
                     </TableCell>
-                    
+
                     {/* RSI */}
                     <TableCell>
                       <div className="text-xs">
-                        {result.filters.rsi?.enabled ? 
-                          `${result.filters.rsi.condition === 'above' ? '>' : '<'}${result.filters.rsi.threshold}` : 
-                          '-'
-                        }
+                        {(() => {
+                          const filter = result.filters.rsi
+                          if (!filter?.enabled) return '-'
+                          const minValue = filter.min_value ?? filter.minValue
+                          const maxValue = filter.max_value ?? filter.maxValue
+                          if (typeof minValue === 'number' && typeof maxValue === 'number') {
+                            return `${minValue.toFixed(0)}-${maxValue.toFixed(0)}`
+                          }
+                          if (typeof minValue === 'number') {
+                            return `≥${minValue.toFixed(0)}`
+                          }
+                          if (typeof maxValue === 'number') {
+                            return `≤${maxValue.toFixed(0)}`
+                          }
+                          if (filter.condition && typeof filter.threshold === 'number') {
+                            return `${filter.condition === 'above' ? '>' : '<'}${filter.threshold}`
+                          }
+                          return 'Active'
+                        })()}
                       </div>
                     </TableCell>
-                    
+
                     {/* Gap */}
                     <TableCell>
                       <div className="text-xs">
-                        {result.filters.gap?.enabled ? 
-                          `${result.filters.gap.direction !== 'any' ? result.filters.gap.direction + ' ' : ''}≥${result.filters.gap.gap_threshold}%` : 
-                          '-'
-                        }
+                        {(() => {
+                          const filter = result.filters.gap
+                          if (!filter?.enabled) return '-'
+                          const direction = filter.direction ?? 'both'
+                          const minGap = filter.min_percent ?? filter.min_gap_percent
+                          const maxGap = filter.max_percent ?? filter.max_gap_percent
+                          if (typeof minGap === 'number' && typeof maxGap === 'number') {
+                            return `${direction !== 'both' ? direction + ' ' : ''}${minGap.toFixed(1)}-${maxGap.toFixed(1)}%`
+                          }
+                          if (typeof minGap === 'number') {
+                            return `${direction !== 'both' ? direction + ' ' : ''}≥${minGap.toFixed(1)}%`
+                          }
+                          if (typeof maxGap === 'number') {
+                            return `${direction !== 'both' ? direction + ' ' : ''}≤${maxGap.toFixed(1)}%`
+                          }
+                          if (typeof filter.gap_threshold === 'number') {
+                            return `${direction !== 'both' ? direction + ' ' : ''}≥${filter.gap_threshold}%`
+                          }
+                          return 'Active'
+                        })()}
                       </div>
                     </TableCell>
-                    
+
                     {/* Volume */}
                     <TableCell>
                       <div className="text-xs">
-                        {result.filters.prev_day_dollar_volume?.enabled ? (
-                          result.filters.prev_day_dollar_volume.min_dollar_volume >= 1_000_000 ? 
-                            `≥$${(result.filters.prev_day_dollar_volume.min_dollar_volume / 1_000_000).toFixed(1)}M` :
-                            `≥$${(result.filters.prev_day_dollar_volume.min_dollar_volume / 1_000).toFixed(0)}K`
-                        ) : '-'}
+                        {(() => {
+                          const filter = result.filters.prev_day_dollar_volume
+                          if (!filter?.enabled) return '-'
+                          const minVol = filter.min_dollar_volume ?? filter.minDollarVolume
+                          const maxVol = filter.max_dollar_volume ?? filter.maxDollarVolume
+                          const format = (value: number) => value >= 1_000_000
+                            ? `$${(value / 1_000_000).toFixed(1)}M`
+                            : `$${(value / 1_000).toFixed(0)}K`
+                          if (typeof minVol === 'number' && typeof maxVol === 'number') {
+                            return `${format(minVol)}-${format(maxVol)}`
+                          }
+                          if (typeof minVol === 'number') {
+                            return `≥${format(minVol)}`
+                          }
+                          if (typeof maxVol === 'number') {
+                            return `≤${format(maxVol)}`
+                          }
+                          return 'Active'
+                        })()}
                       </div>
                     </TableCell>
-                    
+
                     {/* Relative Volume */}
                     <TableCell>
                       <div className="text-xs">
-                        {result.filters.relative_volume?.enabled ? 
-                          `≥${result.filters.relative_volume.min_ratio}x` : 
-                          '-'
-                        }
+                        {(() => {
+                          const filter = result.filters.relative_volume
+                          if (!filter?.enabled) return '-'
+                          const minRatio = filter.min_ratio ?? filter.minRatio
+                          const maxRatio = filter.max_ratio ?? filter.maxRatio
+                          if (typeof minRatio === 'number' && typeof maxRatio === 'number') {
+                            return `${minRatio.toFixed(1)}-${maxRatio.toFixed(1)}x`
+                          }
+                          if (typeof minRatio === 'number') {
+                            return `≥${minRatio.toFixed(1)}x`
+                          }
+                          if (typeof maxRatio === 'number') {
+                            return `≤${maxRatio.toFixed(1)}x`
+                          }
+                          return 'Active'
+                        })()}
                       </div>
                     </TableCell>
                     
@@ -273,7 +346,25 @@ export function ScreenerResultsView() {
                       <div className="bg-background border rounded-md p-3">
                         <h5 className="font-medium text-sm mb-1">Price vs Moving Average</h5>
                         <p className="text-sm text-muted-foreground">
-                          Price {selectedResult.filters.price_vs_ma.condition || 'above'} SMA{selectedResult.filters.price_vs_ma.ma_period || 20}
+                          {(() => {
+                            const filter = selectedResult.filters.price_vs_ma
+                            const period = filter.ma_period ?? filter.period ?? 20
+                            const minRatio = filter.min_ratio ?? filter.minRatio
+                            const maxRatio = filter.max_ratio ?? filter.maxRatio
+                            if (typeof minRatio === 'number' && typeof maxRatio === 'number') {
+                              return `${minRatio.toFixed(2)} - ${maxRatio.toFixed(2)} × SMA${period}`
+                            }
+                            if (typeof minRatio === 'number') {
+                              return `≥ ${minRatio.toFixed(2)} × SMA${period}`
+                            }
+                            if (typeof maxRatio === 'number') {
+                              return `≤ ${maxRatio.toFixed(2)} × SMA${period}`
+                            }
+                            if (filter.condition) {
+                              return `Price ${filter.condition} SMA${period}`
+                            }
+                            return `Active on SMA${period}`
+                          })()}
                         </p>
                       </div>
                     )}
@@ -333,7 +424,25 @@ export function ScreenerResultsView() {
                       <div className="bg-background border rounded-md p-3">
                         <h5 className="font-medium text-sm mb-1">RSI</h5>
                         <p className="text-sm text-muted-foreground">
-                          RSI{selectedResult.filters.rsi.rsi_period || 14} {selectedResult.filters.rsi.condition || 'below'} {selectedResult.filters.rsi.threshold || 0}
+                          {(() => {
+                            const filter = selectedResult.filters.rsi
+                            const period = filter.rsi_period ?? filter.period ?? 14
+                            const minValue = filter.min_value ?? filter.minValue
+                            const maxValue = filter.max_value ?? filter.maxValue
+                            if (typeof minValue === 'number' && typeof maxValue === 'number') {
+                              return `RSI${period} ${minValue.toFixed(0)} - ${maxValue.toFixed(0)}`
+                            }
+                            if (typeof minValue === 'number') {
+                              return `RSI${period} ≥ ${minValue.toFixed(0)}`
+                            }
+                            if (typeof maxValue === 'number') {
+                              return `RSI${period} ≤ ${maxValue.toFixed(0)}`
+                            }
+                            if (filter.condition && typeof filter.threshold === 'number') {
+                              return `RSI${period} ${filter.condition === 'above' ? '>' : '<'} ${filter.threshold}`
+                            }
+                            return `RSI${period}`
+                          })()}
                         </p>
                       </div>
                     )}
@@ -343,7 +452,25 @@ export function ScreenerResultsView() {
                       <div className="bg-background border rounded-md p-3">
                         <h5 className="font-medium text-sm mb-1">Gap Filter</h5>
                         <p className="text-sm text-muted-foreground">
-                          Gap {selectedResult.filters.gap.direction === 'any' ? '' : selectedResult.filters.gap.direction + ' '}≥ {selectedResult.filters.gap.gap_threshold || 0}%
+                          {(() => {
+                            const filter = selectedResult.filters.gap
+                            const direction = filter.direction ?? 'both'
+                            const minGap = filter.min_percent ?? filter.min_gap_percent
+                            const maxGap = filter.max_percent ?? filter.max_gap_percent
+                            if (typeof minGap === 'number' && typeof maxGap === 'number') {
+                              return `${direction !== 'both' ? direction + ' ' : ''}${minGap.toFixed(1)} - ${maxGap.toFixed(1)}%`
+                            }
+                            if (typeof minGap === 'number') {
+                              return `${direction !== 'both' ? direction + ' ' : ''}≥ ${minGap.toFixed(1)}%`
+                            }
+                            if (typeof maxGap === 'number') {
+                              return `${direction !== 'both' ? direction + ' ' : ''}≤ ${maxGap.toFixed(1)}%`
+                            }
+                            if (typeof filter.gap_threshold === 'number') {
+                              return `${direction !== 'both' ? direction + ' ' : ''}≥ ${filter.gap_threshold}%`
+                            }
+                            return `${direction !== 'both' ? direction + ' ' : ''}Active`
+                          })()}
                         </p>
                       </div>
                     )}
@@ -353,7 +480,24 @@ export function ScreenerResultsView() {
                       <div className="bg-background border rounded-md p-3">
                         <h5 className="font-medium text-sm mb-1">Previous Day Volume</h5>
                         <p className="text-sm text-muted-foreground">
-                          ≥ ${(selectedResult.filters.prev_day_dollar_volume.min_dollar_volume || 0).toLocaleString()}
+                          {(() => {
+                            const filter = selectedResult.filters.prev_day_dollar_volume
+                            const minVol = filter.min_dollar_volume ?? filter.minDollarVolume
+                            const maxVol = filter.max_dollar_volume ?? filter.maxDollarVolume
+                            const format = (value: number) => value >= 1_000_000
+                              ? `$${(value / 1_000_000).toFixed(1)}M`
+                              : `$${(value / 1_000).toFixed(0)}K`
+                            if (typeof minVol === 'number' && typeof maxVol === 'number') {
+                              return `${format(minVol)} - ${format(maxVol)}`
+                            }
+                            if (typeof minVol === 'number') {
+                              return `≥ ${format(minVol)}`
+                            }
+                            if (typeof maxVol === 'number') {
+                              return `≤ ${format(maxVol)}`
+                            }
+                            return 'Active'
+                          })()}
                         </p>
                       </div>
                     )}
@@ -363,7 +507,26 @@ export function ScreenerResultsView() {
                       <div className="bg-background border rounded-md p-3">
                         <h5 className="font-medium text-sm mb-1">Relative Volume</h5>
                         <p className="text-sm text-muted-foreground">
-                          {selectedResult.filters.relative_volume.recent_days || 1}d vs {selectedResult.filters.relative_volume.lookback_days || 20}d ≥ {selectedResult.filters.relative_volume.min_ratio || 1.0}x
+                          {(() => {
+                            const filter = selectedResult.filters.relative_volume
+                            const recent = filter.recent_days ?? filter.recentDays ?? 1
+                            const lookback = filter.lookback_days ?? filter.lookbackDays ?? 20
+                            const minRatio = filter.min_ratio ?? filter.minRatio
+                            const maxRatio = filter.max_ratio ?? filter.maxRatio
+                            const rangeText = () => {
+                              if (typeof minRatio === 'number' && typeof maxRatio === 'number') {
+                                return `${minRatio.toFixed(1)} - ${maxRatio.toFixed(1)}x`
+                              }
+                              if (typeof minRatio === 'number') {
+                                return `≥ ${minRatio.toFixed(1)}x`
+                              }
+                              if (typeof maxRatio === 'number') {
+                                return `≤ ${maxRatio.toFixed(1)}x`
+                              }
+                              return 'Active'
+                            }
+                            return `${recent}d vs ${lookback}d ${rangeText()}`
+                          })()}
                         </p>
                       </div>
                     )}

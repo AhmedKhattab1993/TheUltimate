@@ -376,6 +376,42 @@ class DatabaseRunStorage:
             except Exception:  # pragma: no cover
                 logger.debug("Failed to persist run target for %s", run_uuid, exc_info=True)
 
+    async def record_grid_targets(self, job_id: str, combos: List[Dict[str, Any]]) -> None:
+        if not await self._ensure_schema():
+            return
+
+        try:
+            run_uuid = UUID(job_id)
+        except ValueError:
+            logger.debug("Skipping grid target persistence for non-UUID id %s", job_id)
+            return
+
+        records = []
+        for combo in combos:
+            label = combo.get("label")
+            if not label:
+                continue
+            parameters = combo.get("parameters") or {}
+            records.append(
+                (
+                    uuid.uuid4(),
+                    run_uuid,
+                    label,
+                    json.dumps(parameters, default=str),
+                )
+            )
+
+        if not records:
+            return
+
+        async with DatabaseTransaction(db_pool) as conn:
+            await conn.execute("DELETE FROM run_targets WHERE run_id = $1", run_uuid)
+            await conn.copy_records_to_table(
+                "run_targets",
+                records=records,
+                columns=["id", "run_id", "symbol", "parameters"],
+            )
+
     async def _upsert_metrics(self, run_uuid: UUID, metrics: Optional[Dict[str, Any]]) -> None:
         if not metrics:
             return
@@ -416,7 +452,7 @@ class InMemoryRunStorage:
         self._metrics: Dict[str, Dict[str, float]] = {}
 
     async def record_submission(self, job_id: str, job_type: str, strategy_name: str, run_info: BacktestRunInfo) -> None:
-        targets = run_info.request.symbols or []
+        targets = list(run_info.targets or run_info.request.symbols or [])
         self._targets[job_id] = targets
         self._runs[job_id] = run_info.model_copy(update={"targets": targets})
 
@@ -435,13 +471,23 @@ class InMemoryRunStorage:
                 except (TypeError, ValueError):
                     continue
             self._metrics[job_id] = numeric_stats
-        targets = self._targets.get(job_id, run_info.request.symbols or [])
+        targets = self._targets.get(job_id, list(run_info.targets or run_info.request.symbols or []))
         self._runs[job_id] = run_info.model_copy(
             update={
                 "metrics": numeric_stats or None,
                 "targets": targets,
             }
         )
+
+    async def record_grid_targets(self, job_id: str, combos: List[Dict[str, Any]]) -> None:
+        labels = [combo.get("label") for combo in combos if combo.get("label")]
+        if not labels:
+            return
+
+        self._targets[job_id] = labels
+        existing = self._runs.get(job_id)
+        if existing:
+            self._runs[job_id] = existing.model_copy(update={"targets": labels})
 
     async def fetch_runs(self, *, strategy_name: Optional[str] = None, limit: int = 200) -> List[BacktestRunInfo]:
         runs = list(self._runs.values())

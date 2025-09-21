@@ -22,14 +22,15 @@ describe('ScreenerContext', () => {
       expect(result.current.state.filters.priceVsMA).toEqual({
         enabled: false,
         period: 50,
-        condition: 'above'
+        minRatio: '1.00',
+        maxRatio: ''
       })
       
       expect(result.current.state.filters.rsi).toEqual({
         enabled: false,
         period: '14',
-        threshold: '30',
-        condition: 'below'
+        minValue: '',
+        maxValue: '30'
       })
       
       expect(result.current.state.dateRange).toEqual({

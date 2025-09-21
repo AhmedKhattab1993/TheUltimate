@@ -3,7 +3,6 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
-import { Button } from '@/components/ui/button'
 import { Activity } from 'lucide-react'
 import { HelpTooltip } from '@/components/HelpTooltip'
 import { useScreenerContext } from '@/contexts/ScreenerContext'
@@ -20,40 +19,35 @@ export const RSIFilter = memo(() => {
     dispatch({ type: 'SET_FILTER', filter: 'rsi', field: 'period', value })
   }
 
-  const handleThresholdChange = (value: string) => {
-    dispatch({ type: 'SET_FILTER', filter: 'rsi', field: 'threshold', value })
+  const handleMinValueChange = (value: string) => {
+    dispatch({ type: 'SET_FILTER', filter: 'rsi', field: 'minValue', value })
   }
 
-  const handleConditionChange = (condition: 'above' | 'below') => {
-    dispatch({ type: 'SET_FILTER', filter: 'rsi', field: 'condition', value: condition })
+  const handleMaxValueChange = (value: string) => {
+    dispatch({ type: 'SET_FILTER', filter: 'rsi', field: 'maxValue', value })
   }
 
   // Validation
   const period = parseInt(filter.period)
-  const threshold = parseFloat(filter.threshold)
+  const minValue = parseFloat(filter.minValue)
+  const maxValue = parseFloat(filter.maxValue)
   const periodError = filter.enabled && (isNaN(period) || period < 2 || period > 50)
-  const thresholdError = filter.enabled && (isNaN(threshold) || threshold < 0 || threshold > 100)
-
-  const getDescription = () => {
-    const condition = filter.condition === 'below' ? 'oversold' : 'overbought'
-    const thresholdValue = filter.condition === 'below' ? '30' : '70'
-    
-    return (
-      <div className="text-sm text-muted-foreground">
-        Looking for {condition} stocks (RSI {filter.condition} {filter.threshold || thresholdValue})
-      </div>
-    )
-  }
+  const minError = filter.enabled && !isNaN(minValue) && (minValue < 0 || minValue > 100)
+  const maxError = filter.enabled && !isNaN(maxValue) && (maxValue < 0 || maxValue > 100)
+  const rangeError = filter.enabled
+    && !isNaN(minValue)
+    && !isNaN(maxValue)
+    && minValue > maxValue
 
   const getMarketConditionBadge = () => {
-    if (filter.condition === 'below' && threshold <= 30) {
+    if (!Number.isNaN(maxValue) && maxValue <= 30) {
       return (
         <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-red-100 text-red-800 rounded-full">
           Oversold
         </span>
       )
     }
-    if (filter.condition === 'above' && threshold >= 70) {
+    if (!Number.isNaN(minValue) && minValue >= 70) {
       return (
         <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">
           Overbought
@@ -101,48 +95,51 @@ export const RSIFilter = memo(() => {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="rsi-threshold">Threshold</Label>
+                <Label htmlFor="rsi-min">Min RSI</Label>
                 <Input
-                  id="rsi-threshold"
+                  id="rsi-min"
                   type="number"
                   min="0"
                   max="100"
                   step="1"
-                  placeholder="30"
-                  value={filter.threshold}
-                  onChange={(e) => handleThresholdChange(e.target.value)}
-                  className={thresholdError ? 'border-red-500' : ''}
+                  placeholder="Optional"
+                  value={filter.minValue}
+                  onChange={(e) => handleMinValueChange(e.target.value)}
+                  className={minError ? 'border-red-500' : ''}
                 />
-                {thresholdError && (
-                  <p className="text-xs text-red-600">Threshold must be between 0 and 100</p>
+                {minError && (
+                  <p className="text-xs text-red-600">Value must be between 0 and 100</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="rsi-max">Max RSI</Label>
+                <Input
+                  id="rsi-max"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="1"
+                  placeholder="Optional"
+                  value={filter.maxValue}
+                  onChange={(e) => handleMaxValueChange(e.target.value)}
+                  className={maxError ? 'border-red-500' : ''}
+                />
+                {maxError && (
+                  <p className="text-xs text-red-600">Value must be between 0 and 100</p>
                 )}
               </div>
             </div>
 
-            <div className="space-y-3">
-              <Label>Condition</Label>
-              <div className="flex gap-2">
-                <Button
-                  variant={filter.condition === 'below' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => handleConditionChange('below')}
-                  className="flex-1"
-                >
-                  Below (Oversold)
-                </Button>
-                <Button
-                  variant={filter.condition === 'above' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => handleConditionChange('above')}
-                  className="flex-1"
-                >
-                  Above (Overbought)
-                </Button>
+            {rangeError && (
+              <div className="text-sm text-red-600">
+                Minimum RSI must be less than or equal to maximum RSI
               </div>
+            )}
+
+            <div className="text-sm text-muted-foreground">
+              Provide lower and/or upper RSI bounds to target oversold ({'<'}30) or overbought ({'>'}70) conditions.
             </div>
-
-
-            {getDescription()}
           </div>
         )}
       </CardContent>

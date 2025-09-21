@@ -6,12 +6,7 @@ from functools import lru_cache
 from typing import Dict, Iterable, List, Optional
 
 from ..models.backtest import BacktestRequest
-from .schemas import (
-    FilterOption,
-    StrategyCapabilities,
-    StrategyDefinition,
-    StrategyParameter,
-)
+from .schemas import StrategyCapabilities, StrategyDefinition, StrategyParameter
 
 
 class StrategyRegistry:
@@ -69,31 +64,14 @@ def _default_definitions() -> List[StrategyDefinition]:
                     required=True,
                 ),
                 StrategyParameter(
-                    name="lower_timeframe",
-                    label="Lower Timeframe",
-                    description="Secondary timeframe used by the algorithm",
-                    control_type="select",
-                    default="5min",
-                    options=[
-                        FilterOption(label="1 minute", value="1min"),
-                        FilterOption(label="5 minute", value="5min"),
-                        FilterOption(label="15 minute", value="15min"),
-                        FilterOption(label="30 minute", value="30min"),
-                        FilterOption(label="1 hour", value="1hour"),
-                    ],
-                    required=True,
-                ),
-                StrategyParameter(
-                    name="resolution",
-                    label="Resolution",
-                    description="Lean data resolution",
-                    control_type="select",
-                    default="Minute",
-                    options=[
-                        FilterOption(label="Minute", value="Minute"),
-                        FilterOption(label="Hour", value="Hour"),
-                        FilterOption(label="Daily", value="Daily"),
-                    ],
+                    name="symbol_slot",
+                    label="Symbol Slot",
+                    description="Numeric index referencing the symbol mapping entry",
+                    control_type="number",
+                    default=0,
+                    min_value=0,
+                    max_value=5000,
+                    step=1,
                     required=True,
                 ),
                 StrategyParameter(
@@ -107,8 +85,8 @@ def _default_definitions() -> List[StrategyDefinition]:
             ],
             defaults={
                 "pivot_bars": 5,
-                "lower_timeframe": "5min",
-                "resolution": "Minute",
+                "lower_timeframe": "1min",
+                "symbol_slot": 0,
             },
             capabilities=StrategyCapabilities(
                 supports=["backtest", "grid", "optimize"],

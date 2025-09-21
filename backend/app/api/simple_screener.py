@@ -275,24 +275,78 @@ async def _process_single_day(
                 start_date=trading_date,
                 end_date=trading_date,
                 # Extract filter parameters
-                min_price=request_filters.price_range.min_price if request_filters.price_range else None,
-                max_price=request_filters.price_range.max_price if request_filters.price_range else None,
+                min_price=(
+                    request_filters.price_range.open_price.min
+                    if request_filters.price_range and request_filters.price_range.open_price
+                    else None
+                ),
+                max_price=(
+                    request_filters.price_range.open_price.max
+                    if request_filters.price_range and request_filters.price_range.open_price
+                    else None
+                ),
                 price_vs_ma_enabled=request_filters.price_vs_ma is not None,
                 price_vs_ma_period=request_filters.price_vs_ma.ma_period if request_filters.price_vs_ma else None,
-                price_vs_ma_condition=request_filters.price_vs_ma.condition if request_filters.price_vs_ma else None,
+                price_vs_ma_min_ratio=(
+                    request_filters.price_vs_ma.open_over_ma.min
+                    if request_filters.price_vs_ma and request_filters.price_vs_ma.open_over_ma
+                    else None
+                ),
+                price_vs_ma_max_ratio=(
+                    request_filters.price_vs_ma.open_over_ma.max
+                    if request_filters.price_vs_ma and request_filters.price_vs_ma.open_over_ma
+                    else None
+                ),
                 rsi_enabled=request_filters.rsi is not None,
                 rsi_period=request_filters.rsi.rsi_period if request_filters.rsi else None,
-                rsi_threshold=request_filters.rsi.threshold if request_filters.rsi else None,
-                rsi_condition=request_filters.rsi.condition if request_filters.rsi else None,
+                rsi_min_value=(
+                    request_filters.rsi.rsi_value.min
+                    if request_filters.rsi and request_filters.rsi.rsi_value
+                    else None
+                ),
+                rsi_max_value=(
+                    request_filters.rsi.rsi_value.max
+                    if request_filters.rsi and request_filters.rsi.rsi_value
+                    else None
+                ),
                 gap_enabled=request_filters.gap is not None,
-                gap_threshold=request_filters.gap.gap_threshold if request_filters.gap else None,
-                gap_direction='any' if request_filters.gap and request_filters.gap.direction == 'both' else request_filters.gap.direction if request_filters.gap else None,
+                gap_min_percent=(
+                    request_filters.gap.gap_percent.min
+                    if request_filters.gap and request_filters.gap.gap_percent
+                    else None
+                ),
+                gap_max_percent=(
+                    request_filters.gap.gap_percent.max
+                    if request_filters.gap and request_filters.gap.gap_percent
+                    else None
+                ),
+                gap_direction=(
+                    request_filters.gap.direction if request_filters.gap else None
+                ),
                 prev_day_dollar_volume_enabled=request_filters.prev_day_dollar_volume is not None,
-                prev_day_dollar_volume=request_filters.prev_day_dollar_volume.min_dollar_volume if request_filters.prev_day_dollar_volume else None,
+                prev_day_min_dollar_volume=(
+                    request_filters.prev_day_dollar_volume.dollar_volume.min
+                    if request_filters.prev_day_dollar_volume and request_filters.prev_day_dollar_volume.dollar_volume
+                    else None
+                ),
+                prev_day_max_dollar_volume=(
+                    request_filters.prev_day_dollar_volume.dollar_volume.max
+                    if request_filters.prev_day_dollar_volume and request_filters.prev_day_dollar_volume.dollar_volume
+                    else None
+                ),
                 relative_volume_enabled=request_filters.relative_volume is not None,
                 relative_volume_recent_days=request_filters.relative_volume.recent_days if request_filters.relative_volume else None,
                 relative_volume_lookback_days=request_filters.relative_volume.lookback_days if request_filters.relative_volume else None,
-                relative_volume_min_ratio=request_filters.relative_volume.min_ratio if request_filters.relative_volume else None,
+                relative_volume_min_ratio=(
+                    request_filters.relative_volume.ratio.min
+                    if request_filters.relative_volume and request_filters.relative_volume.ratio
+                    else None
+                ),
+                relative_volume_max_ratio=(
+                    request_filters.relative_volume.ratio.max
+                    if request_filters.relative_volume and request_filters.relative_volume.ratio
+                    else None
+                ),
                 session_id=session_id  # Include session_id for multi-day runs
             )
             
@@ -304,24 +358,78 @@ async def _process_single_day(
                     company_name=None,
                     data_date=trading_date,
                     # Copy filter parameters from request
-                    filter_min_price=request_filters.price_range.min_price if request_filters.price_range else None,
-                    filter_max_price=request_filters.price_range.max_price if request_filters.price_range else None,
+                    filter_min_price=(
+                        request_filters.price_range.open_price.min
+                        if request_filters.price_range and request_filters.price_range.open_price
+                        else None
+                    ),
+                    filter_max_price=(
+                        request_filters.price_range.open_price.max
+                        if request_filters.price_range and request_filters.price_range.open_price
+                        else None
+                    ),
                     filter_price_vs_ma_enabled=request_filters.price_vs_ma is not None,
                     filter_price_vs_ma_period=request_filters.price_vs_ma.ma_period if request_filters.price_vs_ma else None,
-                    filter_price_vs_ma_condition=request_filters.price_vs_ma.condition if request_filters.price_vs_ma else None,
+                    filter_price_vs_ma_min_ratio=(
+                        request_filters.price_vs_ma.open_over_ma.min
+                        if request_filters.price_vs_ma and request_filters.price_vs_ma.open_over_ma
+                        else None
+                    ),
+                    filter_price_vs_ma_max_ratio=(
+                        request_filters.price_vs_ma.open_over_ma.max
+                        if request_filters.price_vs_ma and request_filters.price_vs_ma.open_over_ma
+                        else None
+                    ),
                     filter_rsi_enabled=request_filters.rsi is not None,
                     filter_rsi_period=request_filters.rsi.rsi_period if request_filters.rsi else None,
-                    filter_rsi_threshold=request_filters.rsi.threshold if request_filters.rsi else None,
-                    filter_rsi_condition=request_filters.rsi.condition if request_filters.rsi else None,
+                    filter_rsi_min_value=(
+                        request_filters.rsi.rsi_value.min
+                        if request_filters.rsi and request_filters.rsi.rsi_value
+                        else None
+                    ),
+                    filter_rsi_max_value=(
+                        request_filters.rsi.rsi_value.max
+                        if request_filters.rsi and request_filters.rsi.rsi_value
+                        else None
+                    ),
                     filter_gap_enabled=request_filters.gap is not None,
-                    filter_gap_threshold=request_filters.gap.gap_threshold if request_filters.gap else None,
-                    filter_gap_direction='any' if request_filters.gap and request_filters.gap.direction == 'both' else request_filters.gap.direction if request_filters.gap else None,
+                    filter_gap_min_percent=(
+                        request_filters.gap.gap_percent.min
+                        if request_filters.gap and request_filters.gap.gap_percent
+                        else None
+                    ),
+                    filter_gap_max_percent=(
+                        request_filters.gap.gap_percent.max
+                        if request_filters.gap and request_filters.gap.gap_percent
+                        else None
+                    ),
+                    filter_gap_direction=(
+                        request_filters.gap.direction if request_filters.gap else None
+                    ),
                     filter_prev_day_dollar_volume_enabled=request_filters.prev_day_dollar_volume is not None,
-                    filter_prev_day_dollar_volume=request_filters.prev_day_dollar_volume.min_dollar_volume if request_filters.prev_day_dollar_volume else None,
+                    filter_prev_day_min_dollar_volume=(
+                        request_filters.prev_day_dollar_volume.dollar_volume.min
+                        if request_filters.prev_day_dollar_volume and request_filters.prev_day_dollar_volume.dollar_volume
+                        else None
+                    ),
+                    filter_prev_day_max_dollar_volume=(
+                        request_filters.prev_day_dollar_volume.dollar_volume.max
+                        if request_filters.prev_day_dollar_volume and request_filters.prev_day_dollar_volume.dollar_volume
+                        else None
+                    ),
                     filter_relative_volume_enabled=request_filters.relative_volume is not None,
                     filter_relative_volume_recent_days=request_filters.relative_volume.recent_days if request_filters.relative_volume else None,
                     filter_relative_volume_lookback_days=request_filters.relative_volume.lookback_days if request_filters.relative_volume else None,
-                    filter_relative_volume_min_ratio=request_filters.relative_volume.min_ratio if request_filters.relative_volume else None
+                    filter_relative_volume_min_ratio=(
+                        request_filters.relative_volume.ratio.min
+                        if request_filters.relative_volume and request_filters.relative_volume.ratio
+                        else None
+                    ),
+                    filter_relative_volume_max_ratio=(
+                        request_filters.relative_volume.ratio.max
+                        if request_filters.relative_volume and request_filters.relative_volume.ratio
+                        else None
+                    ),
                 )
                 cache_results.append(cache_result)
             
@@ -443,51 +551,49 @@ async def simple_screen_stocks(
     
     if request.filters.price_range:
         filters.append(SimplePriceRangeFilter(
-            min_price=request.filters.price_range.min_price,
-            max_price=request.filters.price_range.max_price
+            price_range=request.filters.price_range.open_price
         ))
-    
+
     if request.filters.price_vs_ma:
         filters.append(PriceVsMAFilter(
             period=request.filters.price_vs_ma.ma_period,
-            condition=request.filters.price_vs_ma.condition
+            ratio_range=request.filters.price_vs_ma.open_over_ma
         ))
-    
+
     if request.filters.rsi:
         filters.append(RSIFilter(
             period=request.filters.rsi.rsi_period,
-            condition=request.filters.rsi.condition,
-            threshold=request.filters.rsi.threshold
+            rsi_range=request.filters.rsi.rsi_value
         ))
-    
+
     if request.filters.min_avg_volume:
         filters.append(MinAverageVolumeFilter(
             lookback_days=request.filters.min_avg_volume.lookback_days,
-            min_avg_volume=request.filters.min_avg_volume.min_avg_volume
+            volume_range=request.filters.min_avg_volume.avg_volume
         ))
-    
+
     if request.filters.min_avg_dollar_volume:
         filters.append(MinAverageDollarVolumeFilter(
             lookback_days=request.filters.min_avg_dollar_volume.lookback_days,
-            min_avg_dollar_volume=request.filters.min_avg_dollar_volume.min_avg_dollar_volume
+            dollar_volume_range=request.filters.min_avg_dollar_volume.avg_dollar_volume
         ))
-    
+
     if request.filters.gap:
         filters.append(GapFilter(
-            gap_threshold=request.filters.gap.gap_threshold,
+            gap_range=request.filters.gap.gap_percent,
             direction=request.filters.gap.direction
         ))
-    
+
     if request.filters.prev_day_dollar_volume:
         filters.append(PreviousDayDollarVolumeFilter(
-            min_dollar_volume=request.filters.prev_day_dollar_volume.min_dollar_volume
+            dollar_volume_range=request.filters.prev_day_dollar_volume.dollar_volume
         ))
-    
+
     if request.filters.relative_volume:
         filters.append(RelativeVolumeFilter(
             recent_days=request.filters.relative_volume.recent_days,
             lookback_days=request.filters.relative_volume.lookback_days,
-            min_ratio=request.filters.relative_volume.min_ratio
+            ratio_range=request.filters.relative_volume.ratio
         ))
     
     if not filters:

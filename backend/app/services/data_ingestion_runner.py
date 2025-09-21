@@ -19,7 +19,7 @@ class DataIngestionRunner:
 
     async def run(self, job_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
         dataset = config.get('dataset', 'minute')
-        if dataset != 'minute':  # pragma: no cover - defensive
+        if dataset not in {'minute', 'daily'}:  # pragma: no cover - defensive
             raise ValueError(f'Unsupported dataset: {dataset}')
 
         start_date = config.get('start_date')
@@ -29,20 +29,52 @@ class DataIngestionRunner:
 
         resume = config.get('resume', False)
 
-        script_path = self.scripts_path / 'download_historical_minute_data.py'
-        if not script_path.exists():  # pragma: no cover - defensive
-            raise FileNotFoundError(f'Ingestion script missing: {script_path}')
+        if dataset == 'minute':
+            script_path = self.scripts_path / 'download_historical_minute_data.py'
+            if not script_path.exists():  # pragma: no cover - defensive
+                raise FileNotFoundError(f'Ingestion script missing: {script_path}')
 
-        args = [
-            'python3',
-            str(script_path),
-            '--start',
-            str(start_date),
-            '--end',
-            str(end_date),
-        ]
-        if resume:
-            args.append('--resume')
+            args = [
+                'python3',
+                str(script_path),
+                '--start',
+                str(start_date),
+                '--end',
+                str(end_date),
+            ]
+            if resume:
+                args.append('--resume')
+        else:
+            script_path = self.scripts_path / 'download_historical_daily_data.py'
+            if not script_path.exists():  # pragma: no cover - defensive
+                raise FileNotFoundError(f'Ingestion script missing: {script_path}')
+
+            args = [
+                'python3',
+                str(script_path),
+                '--start',
+                str(start_date),
+                '--end',
+                str(end_date),
+            ]
+
+            symbols = config.get('symbols')
+            if symbols:
+                if isinstance(symbols, (list, tuple)):
+                    symbols_arg = ','.join(symbols)
+                else:
+                    symbols_arg = str(symbols)
+                args.extend(['--symbols', symbols_arg])
+
+            if config.get('skip_existing', True):
+                args.append('--skip-existing')
+
+            if not config.get('use_bulk', True):
+                args.append('--no-bulk')
+
+            max_symbols = config.get('max_symbols')
+            if max_symbols:
+                args.extend(['--max-symbols', str(max_symbols)])
 
         logger.info('Running ingestion job %s with args: %s', job_id, args)
 

@@ -29,28 +29,32 @@ class CachedScreenerRequest(BaseModel):
     # Price vs MA filter (replaces above_sma20)
     price_vs_ma_enabled: bool = False
     price_vs_ma_period: Optional[int] = None
-    price_vs_ma_condition: Optional[str] = None  # 'above' or 'below'
+    price_vs_ma_min_ratio: Optional[Decimal] = None
+    price_vs_ma_max_ratio: Optional[Decimal] = None
     
     # RSI filter
     rsi_enabled: bool = False
     rsi_period: Optional[int] = None
-    rsi_threshold: Optional[Decimal] = None
-    rsi_condition: Optional[str] = None  # 'above' or 'below'
+    rsi_min_value: Optional[Decimal] = None
+    rsi_max_value: Optional[Decimal] = None
     
     # Gap filter (enhanced with direction)
     gap_enabled: bool = False
-    gap_threshold: Optional[Decimal] = None  # renamed from min_gap
-    gap_direction: Optional[str] = None  # 'up', 'down', or 'any'
+    gap_min_percent: Optional[Decimal] = None
+    gap_max_percent: Optional[Decimal] = None
+    gap_direction: Optional[str] = None  # 'up', 'down', or 'both'
     
     # Previous day dollar volume filter (replaces min_volume)
     prev_day_dollar_volume_enabled: bool = False
-    prev_day_dollar_volume: Optional[Decimal] = None
+    prev_day_min_dollar_volume: Optional[Decimal] = None
+    prev_day_max_dollar_volume: Optional[Decimal] = None
     
     # Relative volume filter
     relative_volume_enabled: bool = False
     relative_volume_recent_days: Optional[int] = None
     relative_volume_lookback_days: Optional[int] = None
     relative_volume_min_ratio: Optional[Decimal] = None
+    relative_volume_max_ratio: Optional[Decimal] = None
     
     # Session identification (optional, for grouping multi-day runs)
     session_id: Optional[UUID] = None
@@ -74,28 +78,32 @@ class CachedScreenerRequest(BaseModel):
                 'price_vs_ma': {
                     'enabled': self.price_vs_ma_enabled,
                     'period': self.price_vs_ma_period,
-                    'condition': self.price_vs_ma_condition
+                    'min_ratio': float(self.price_vs_ma_min_ratio) if self.price_vs_ma_min_ratio is not None else None,
+                    'max_ratio': float(self.price_vs_ma_max_ratio) if self.price_vs_ma_max_ratio is not None else None,
                 },
                 'rsi': {
                     'enabled': self.rsi_enabled,
                     'period': self.rsi_period,
-                    'threshold': float(self.rsi_threshold) if self.rsi_threshold is not None else None,
-                    'condition': self.rsi_condition
+                    'min_value': float(self.rsi_min_value) if self.rsi_min_value is not None else None,
+                    'max_value': float(self.rsi_max_value) if self.rsi_max_value is not None else None,
                 },
                 'gap': {
                     'enabled': self.gap_enabled,
-                    'threshold': float(self.gap_threshold) if self.gap_threshold is not None else None,
-                    'direction': self.gap_direction
+                    'min_percent': float(self.gap_min_percent) if self.gap_min_percent is not None else None,
+                    'max_percent': float(self.gap_max_percent) if self.gap_max_percent is not None else None,
+                    'direction': self.gap_direction,
                 },
                 'prev_day_dollar_volume': {
                     'enabled': self.prev_day_dollar_volume_enabled,
-                    'value': float(self.prev_day_dollar_volume) if self.prev_day_dollar_volume is not None else None
+                    'min_value': float(self.prev_day_min_dollar_volume) if self.prev_day_min_dollar_volume is not None else None,
+                    'max_value': float(self.prev_day_max_dollar_volume) if self.prev_day_max_dollar_volume is not None else None,
                 },
                 'relative_volume': {
                     'enabled': self.relative_volume_enabled,
                     'recent_days': self.relative_volume_recent_days,
                     'lookback_days': self.relative_volume_lookback_days,
-                    'min_ratio': float(self.relative_volume_min_ratio) if self.relative_volume_min_ratio is not None else None
+                    'min_ratio': float(self.relative_volume_min_ratio) if self.relative_volume_min_ratio is not None else None,
+                    'max_ratio': float(self.relative_volume_max_ratio) if self.relative_volume_max_ratio is not None else None,
                 }
             }
         }
@@ -126,28 +134,32 @@ class CachedScreenerResult(BaseModel):
     # Price vs MA filter
     filter_price_vs_ma_enabled: bool = False
     filter_price_vs_ma_period: Optional[int] = None
-    filter_price_vs_ma_condition: Optional[str] = None
+    filter_price_vs_ma_min_ratio: Optional[Decimal] = None
+    filter_price_vs_ma_max_ratio: Optional[Decimal] = None
     
     # RSI filter
     filter_rsi_enabled: bool = False
     filter_rsi_period: Optional[int] = None
-    filter_rsi_threshold: Optional[Decimal] = None
-    filter_rsi_condition: Optional[str] = None
+    filter_rsi_min_value: Optional[Decimal] = None
+    filter_rsi_max_value: Optional[Decimal] = None
     
     # Gap filter
     filter_gap_enabled: bool = False
-    filter_gap_threshold: Optional[Decimal] = None
+    filter_gap_min_percent: Optional[Decimal] = None
+    filter_gap_max_percent: Optional[Decimal] = None
     filter_gap_direction: Optional[str] = None
     
     # Previous day dollar volume filter
     filter_prev_day_dollar_volume_enabled: bool = False
-    filter_prev_day_dollar_volume: Optional[Decimal] = None
+    filter_prev_day_min_dollar_volume: Optional[Decimal] = None
+    filter_prev_day_max_dollar_volume: Optional[Decimal] = None
     
     # Relative volume filter
     filter_relative_volume_enabled: bool = False
     filter_relative_volume_recent_days: Optional[int] = None
     filter_relative_volume_lookback_days: Optional[int] = None
     filter_relative_volume_min_ratio: Optional[Decimal] = None
+    filter_relative_volume_max_ratio: Optional[Decimal] = None
     
     # Session identification
     session_id: Optional[UUID] = None

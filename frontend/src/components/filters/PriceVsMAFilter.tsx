@@ -2,8 +2,9 @@ import { memo } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { TrendingUp, TrendingDown } from 'lucide-react'
+import { TrendingUp } from 'lucide-react'
 import { HelpTooltip } from '@/components/HelpTooltip'
 import { useScreenerContext } from '@/contexts/ScreenerContext'
 
@@ -19,24 +20,20 @@ export const PriceVsMAFilter = memo(() => {
     dispatch({ type: 'SET_FILTER', filter: 'priceVsMA', field: 'period', value: period })
   }
 
-  const handleConditionChange = (condition: 'above' | 'below') => {
-    dispatch({ type: 'SET_FILTER', filter: 'priceVsMA', field: 'condition', value: condition })
+  const handleMinRatioChange = (value: string) => {
+    dispatch({ type: 'SET_FILTER', filter: 'priceVsMA', field: 'minRatio', value })
   }
 
-  const getDescription = () => {
-    const icon = filter.condition === 'above' 
-      ? <TrendingUp className="h-4 w-4 text-green-600" />
-      : <TrendingDown className="h-4 w-4 text-red-600" />
-    
-    return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        {icon}
-        <span>
-          Looking for stocks trading {filter.condition} their {filter.period}-day moving average
-        </span>
-      </div>
-    )
+  const handleMaxRatioChange = (value: string) => {
+    dispatch({ type: 'SET_FILTER', filter: 'priceVsMA', field: 'maxRatio', value })
   }
+
+  const minRatio = parseFloat(filter.minRatio)
+  const maxRatio = parseFloat(filter.maxRatio)
+  const hasError = filter.enabled
+    && !Number.isNaN(minRatio)
+    && !Number.isNaN(maxRatio)
+    && minRatio > maxRatio
 
   return (
     <Card className={`transition-opacity ${filter.enabled ? 'opacity-100' : 'opacity-75'}`}>
@@ -73,31 +70,45 @@ export const PriceVsMAFilter = memo(() => {
               </div>
             </div>
 
-            <div className="space-y-3">
-              <Label>Price Condition</Label>
-              <div className="flex gap-2">
-                <Button
-                  variant={filter.condition === 'above' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => handleConditionChange('above')}
-                  className="flex-1"
-                >
-                  <TrendingUp className="h-4 w-4 mr-1" />
-                  Above MA
-                </Button>
-                <Button
-                  variant={filter.condition === 'below' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => handleConditionChange('below')}
-                  className="flex-1"
-                >
-                  <TrendingDown className="h-4 w-4 mr-1" />
-                  Below MA
-                </Button>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="min-ratio">Min Open/MA Ratio</Label>
+                <Input
+                  id="min-ratio"
+                  type="number"
+                  step="0.05"
+                  min="0"
+                  placeholder="1.00"
+                  value={filter.minRatio}
+                  onChange={(e) => handleMinRatioChange(e.target.value)}
+                  className={hasError ? 'border-red-500' : ''}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="max-ratio">Max Open/MA Ratio</Label>
+                <Input
+                  id="max-ratio"
+                  type="number"
+                  step="0.05"
+                  min="0"
+                  placeholder=""
+                  value={filter.maxRatio}
+                  onChange={(e) => handleMaxRatioChange(e.target.value)}
+                  className={hasError ? 'border-red-500' : ''}
+                />
               </div>
             </div>
 
-            {getDescription()}
+            {hasError && (
+              <div className="text-sm text-red-600">
+                Minimum ratio must be less than or equal to maximum ratio
+              </div>
+            )}
+
+            <div className="text-sm text-muted-foreground">
+              Ratios above 1.0 indicate the open price is greater than the moving average.
+              Configure minimum and/or maximum bounds to target specific setups.
+            </div>
           </div>
         )}
       </CardContent>

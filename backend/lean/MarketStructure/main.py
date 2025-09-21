@@ -108,7 +108,7 @@ class MarketStructureAlgorithm(QCAlgorithm):
         # self._log_debug(f"[PARAMS] screener_results_file: {self.screener_results_file}")
         
         # Timeframe parameters - only use lower timeframe
-        lower_timeframe_str = self.get_parameter("lower_timeframe", "5min")
+        lower_timeframe_str = self.get_parameter("lower_timeframe", "1min")
         self.lower_timeframe = self._parse_resolution(lower_timeframe_str)
         self.consolidator_minutes = self._get_timeframe_minutes(lower_timeframe_str)
         
@@ -121,6 +121,7 @@ class MarketStructureAlgorithm(QCAlgorithm):
         resolution_map = {
             "1min": Resolution.MINUTE,
             "5min": Resolution.MINUTE,  # Will use consolidator
+            "10min": Resolution.MINUTE,  # Will use consolidator
             "15min": Resolution.MINUTE,  # Will use consolidator
             "30min": Resolution.MINUTE,  # Will use consolidator
             "1hour": Resolution.HOUR,
@@ -135,6 +136,7 @@ class MarketStructureAlgorithm(QCAlgorithm):
         timeframe_minutes = {
             "1min": 1,
             "5min": 5,
+            "10min": 10,
             "15min": 15,
             "30min": 30,
             "1hour": 60,
@@ -181,8 +183,16 @@ class MarketStructureAlgorithm(QCAlgorithm):
             symbols = self._load_screener_symbols()
         else:
             # Load symbol indices from parameter
-            symbol_indices_param = self.get_parameter("symbol_indices", "0")  # Default to index 0 (SPY)
-            
+            symbol_slot_param = self.get_parameter("symbol_slot", None)
+            if symbol_slot_param is not None:
+                try:
+                    slot_index = int(float(symbol_slot_param))
+                except ValueError:
+                    slot_index = 0
+                symbol_indices_param = str(max(0, slot_index))
+            else:
+                symbol_indices_param = self.get_parameter("symbol_indices", "0")  # Default to index 0 (SPY)
+
             # Parse indices (can be comma-separated)
             indices = []
             for idx_str in symbol_indices_param.split(","):

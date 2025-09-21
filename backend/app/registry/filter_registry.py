@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from ..models.simple_requests import (
     GapParams,
+    NumericRange,
     PreviousDayDollarVolumeParams,
     PriceVsMAParams,
     RSIParams,
@@ -17,6 +18,17 @@ from ..models.simple_requests import (
     SimplePriceRangeParams,
 )
 from .schemas import FilterControl, FilterDefinition, FilterOption
+
+
+def _maybe_float(value: object) -> float | None:
+    """Convert user-provided control values to floats when possible."""
+
+    if value in (None, "", "null"):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid numeric value: {value}") from exc
 
 
 class FilterRegistry:
@@ -97,47 +109,117 @@ class FilterRegistry:
     # ------------------------------------------------------------------
     @staticmethod
     def _build_price_range(values: Dict[str, object]) -> SimplePriceRangeParams:
-        return SimplePriceRangeParams(
-            min_price=float(values.get("min_price", 1.0)),
-            max_price=float(values.get("max_price", 100.0)),
-        )
+        min_value = _maybe_float(values.get("min_price"))
+        max_value = _maybe_float(values.get("max_price"))
+        step_value = _maybe_float(values.get("step"))
+
+        if min_value is None and max_value is None and step_value is None:
+            return SimplePriceRangeParams()
+
+        range_kwargs: Dict[str, float] = {}
+        if min_value is not None:
+            range_kwargs["min"] = min_value
+        if max_value is not None:
+            range_kwargs["max"] = max_value
+        if step_value is not None:
+            range_kwargs["step"] = step_value
+
+        return SimplePriceRangeParams(open_price=NumericRange(**range_kwargs))
 
     @staticmethod
     def _build_price_vs_ma(values: Dict[str, object]) -> PriceVsMAParams:
-        return PriceVsMAParams(
-            ma_period=int(values.get("ma_period", 50)),
-            condition=str(values.get("condition", "above")),
-        )
+        period = int(values.get("ma_period", 50))
+        min_ratio = _maybe_float(values.get("min_ratio"))
+        max_ratio = _maybe_float(values.get("max_ratio"))
+        step_ratio = _maybe_float(values.get("step_ratio"))
+
+        range_kwargs: Dict[str, float] = {}
+        if min_ratio is not None:
+            range_kwargs["min"] = min_ratio
+        if max_ratio is not None:
+            range_kwargs["max"] = max_ratio
+        if step_ratio is not None:
+            range_kwargs["step"] = step_ratio
+
+        ratio_range = NumericRange(**range_kwargs) if range_kwargs else NumericRange(min=1.0)
+        return PriceVsMAParams(ma_period=period, open_over_ma=ratio_range)
 
     @staticmethod
     def _build_rsi(values: Dict[str, object]) -> RSIParams:
-        return RSIParams(
-            rsi_period=int(values.get("rsi_period", 14)),
-            condition=str(values.get("condition", "below")),
-            threshold=float(values.get("threshold", 30.0)),
-        )
+        period = int(values.get("rsi_period", 14))
+        min_value = _maybe_float(values.get("min_value"))
+        max_value = _maybe_float(values.get("max_value"))
+        step_value = _maybe_float(values.get("step_value"))
+
+        range_kwargs: Dict[str, float] = {}
+        if min_value is not None:
+            range_kwargs["min"] = min_value
+        if max_value is not None:
+            range_kwargs["max"] = max_value
+        if step_value is not None:
+            range_kwargs["step"] = step_value
+
+        rsi_range = NumericRange(**range_kwargs) if range_kwargs else NumericRange(max=30.0)
+        return RSIParams(rsi_period=period, rsi_value=rsi_range)
 
     @staticmethod
     def _build_gap(values: Dict[str, object]) -> GapParams:
-        return GapParams(
-            gap_threshold=float(values.get("gap_threshold", 2.0)),
-            direction=str(values.get("direction", "both")),
-        )
+        min_gap = _maybe_float(values.get("min_gap_percent"))
+        max_gap = _maybe_float(values.get("max_gap_percent"))
+        step_gap = _maybe_float(values.get("step_gap_percent"))
+        direction = str(values.get("direction", "both"))
+
+        range_kwargs: Dict[str, float] = {}
+        if min_gap is not None:
+            range_kwargs["min"] = min_gap
+        if max_gap is not None:
+            range_kwargs["max"] = max_gap
+        if step_gap is not None:
+            range_kwargs["step"] = step_gap
+
+        gap_range = NumericRange(**range_kwargs) if range_kwargs else NumericRange(min=2.0)
+        return GapParams(gap_percent=gap_range, direction=direction)
 
     @staticmethod
     def _build_prev_day_dollar_volume(
         values: Dict[str, object]
     ) -> PreviousDayDollarVolumeParams:
-        return PreviousDayDollarVolumeParams(
-            min_dollar_volume=float(values.get("min_dollar_volume", 10_000_000)),
-        )
+        min_value = _maybe_float(values.get("min_dollar_volume"))
+        max_value = _maybe_float(values.get("max_dollar_volume"))
+        step_value = _maybe_float(values.get("step_dollar_volume"))
+
+        if min_value is None and max_value is None and step_value is None:
+            return PreviousDayDollarVolumeParams()
+
+        range_kwargs: Dict[str, float] = {}
+        if min_value is not None:
+            range_kwargs["min"] = min_value
+        if max_value is not None:
+            range_kwargs["max"] = max_value
+        if step_value is not None:
+            range_kwargs["step"] = step_value
+
+        return PreviousDayDollarVolumeParams(dollar_volume=NumericRange(**range_kwargs))
 
     @staticmethod
     def _build_relative_volume(values: Dict[str, object]) -> RelativeVolumeParams:
+        min_ratio = _maybe_float(values.get("min_ratio"))
+        max_ratio = _maybe_float(values.get("max_ratio"))
+        step_ratio = _maybe_float(values.get("step_ratio"))
+
+        range_kwargs: Dict[str, float] = {}
+        if min_ratio is not None:
+            range_kwargs["min"] = min_ratio
+        if max_ratio is not None:
+            range_kwargs["max"] = max_ratio
+        if step_ratio is not None:
+            range_kwargs["step"] = step_ratio
+
+        ratio_range = NumericRange(**range_kwargs) if range_kwargs else NumericRange(min=1.5)
         return RelativeVolumeParams(
             recent_days=int(values.get("recent_days", 2)),
             lookback_days=int(values.get("lookback_days", 20)),
-            min_ratio=float(values.get("min_ratio", 1.5)),
+            ratio=ratio_range,
         )
 
 
@@ -201,15 +283,21 @@ def _default_definitions() -> List[FilterDefinition]:
                     required=True,
                 ),
                 FilterControl(
-                    control_type="select",
-                    field="condition",
-                    label="Condition",
-                    default="above",
-                    options=[
-                        FilterOption(label="Open above MA", value="above"),
-                        FilterOption(label="Open below MA", value="below"),
-                    ],
-                    required=True,
+                    control_type="number",
+                    field="min_ratio",
+                    label="Min Open/MA Ratio",
+                    description="Keep symbols whose open is at least this multiple of the moving average",
+                    default=1.0,
+                    min_value=0.0,
+                    step=0.05,
+                ),
+                FilterControl(
+                    control_type="number",
+                    field="max_ratio",
+                    label="Max Open/MA Ratio",
+                    description="Optional upper bound for the open/MA ratio",
+                    min_value=0.0,
+                    step=0.05,
                 ),
             ],
             tags=["momentum"],
@@ -234,24 +322,22 @@ def _default_definitions() -> List[FilterDefinition]:
                 ),
                 FilterControl(
                     control_type="number",
-                    field="threshold",
-                    label="Threshold",
+                    field="min_value",
+                    label="Minimum RSI",
+                    description="Optional lower bound for RSI",
+                    min_value=0,
+                    max_value=100,
+                    step=1,
+                ),
+                FilterControl(
+                    control_type="number",
+                    field="max_value",
+                    label="Maximum RSI",
+                    description="Optional upper bound for RSI",
                     default=30.0,
                     min_value=0,
                     max_value=100,
                     step=1,
-                    required=True,
-                ),
-                FilterControl(
-                    control_type="select",
-                    field="condition",
-                    label="Condition",
-                    default="below",
-                    options=[
-                        FilterOption(label="RSI below threshold", value="below"),
-                        FilterOption(label="RSI above threshold", value="above"),
-                    ],
-                    required=True,
                 ),
             ],
             tags=["momentum"],
@@ -266,14 +352,24 @@ def _default_definitions() -> List[FilterDefinition]:
             controls=[
                 FilterControl(
                     control_type="number",
-                    field="gap_threshold",
-                    label="Gap Threshold %",
+                    field="min_gap_percent",
+                    label="Min Gap %",
+                    description="Minimum absolute gap percentage",
                     default=2.0,
                     min_value=0.0,
                     max_value=50.0,
                     step=0.5,
                     unit="%",
-                    required=True,
+                ),
+                FilterControl(
+                    control_type="number",
+                    field="max_gap_percent",
+                    label="Max Gap %",
+                    description="Optional cap on the absolute gap",
+                    min_value=0.0,
+                    max_value=50.0,
+                    step=0.5,
+                    unit="%",
                 ),
                 FilterControl(
                     control_type="select",
@@ -306,7 +402,15 @@ def _default_definitions() -> List[FilterDefinition]:
                     min_value=0,
                     step=1_000_000,
                     unit="$",
-                    required=True,
+                ),
+                FilterControl(
+                    control_type="number",
+                    field="max_dollar_volume",
+                    label="Max Dollar Volume",
+                    description="Optional cap for yesterday's dollar volume",
+                    min_value=0,
+                    step=1_000_000,
+                    unit="$",
                 ),
             ],
             tags=["liquidity"],
@@ -349,6 +453,15 @@ def _default_definitions() -> List[FilterDefinition]:
                     step=0.1,
                     required=True,
                 ),
+                FilterControl(
+                    control_type="number",
+                    field="max_ratio",
+                    label="Maximum Ratio",
+                    description="Optional upper bound for the recent/historical volume ratio",
+                    min_value=0.1,
+                    max_value=10,
+                    step=0.1,
+                ),
             ],
             tags=["volume"],
             sort_order=60,
@@ -357,4 +470,3 @@ def _default_definitions() -> List[FilterDefinition]:
 
 
 filter_registry = FilterRegistry(_default_definitions())
-

@@ -202,24 +202,36 @@ class DatabasePreFilter:
         
         # Apply volume pre-filter if present
         if filters.min_avg_volume:
-            volume_qualifying = await self._prefilter_by_volume(
-                symbols=list(qualifying_symbols),
-                start_date=start_date,
-                end_date=end_date,
-                min_volume=filters.min_avg_volume.min_avg_volume
+            min_volume = (
+                filters.min_avg_volume.avg_volume.min
+                if filters.min_avg_volume.avg_volume
+                else None
             )
-            qualifying_symbols &= volume_qualifying
-        
+            if min_volume is not None:
+                volume_qualifying = await self._prefilter_by_volume(
+                    symbols=list(qualifying_symbols),
+                    start_date=start_date,
+                    end_date=end_date,
+                    min_volume=min_volume
+                )
+                qualifying_symbols &= volume_qualifying
+
         # Apply dollar volume pre-filter if present (conservative)
         if filters.min_avg_dollar_volume:
-            min_volume_estimate = filters.min_avg_dollar_volume.min_avg_dollar_volume / 100
-            dollar_vol_qualifying = await self._prefilter_by_volume(
-                symbols=list(qualifying_symbols),
-                start_date=start_date,
-                end_date=end_date,
-                min_volume=min_volume_estimate
+            min_dollar_volume = (
+                filters.min_avg_dollar_volume.avg_dollar_volume.min
+                if filters.min_avg_dollar_volume.avg_dollar_volume
+                else None
             )
-            qualifying_symbols &= dollar_vol_qualifying
+            if min_dollar_volume:
+                min_volume_estimate = min_dollar_volume / 100
+                dollar_vol_qualifying = await self._prefilter_by_volume(
+                    symbols=list(qualifying_symbols),
+                    start_date=start_date,
+                    end_date=end_date,
+                    min_volume=min_volume_estimate
+                )
+                qualifying_symbols &= dollar_vol_qualifying
         
         symbols_set = set(symbols)
         filtered_out = symbols_set - qualifying_symbols
@@ -243,25 +255,34 @@ class DatabasePreFilter:
         price_range: SimplePriceRangeParams
     ) -> Set[str]:
         """Pre-filter symbols by price range."""
-        query = """
-        SELECT DISTINCT symbol
-        FROM daily_bars
-        WHERE symbol = ANY($1::text[])
-          AND time::date BETWEEN $2 AND $3
-          AND open >= $4
-          AND open <= $5
-        """
-        
+
+        if not price_range.open_price:
+            return set(symbols)
+
+        min_price = price_range.open_price.min
+        max_price = price_range.open_price.max
+        conditions = [
+            "symbol = ANY($1::text[])",
+            "time::date BETWEEN $2 AND $3",
+        ]
+        params: List[Any] = [symbols, start_date, end_date]
+
+        if min_price is not None:
+            conditions.append(f"open >= ${len(params) + 1}")
+            params.append(min_price)
+        if max_price is not None:
+            conditions.append(f"open <= ${len(params) + 1}")
+            params.append(max_price)
+
+        if len(params) == 3:
+            # No price constraints provided
+            return set(symbols)
+
+        query = f"SELECT DISTINCT symbol FROM daily_bars WHERE {' AND '.join(conditions)}"
+
         async with self.db_pool.acquire() as conn:
-            rows = await conn.fetch(
-                query,
-                symbols,
-                start_date,
-                end_date,
-                price_range.min_price,
-                price_range.max_price
-            )
-        
+            rows = await conn.fetch(query, *params)
+
         return {row['symbol'] for row in rows}
     
     async def _prefilter_by_volume(

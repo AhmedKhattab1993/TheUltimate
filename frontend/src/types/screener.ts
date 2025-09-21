@@ -1,34 +1,59 @@
 // Enhanced type definitions for the simple screener filters
 
 export interface SimplePriceRangeFilter {
-  min_price: number
-  max_price: number
+  min_price?: number
+  max_price?: number
+  step?: number
 }
 
 export interface PriceVsMAFilter {
-  period: 20 | 50 | 200
-  condition: 'above' | 'below'
+  ma_period: 20 | 50 | 200
+  min_ratio?: number
+  max_ratio?: number
+  step_ratio?: number
+  /** legacy field */
+  period?: number
+  /** legacy field */
+  condition?: 'above' | 'below'
 }
 
 export interface RSIFilter {
-  period: number
-  threshold: number
-  condition: 'above' | 'below'
+  rsi_period: number
+  min_value?: number
+  max_value?: number
+  step_value?: number
+  /** legacy fields */
+  period?: number
+  threshold?: number
+  condition?: 'above' | 'below'
 }
 
 export interface GapFilter {
-  gap_threshold: number
+  min_gap_percent?: number
+  max_gap_percent?: number
+  step_gap_percent?: number
   direction: 'up' | 'down' | 'both'
+  /** legacy fields */
+  gap_threshold?: number
 }
 
 export interface PreviousDayDollarVolumeFilter {
-  min_dollar_volume: number
+  min_dollar_volume?: number
+  max_dollar_volume?: number
+  step_dollar_volume?: number
+  /** legacy field */
+  minDollarVolume?: number
 }
 
 export interface RelativeVolumeFilter {
   recent_days: number
   lookback_days: number
-  min_ratio: number
+  min_ratio?: number
+  max_ratio?: number
+  step_ratio?: number
+  /** legacy fields */
+  recentDays?: number
+  lookbackDays?: number
 }
 
 export interface SimpleFilters {

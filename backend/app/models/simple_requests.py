@@ -2,24 +2,45 @@
 Simplified request models for the 3 basic trading filters.
 """
 
-from pydantic import BaseModel, Field, FieldValidationInfo, field_validator, ConfigDict
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    FieldValidationInfo,
+    field_validator,
+    model_validator,
+)
 from datetime import date
-from typing import List, Optional, Literal, Dict, Any
+from typing import Any, Dict, List, Optional
 from enum import Enum
+
+
+class NumericRange(BaseModel):
+    """Generic numeric range shared by all filters."""
+
+    min: float | None = Field(None, description="Inclusive lower bound")
+    max: float | None = Field(None, description="Inclusive upper bound")
+    step: float | None = Field(None, gt=0, description="Suggested increment when sweeping")
+
+    @model_validator(mode="after")
+    def ensure_bounds(cls, values: "NumericRange") -> "NumericRange":  # noqa: N805
+        min_value = values.min
+        max_value = values.max
+
+        if min_value is None and max_value is None:
+            raise ValueError("at least one of min or max must be provided")
+        if min_value is not None and max_value is not None and min_value > max_value:
+            raise ValueError("min cannot be greater than max")
+        return values
 
 
 class SimplePriceRangeParams(BaseModel):
     """Parameters for simple price range filter using OPEN price."""
-    min_price: float = Field(1.0, ge=0, description="Minimum OPEN price")
-    max_price: float = Field(100.0, ge=0, description="Maximum OPEN price")
-    
-    @field_validator('max_price')
-    @classmethod
-    def validate_max_greater_than_min(cls, v: float, info: FieldValidationInfo) -> float:
-        min_price = info.data.get('min_price')
-        if min_price is not None and v < min_price:
-            raise ValueError('max_price must be greater than or equal to min_price')
-        return v
+
+    open_price: NumericRange = Field(
+        default_factory=lambda: NumericRange(min=1.0, max=100.0),
+        description="Range of acceptable opening prices",
+    )
 
 
 class MAPeriod(int, Enum):
@@ -31,45 +52,49 @@ class MAPeriod(int, Enum):
 
 class PriceVsMAParams(BaseModel):
     """Parameters for price vs moving average filter."""
-    ma_period: int = Field(MAPeriod.MA_20, ge=2, le=200, description="Moving average period in days")
-    condition: Literal["above", "below"] = Field("above", description="Price position relative to MA")
+
+    ma_period: int = Field(
+        MAPeriod.MA_20,
+        ge=2,
+        le=200,
+        description="Moving average period in days",
+    )
+    open_over_ma: NumericRange = Field(
+        default_factory=lambda: NumericRange(min=1.0),
+        description="Range for the open/MA ratio",
+    )
 
 
 class RSIParams(BaseModel):
     """Parameters for RSI filter."""
     rsi_period: int = Field(14, ge=2, le=50, description="RSI calculation period")
-    condition: Literal["above", "below"] = Field("below", description="RSI condition")
-    threshold: float = Field(30.0, ge=0, le=100, description="RSI threshold (e.g., 30 for oversold, 70 for overbought)")
-    
-    @field_validator('threshold')
-    @classmethod
-    def validate_threshold_makes_sense(cls, v: float, info: FieldValidationInfo) -> float:
-        """Warn if threshold doesn't match typical usage."""
-        condition = info.data.get('condition')
-        if condition:
-            if condition == 'below' and v > 50:
-                # Usually looking for oversold when below threshold
-                pass  # Allow but could log warning
-            elif condition == 'above' and v < 50:
-                # Usually looking for overbought when above threshold
-                pass  # Allow but could log warning
-        return v
+    rsi_value: NumericRange = Field(
+        default_factory=lambda: NumericRange(max=30.0),
+        description="Range of acceptable RSI values",
+    )
 
 
 class MinAverageVolumeParams(BaseModel):
     """Parameters for minimum average volume filter."""
     lookback_days: int = Field(20, ge=1, le=200, description="Number of days to calculate average volume")
-    min_avg_volume: float = Field(1000000, ge=0, description="Minimum average volume in shares")
+    avg_volume: NumericRange = Field(
+        default_factory=lambda: NumericRange(min=1_000_000),
+        description="Allowed range for the rolling average volume",
+    )
 
 
 class MinAverageDollarVolumeParams(BaseModel):
     """Parameters for minimum average dollar volume filter."""
     lookback_days: int = Field(20, ge=1, le=200, description="Number of days to calculate average dollar volume")
-    min_avg_dollar_volume: float = Field(10000000, ge=0, description="Minimum average dollar volume")
+    avg_dollar_volume: NumericRange = Field(
+        default_factory=lambda: NumericRange(min=10_000_000),
+        description="Allowed range for the rolling average dollar volume",
+    )
 
 
 class GapDirection(str, Enum):
     """Gap direction options."""
+
     UP = "up"
     DOWN = "down"
     BOTH = "both"
@@ -77,20 +102,33 @@ class GapDirection(str, Enum):
 
 class GapParams(BaseModel):
     """Parameters for gap filter."""
-    gap_threshold: float = Field(2.0, ge=0, le=50, description="Minimum gap percentage to qualify")
-    direction: GapDirection = Field(GapDirection.BOTH, description="Gap direction - up, down, or both")
+
+    gap_percent: NumericRange = Field(
+        default_factory=lambda: NumericRange(min=2.0),
+        description="Allowed range for the absolute open gap percentage",
+    )
+    direction: GapDirection = Field(
+        GapDirection.BOTH,
+        description="Preferred gap direction when evaluating the range",
+    )
 
 
 class PreviousDayDollarVolumeParams(BaseModel):
     """Parameters for previous day dollar volume filter."""
-    min_dollar_volume: float = Field(10000000, ge=0, description="Minimum dollar volume for previous day")
+    dollar_volume: NumericRange = Field(
+        default_factory=lambda: NumericRange(min=10_000_000),
+        description="Allowed range for yesterday's dollar volume",
+    )
 
 
 class RelativeVolumeParams(BaseModel):
     """Parameters for relative volume filter."""
     recent_days: int = Field(2, ge=1, le=10, description="Number of recent days for average")
     lookback_days: int = Field(20, ge=5, le=200, description="Number of historical days for average")
-    min_ratio: float = Field(1.5, ge=0.1, le=10, description="Minimum ratio of recent/historical volume")
+    ratio: NumericRange = Field(
+        default_factory=lambda: NumericRange(min=1.5),
+        description="Allowed range for the recent/long-term volume ratio",
+    )
     
     @field_validator('lookback_days')
     @classmethod
@@ -109,8 +147,12 @@ class SimpleFilters(BaseModel):
     min_avg_volume: Optional[MinAverageVolumeParams] = Field(None, description="Filter by minimum average volume")
     min_avg_dollar_volume: Optional[MinAverageDollarVolumeParams] = Field(None, description="Filter by minimum average dollar volume")
     gap: Optional[GapParams] = Field(None, description="Filter by gap between open and previous close")
-    prev_day_dollar_volume: Optional[PreviousDayDollarVolumeParams] = Field(None, description="Filter by previous day's dollar volume")
-    relative_volume: Optional[RelativeVolumeParams] = Field(None, description="Filter by relative volume ratio")
+    prev_day_dollar_volume: Optional[PreviousDayDollarVolumeParams] = Field(
+        None, description="Filter by previous day's dollar volume"
+    )
+    relative_volume: Optional[RelativeVolumeParams] = Field(
+        None, description="Filter by relative volume ratio"
+    )
 
 
 class RegistryFilterState(BaseModel):

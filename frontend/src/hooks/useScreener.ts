@@ -11,56 +11,65 @@ export function useScreener() {
   const buildRequestFromState = useCallback((state: any): EnhancedScreenerRequest => {
     const filters: SimpleFilters = {}
 
+    const asNumber = (value: string) => {
+      const parsed = parseFloat(value)
+      return Number.isNaN(parsed) ? undefined : parsed
+    }
+
     // Add enabled filters
     if (state.filters.simplePriceRange.enabled) {
-      const minPrice = parseFloat(state.filters.simplePriceRange.minPrice)
-      const maxPrice = parseFloat(state.filters.simplePriceRange.maxPrice)
-      
-      if (!isNaN(minPrice) && !isNaN(maxPrice)) {
+      const minPrice = asNumber(state.filters.simplePriceRange.minPrice)
+      const maxPrice = asNumber(state.filters.simplePriceRange.maxPrice)
+
+      if (minPrice !== undefined || maxPrice !== undefined) {
         filters.simple_price_range = {
           min_price: minPrice,
-          max_price: maxPrice
+          max_price: maxPrice,
         }
       }
     }
 
     if (state.filters.priceVsMA.enabled) {
+      const minRatio = asNumber(state.filters.priceVsMA.minRatio)
+      const maxRatio = asNumber(state.filters.priceVsMA.maxRatio)
       filters.price_vs_ma = {
-        period: state.filters.priceVsMA.period,
-        condition: state.filters.priceVsMA.condition
+        ma_period: state.filters.priceVsMA.period,
+        min_ratio: minRatio,
+        max_ratio: maxRatio,
       }
     }
 
     if (state.filters.rsi.enabled) {
       const period = parseInt(state.filters.rsi.period)
-      const threshold = parseFloat(state.filters.rsi.threshold)
-      
-      if (!isNaN(period) && !isNaN(threshold)) {
+      const minValue = asNumber(state.filters.rsi.minValue)
+      const maxValue = asNumber(state.filters.rsi.maxValue)
+
+      if (!Number.isNaN(period)) {
         filters.rsi = {
-          period,
-          threshold,
-          condition: state.filters.rsi.condition
+          rsi_period: period,
+          min_value: minValue,
+          max_value: maxValue,
         }
       }
     }
 
     if (state.filters.gap.enabled) {
-      const threshold = parseFloat(state.filters.gap.threshold)
-      
-      if (!isNaN(threshold)) {
-        filters.gap = {
-          gap_threshold: threshold,
-          direction: state.filters.gap.direction
-        }
+      const minGap = asNumber(state.filters.gap.minGapPercent)
+      const maxGap = asNumber(state.filters.gap.maxGapPercent)
+      filters.gap = {
+        min_gap_percent: minGap,
+        max_gap_percent: maxGap,
+        direction: state.filters.gap.direction,
       }
     }
 
     if (state.filters.prevDayDollarVolume.enabled) {
-      const minVolume = parseFloat(state.filters.prevDayDollarVolume.minDollarVolume)
-      
-      if (!isNaN(minVolume)) {
+      const minVolume = asNumber(state.filters.prevDayDollarVolume.minDollarVolume)
+      const maxVolume = asNumber(state.filters.prevDayDollarVolume.maxDollarVolume)
+      if (minVolume !== undefined || maxVolume !== undefined) {
         filters.prev_day_dollar_volume = {
-          min_dollar_volume: minVolume
+          min_dollar_volume: minVolume,
+          max_dollar_volume: maxVolume,
         }
       }
     }
@@ -68,13 +77,15 @@ export function useScreener() {
     if (state.filters.relativeVolume.enabled) {
       const recentDays = parseInt(state.filters.relativeVolume.recentDays)
       const lookbackDays = parseInt(state.filters.relativeVolume.lookbackDays)
-      const minRatio = parseFloat(state.filters.relativeVolume.minRatio)
-      
-      if (!isNaN(recentDays) && !isNaN(lookbackDays) && !isNaN(minRatio)) {
+      const minRatio = asNumber(state.filters.relativeVolume.minRatio)
+      const maxRatio = asNumber(state.filters.relativeVolume.maxRatio)
+
+      if (!Number.isNaN(recentDays) && !Number.isNaN(lookbackDays)) {
         filters.relative_volume = {
           recent_days: recentDays,
           lookback_days: lookbackDays,
-          min_ratio: minRatio
+          min_ratio: minRatio,
+          max_ratio: maxRatio,
         }
       }
     }

@@ -2,7 +2,6 @@
 Service for running LEAN backtests using Docker.
 """
 
-import os
 import asyncio
 import json
 import logging
@@ -11,14 +10,14 @@ import subprocess
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Awaitable, Callable, Dict, Any, Optional, List
 import uuid
 import docker
 from docker.models.containers import Container
 import fcntl
 import time
 
-from ..models.backtest import BacktestRequest, BacktestStatus
+from ..models.backtest import BacktestRequest
 from .screener_repository import screener_repository
 
 
@@ -30,231 +29,22 @@ class LeanRunner:
     
     def __init__(self, lean_project_path: str = "/home/ahmed/TheUltimate/backend/lean"):
         self.lean_project_path = Path(lean_project_path)
-        self.docker_client = docker.from_env()
+        try:
+            self.docker_client = docker.from_env()
+        except docker.errors.DockerException as exc:  # pragma: no cover - environment specific
+            logger.warning("Docker unavailable; container management disabled: %s", exc)
+            self.docker_client = None
         self.lean_image = "quantconnect/lean:latest"
         
-    async def run_backtest(
-        self,
-        backtest_id: str,
-        request: BacktestRequest,
-        project_name: str,
-    ) -> Dict[str, Any]:
-        """
-        Run a LEAN backtest using LEAN CLI.
-        
-        Args:
-            backtest_id: Unique identifier for this backtest
-            request: Backtest configuration
-            strategy_path: Path to the strategy Python file
-            
-        Returns:
-            Dict containing container_id and result_path
-        """
-        try:
-            # Check if we should use flexible strategy for screener results
-            if request.use_screener_results:
-                strategy_path = self.lean_project_path / "flexible_main.py"
-                if not strategy_path.exists():
-                    raise Exception("Flexible strategy not found for screener results")
-
-                _, runs = await screener_repository.list_runs(limit=1)
-                if not runs:
-                    raise Exception("No screener runs available for Lean backtest")
-
-                run_detail = await screener_repository.get_run(runs[0].id)
-                if not run_detail or not run_detail.results:
-                    raise Exception("Latest screener run does not contain any symbols")
-
-                export_payload = {
-                    "timestamp": run_detail.created_at.isoformat(),
-                    "symbols": [result.symbol for result in run_detail.results],
-                    "filters": run_detail.filters,
-                    "metadata": run_detail.metadata,
-                    "count": len(run_detail.results),
-                }
-
-                results_dir = self.lean_project_path.parent / "screener_results"
-                results_dir.mkdir(parents=True, exist_ok=True)
-                screener_file = results_dir / f"screener_results_{run_detail.id}.json"
-                screener_file.write_text(json.dumps(export_payload, indent=2))
-
-                request.parameters["screener_results_file"] = str(screener_file)
-                logger.info(f"Using screener results from {screener_file}")
-            
-            # Record timestamp before running LEAN for deterministic folder detection
-            start_time = datetime.now()
-            
-            # No longer need delay since we're using unique output directories
-            
-            # Create a unique config file for this backtest to avoid race conditions
-            project_path = self.lean_project_path / project_name
-            base_config_path = project_path / "config.json"
-            
-            # Create a temporary config file with unique name
-            temp_config_path = project_path / f"config_{backtest_id}.json"
-            
-            # Load base config
-            config_data = {}
-            if base_config_path.exists():
-                with open(base_config_path, 'r') as f:
-                    config_data = json.load(f)
-            
-            # Ensure parameters field exists
-            if "parameters" not in config_data:
-                config_data["parameters"] = {}
-            
-            # Update parameters for this backtest
-            config_data["parameters"]["startDate"] = request.start_date.strftime("%Y%m%d")
-            config_data["parameters"]["endDate"] = request.end_date.strftime("%Y%m%d")
-            config_data["parameters"]["cash"] = str(request.initial_cash)
-            
-            # Add symbols if provided directly
-            if request.symbols and not request.use_screener_results:
-                config_data["parameters"]["symbols"] = ",".join(request.symbols)
-                logger.info(f"Setting symbols parameter for {backtest_id}: {','.join(request.symbols)}")
-            
-            # Add lower_timeframe and pivot_bars from direct fields
-            config_data["parameters"]["lower_timeframe"] = request.lower_timeframe
-            config_data["parameters"]["pivot_bars"] = str(request.pivot_bars)
-            logger.info(f"Setting lower_timeframe = {request.lower_timeframe} for {backtest_id}")
-            logger.info(f"Setting pivot_bars = {request.pivot_bars} for {backtest_id}")
-            
-            # Add any custom parameters from the request
-            logger.info(f"Request parameters for {backtest_id}: {request.parameters}")
-            logger.info(f"Existing config parameters before update: {config_data['parameters']}")
-            for key, value in request.parameters.items():
-                config_data["parameters"][key] = str(value)
-                logger.info(f"Setting parameter {key} = {value} for {backtest_id}")
-            logger.info(f"Final config parameters after update: {config_data['parameters']}")
-            
-            # Write the temporary config file
-            with open(temp_config_path, 'w') as f:
-                json.dump(config_data, f, indent=4)
-            
-            logger.info(f"Written config to {temp_config_path} with parameters: {config_data.get('parameters', {})}")
-            
-            # Acquire a lock before modifying base config
-            lock_path = base_config_path.with_suffix('.lock')
-            lock_acquired = False
-            start_lock_time = time.time()
-            
-            while not lock_acquired and (time.time() - start_lock_time) < 30:  # 30 second timeout
-                try:
-                    lock_file = open(lock_path, 'w')
-                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    lock_acquired = True
-                    
-                    # Copy temp config to base config atomically
-                    shutil.copy2(temp_config_path, base_config_path)
-                    logger.info(f"Updated config.json with symbols: {config_data['parameters'].get('symbols', 'none')}")
-                    
-                except (IOError, OSError):
-                    # Lock is held by another process, wait and retry
-                    await asyncio.sleep(0.1)
-                finally:
-                    if lock_acquired:
-                        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-                        lock_file.close()
-                        try:
-                            lock_path.unlink()
-                        except:
-                            pass
-            
-            if not lock_acquired:
-                raise Exception("Failed to acquire config lock after 30 seconds")
-            
-            # Use LEAN CLI from lean_venv (direct command)
-            lean_bin = "/home/ahmed/TheUltimate/backend/lean_venv/bin/lean"
-            
-            # Create a unique output directory for this backtest
-            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            unique_suffix = backtest_id[:8]  # Use first 8 chars of UUID
-            output_dir = self.lean_project_path / project_name / "backtests" / f"{timestamp}_{unique_suffix}"
-            
-            # Build LEAN command for local data (no data provider needed)
-            lean_cmd = [
-                lean_bin, 
-                "backtest", 
-                project_name,
-                "--output", str(output_dir)
-            ]
-            
-            # Run the backtest command
-            process = await asyncio.create_subprocess_exec(
-                *lean_cmd,
-                cwd=str(self.lean_project_path),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
-            
-            stdout, stderr = await process.communicate()
-            
-            # Clean up temporary config file
-            try:
-                temp_config_path.unlink()
-            except Exception:
-                pass  # Ignore cleanup errors
-            
-            # Release the lock if we still have it
-            try:
-                if 'lock_file' in locals() and not lock_file.closed:
-                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-                    lock_file.close()
-            except:
-                pass
-            
-            if process.returncode != 0:
-                error_msg = stderr.decode() if stderr else stdout.decode()
-                logger.error(f"LEAN CLI failed: {error_msg}")
-                raise Exception(f"LEAN CLI failed: {error_msg}")
-            
-            # We know the result path since we specified it
-            result_path = output_dir
-            logger.info(f"LEAN completed successfully. Results in: {result_path}")
-            
-            if not result_path:
-                raise Exception("Could not find LEAN result directory in backtests folder")
-            
-            # For local LEAN runs (no Docker), we don't have a container ID
-            # Check if config file exists for additional info
-            config_file = result_path / "config"
-            container_id = None
-            
-            if config_file.exists():
-                try:
-                    with open(config_file, 'r') as f:
-                        config_data = json.load(f)
-                    container_id = config_data.get("container")
-                except:
-                    pass  # Config file might not be JSON format for local runs
-            
-            logger.info(f"Completed backtest {backtest_id} at {result_path}")
-            
-            result_payload: Dict[str, Any] = {
-                "container_id": container_id,
-                "result_path": str(result_path),
-            }
-
-            backtest_payload = self._load_backtest_output(result_path)
-            if backtest_payload:
-                backtest_payload.setdefault("result_path", str(result_path))
-                result_payload["result"] = backtest_payload
-
-            return result_payload
-            
-        except Exception as e:
-            logger.error(f"Failed to start backtest {backtest_id}: {e}")
-            raise
-
-
-    async def run_optimize(
+    async def run_grid(
         self,
         job_id: str,
         request: BacktestRequest,
         project_name: str,
-        optimize_config: Dict[str, Any],
+        job_config: Dict[str, Any],
+        on_result: Optional[Callable[[Dict[str, Any]], Awaitable[None]]] = None,
     ) -> Dict[str, Any]:
-        """Run a LEAN optimization using the CLI."""
+        """Run a Lean optimization for grid sweeps while streaming intermediate results."""
 
         try:
             if request.use_screener_results:
@@ -297,15 +87,25 @@ class LeanRunner:
             if "parameters" not in config_data:
                 config_data["parameters"] = {}
 
+            # Ensure stale symbol lists do not leak between optimize runs
+            config_data["parameters"].pop("symbols", None)
+
             config_data["parameters"]["startDate"] = request.start_date.strftime("%Y%m%d")
             config_data["parameters"]["endDate"] = request.end_date.strftime("%Y%m%d")
             config_data["parameters"]["cash"] = str(request.initial_cash)
 
-            if request.symbols and not request.use_screener_results:
-                config_data["parameters"]["symbols"] = ",".join(request.symbols)
-
             config_data["parameters"]["lower_timeframe"] = request.lower_timeframe
             config_data["parameters"]["pivot_bars"] = str(request.pivot_bars)
+
+            request.parameters = request.parameters or {}
+
+            symbol_map = (job_config or {}).get("symbol_map")
+            symbol_map_path: Optional[Path] = None
+            if symbol_map:
+                symbol_map_path = project_path / f"symbol_mapping_{job_id}.json"
+                with open(symbol_map_path, 'w') as mapping_file:
+                    json.dump(symbol_map, mapping_file, indent=2)
+                config_data["parameters"]["symbol_mapping_file"] = str(symbol_map_path)
 
             for key, value in request.parameters.items():
                 config_data["parameters"][key] = str(value)
@@ -342,8 +142,13 @@ class LeanRunner:
             unique_suffix = job_id[:8]
             output_dir = self.lean_project_path / project_name / "optimizations" / f"{timestamp}_{unique_suffix}"
 
+            optimize_config = (job_config or {}).get("optimize") or {}
             target_metric = optimize_config.get("target_metric", "SharpeRatio")
             direction = optimize_config.get("target_direction", "maximize")
+            direction_flag = "max" if str(direction).lower().startswith("max") else "min"
+            strategy_mode = (optimize_config.get("strategy") or "grid search").lower()
+            if strategy_mode not in {"grid search", "euler search"}:
+                strategy_mode = "grid search"
 
             lean_cmd: List[str] = [
                 lean_bin,
@@ -351,9 +156,12 @@ class LeanRunner:
                 project_name,
                 "--output",
                 str(output_dir),
+                "--strategy",
+                strategy_mode,
                 "--target",
                 target_metric,
-                direction,
+                "--target-direction",
+                direction_flag,
             ]
 
             max_concurrent = optimize_config.get("max_concurrent_backtests")
@@ -385,22 +193,52 @@ class LeanRunner:
                 stderr=subprocess.PIPE,
             )
 
+            stop_event = asyncio.Event()
+            processed_dirs: set[str] = set()
+
+            async def stream_results() -> None:
+                try:
+                    while not stop_event.is_set():
+                        await self._collect_grid_results(
+                            output_dir,
+                            processed_dirs,
+                            on_result,
+                        )
+                        await asyncio.sleep(2)
+                finally:
+                    await self._collect_grid_results(
+                        output_dir,
+                        processed_dirs,
+                        on_result,
+                    )
+
+            poll_task = asyncio.create_task(stream_results())
             stdout, stderr = await process.communicate()
+            stop_event.set()
+            await poll_task
 
             try:
                 temp_config_path.unlink()
             except Exception:
                 pass
+            if symbol_map_path:
+                try:
+                    symbol_map_path.unlink()
+                except Exception:
+                    pass
 
             if process.returncode != 0:
                 error_msg = stderr.decode() if stderr else stdout.decode()
-                logger.error(f"LEAN optimize failed: {error_msg}")
-                raise Exception(f"LEAN optimize failed: {error_msg}")
+                logger.error(f"LEAN grid optimize failed: {error_msg}")
+                raise Exception(f"LEAN grid optimize failed: {error_msg}")
 
             if not output_dir.exists():
-                logger.warning("Optimization output directory not found: %s", output_dir)
+                logger.warning("Grid optimization output directory not found: %s", output_dir)
 
-            result_payload: Dict[str, Any] = {"result_path": str(output_dir)}
+            result_payload: Dict[str, Any] = {
+                "result_path": str(output_dir),
+                "processed_runs": len(processed_dirs),
+            }
             backtest_payload = self._load_backtest_output(output_dir)
             if backtest_payload:
                 backtest_payload.setdefault("result_path", str(output_dir))
@@ -408,13 +246,65 @@ class LeanRunner:
 
             return result_payload
 
-        except Exception as exc:  # pragma: no cover - heavy IO path
-            logger.error("Failed to run optimization %s: %s", job_id, exc)
+        except Exception as exc:
+            logger.error("Failed to run grid job %s: %s", job_id, exc)
             raise
+
+    async def _collect_grid_results(
+        self,
+        results_root: Path,
+        processed_dirs: set[str],
+        on_result: Optional[Callable[[Dict[str, Any]], Awaitable[None]]],
+    ) -> None:
+        if not on_result or not results_root.exists():
+            return
+
+        candidates: List[Path] = []
+        legacy_backtests = results_root / "backtests"
+        if legacy_backtests.exists():
+            candidates.extend(path for path in legacy_backtests.iterdir() if path.is_dir())
+        else:
+            for entry in results_root.iterdir():
+                if not entry.is_dir():
+                    continue
+                if entry.name in {"code", "config"}:
+                    continue
+                candidates.append(entry)
+
+        for candidate in candidates:
+            if not candidate.is_dir():
+                continue
+            identifier = str(candidate.resolve())
+            if identifier in processed_dirs:
+                continue
+
+            payload = self._load_backtest_output(candidate)
+            if not payload:
+                continue
+
+            processed_dirs.add(identifier)
+            result_payload = {
+                "result_path": str(candidate),
+                "statistics": payload.get("statistics") or {},
+                "runtime_statistics": payload.get("runtime_statistics") or {},
+                "raw_statistics": payload.get("raw_statistics") or {},
+                "raw_runtime_statistics": payload.get("raw_runtime_statistics") or {},
+                "parameters": payload.get("interpreted_parameters") or payload.get("Parameters") or {},
+                "status": "completed",
+            }
+
+            await on_result(result_payload)
 
     
     async def get_container_status(self, container_id: str) -> Dict[str, Any]:
         """Get the status of a running container."""
+        if not self.docker_client:
+            return {
+                "status": "unavailable",
+                "logs": [],
+                "running": False,
+            }
+
         try:
             container = self.docker_client.containers.get(container_id)
             status = container.status
@@ -439,6 +329,10 @@ class LeanRunner:
     
     async def stop_backtest(self, container_id: str) -> bool:
         """Stop a running backtest container."""
+        if not self.docker_client:
+            logger.warning("Cannot stop container %s because Docker is unavailable", container_id)
+            return False
+
         try:
             container = self.docker_client.containers.get(container_id)
             container.stop(timeout=10)
@@ -552,22 +446,47 @@ class LeanRunner:
         """Load Lean backtest output (statistics/runtime stats) from result directory."""
 
         payload: Optional[Dict[str, Any]] = None
+        source_name = None
         for candidate in ("backtest.json", "result.json", "backtest-result.json"):
             file_path = result_path / candidate
             if file_path.exists():
                 try:
                     payload = json.loads(file_path.read_text())
+                    source_name = candidate
                     break
                 except Exception:  # pragma: no cover - IO heavy path
                     logger.warning("Failed to read %s", file_path, exc_info=True)
+        if not payload:
+            summary_files = sorted(result_path.glob("*-summary.json"))
+            if summary_files:
+                try:
+                    payload = json.loads(summary_files[0].read_text())
+                    source_name = summary_files[0].name
+                except Exception:
+                    logger.warning("Failed to read summary %s", summary_files[0], exc_info=True)
+                    payload = None
         if not payload:
             return None
 
         stats_raw = payload.get("Statistics") or payload.get("statistics") or {}
         runtime_raw = payload.get("RuntimeStatistics") or payload.get("runtime_statistics") or {}
 
+        # New optimizer summaries embed runtime stats under lowercase keys
+        if not runtime_raw and isinstance(payload.get("runtimeStatistics"), dict):
+            runtime_raw = payload.get("runtimeStatistics")
+        if not stats_raw and isinstance(payload.get("statistics"), dict):
+            stats_raw = payload.get("statistics")
+        if not stats_raw and isinstance(payload.get("totalPerformance"), dict):
+            portfolio_stats = payload.get("totalPerformance", {}).get("portfolioStatistics") or {}
+            stats_raw = portfolio_stats
+            runtime_raw = payload.get("runtimeStatistics") or runtime_raw
+
         statistics = LeanRunner._normalise_numeric_map(stats_raw)
         runtime_statistics = LeanRunner._normalise_numeric_map(runtime_raw)
+
+        interpreted_parameters = payload.get("interpreted_parameters")
+        if not interpreted_parameters and isinstance(payload.get("algorithmConfiguration"), dict):
+            interpreted_parameters = payload["algorithmConfiguration"].get("parameters")
 
         return {
             "statistics": statistics,
@@ -576,8 +495,8 @@ class LeanRunner:
             "raw_runtime_statistics": runtime_raw,
             "start_time": payload.get("StartTime") or payload.get("StartDate"),
             "end_time": payload.get("EndTime") or payload.get("EndDate"),
-            "interpreted_parameters": payload.get("Parameters"),
-            "source_file": candidate,
+            "interpreted_parameters": interpreted_parameters or payload.get("Parameters"),
+            "source_file": source_name,
         }
 
     @staticmethod

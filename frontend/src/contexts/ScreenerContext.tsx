@@ -12,28 +12,32 @@ export interface ScreenerState {
     priceVsMA: {
       enabled: boolean
       period: 20 | 50 | 200
-      condition: 'above' | 'below'
+      minRatio: string
+      maxRatio: string
     }
     rsi: {
       enabled: boolean
       period: string
-      threshold: string
-      condition: 'above' | 'below'
+      minValue: string
+      maxValue: string
     }
     gap: {
       enabled: boolean
-      threshold: string
+      minGapPercent: string
+      maxGapPercent: string
       direction: 'up' | 'down' | 'both'
     }
     prevDayDollarVolume: {
       enabled: boolean
       minDollarVolume: string
+      maxDollarVolume: string
     }
     relativeVolume: {
       enabled: boolean
       recentDays: string
       lookbackDays: string
       minRatio: string
+      maxRatio: string
     }
   }
   dateRange: {
@@ -78,28 +82,32 @@ const initialState: ScreenerState = {
     priceVsMA: {
       enabled: false,
       period: 50,
-      condition: 'above'
+      minRatio: '1.00',
+      maxRatio: ''
     },
     rsi: {
       enabled: false,
       period: '14',
-      threshold: '30',
-      condition: 'below'
+      minValue: '',
+      maxValue: '30'
     },
     gap: {
       enabled: false,
-      threshold: '2.0',
+      minGapPercent: '2.0',
+      maxGapPercent: '',
       direction: 'both'
     },
     prevDayDollarVolume: {
       enabled: false,
-      minDollarVolume: '10000000'
+      minDollarVolume: '10000000',
+      maxDollarVolume: ''
     },
     relativeVolume: {
       enabled: false,
       recentDays: '2',
       lookbackDays: '20',
-      minRatio: '1.5'
+      minRatio: '1.5',
+      maxRatio: ''
     }
   },
   dateRange: {
