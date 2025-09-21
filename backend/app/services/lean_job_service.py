@@ -942,6 +942,13 @@ class LeanJobService:
                         "parameters": optimize_parameters,
                     },
                 }
+                if symbol_map:
+                    mapping_payload = {
+                        "index_to_symbol": {
+                            str(slot): symbol for slot, symbol in symbol_map.items()
+                        }
+                    }
+                    day_job_config["symbol_map"] = mapping_payload
 
                 if daily.get("screener_payload"):
                     payload = dict(daily["screener_payload"])
