@@ -383,6 +383,7 @@ class LeanJobService:
                     "parameter_sweeps": parameter_sweeps,
                     "symbol_map": symbol_map,
                     "targets": day_targets,
+                    "map_label": trading_day.isoformat(),
                 }
             )
         return daily_runs, targets
@@ -464,6 +465,7 @@ class LeanJobService:
                     "symbols": symbols,
                     "parameter_sweeps": parameter_sweeps,
                     "symbol_map": symbol_map,
+                    "map_label": trading_day.isoformat(),
                     "screener_payload": {
                         **shared_payload,
                         "date": trading_day.isoformat(),
@@ -906,11 +908,12 @@ class LeanJobService:
 
         if daily_runs:
             combined_result: Dict[str, Any] = {"daily_results": []}
-            total_days = len(daily_runs)
             accumulated_execution_ms = 0.0
             last_result_path: Optional[str] = None
 
-            for index, daily in enumerate(daily_runs, start=1):
+            total_days = len(daily_runs)
+
+            for day_index, daily in enumerate(daily_runs, start=1):
                 day_str = daily.get("date")
                 try:
                     day_date = date.fromisoformat(day_str) if day_str else job.request.start_date
@@ -942,6 +945,10 @@ class LeanJobService:
                         "parameters": optimize_parameters,
                     },
                 }
+
+                map_label = daily.get("map_label") or day_str or f"day{day_index}"
+                if map_label:
+                    day_job_config["symbol_map_label"] = map_label
                 if symbol_map:
                     mapping_payload = {
                         "index_to_symbol": {
@@ -962,7 +969,7 @@ class LeanJobService:
                     request_copy,
                     day_job_config,
                     day_label=day_str,
-                    day_index=index,
+                    day_index=day_index,
                     total_days=total_days,
                 )
 

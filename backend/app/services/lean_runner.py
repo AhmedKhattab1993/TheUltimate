@@ -94,6 +94,7 @@ class LeanRunner:
 
             # Ensure stale symbol lists do not leak between optimize runs
             config_data["parameters"].pop("symbols", None)
+            config_data["parameters"].pop("symbol_mapping_file", None)
 
             config_data["parameters"]["startDate"] = request.start_date.strftime("%Y%m%d")
             config_data["parameters"]["endDate"] = request.end_date.strftime("%Y%m%d")
@@ -104,13 +105,57 @@ class LeanRunner:
 
             request.parameters = request.parameters or {}
 
-            symbol_map = (job_config or {}).get("symbol_map")
+            effective_config = job_config or {}
+            symbol_map = effective_config.get("symbol_map")
+            symbol_slots = effective_config.get("symbol_slots") or {}
+            if not symbol_map and symbol_slots:
+                symbol_map = {
+                    "index_to_symbol": {
+                        str(key): value for key, value in symbol_slots.items()
+                    }
+                }
             symbol_map_path: Optional[Path] = None
             if symbol_map:
-                symbol_map_path = project_path / f"symbol_mapping_{job_id}.json"
+                mapping_payload = symbol_map
+                if "index_to_symbol" not in mapping_payload:
+                    mapping_payload = {
+                        "index_to_symbol": {
+                            str(key): value for key, value in symbol_map.items()
+                        }
+                    }
+                raw_label = effective_config.get("symbol_map_label") or ""
+                safe_label = re.sub(r"[^A-Za-z0-9_-]", "-", str(raw_label)).strip("-") if raw_label else ""
+                if safe_label:
+                    safe_label = safe_label[:64]
+                    file_token = f"{job_id}_{safe_label}"
+                else:
+                    file_token = str(job_id)
+                symbol_map_path = project_path / f"symbol_mapping_{file_token}.json"
+                logger.info("LeanRunner: writing symbol map for %s -> %s", job_id, mapping_payload)
                 with open(symbol_map_path, 'w') as mapping_file:
-                    json.dump(symbol_map, mapping_file, indent=2)
-                config_data["parameters"]["symbol_mapping_file"] = str(symbol_map_path)
+                    json.dump(mapping_payload, mapping_file, indent=2)
+                logger.info(
+                    "LeanRunner: symbol map written at %s (exists=%s)",
+                    symbol_map_path,
+                    symbol_map_path.exists(),
+                )
+                map_param_value: str
+                try:
+                    map_param_value = str(symbol_map_path.relative_to(project_path))
+                except ValueError:
+                    map_param_value = symbol_map_path.name
+                config_data["parameters"]["symbol_mapping_file"] = map_param_value
+                request.parameters["symbol_mapping_file"] = map_param_value
+            elif symbol_map_path is None:
+                config_data["parameters"].pop("symbol_mapping_file", None)
+
+            if request.symbols:
+                symbols_override = ",".join(request.symbols)
+                if symbol_map:
+                    request.parameters.pop("symbols", None)
+                else:
+                    config_data["parameters"]["symbols"] = symbols_override
+                    request.parameters.setdefault("symbols", symbols_override)
 
             for key, value in request.parameters.items():
                 config_data["parameters"][key] = str(value)
@@ -226,11 +271,12 @@ class LeanRunner:
                 temp_config_path.unlink()
             except Exception:
                 pass
-            if symbol_map_path:
-                try:
-                    symbol_map_path.unlink()
-                except Exception:
-                    pass
+            # keep symbol map file for debugging/manual inspection; caller may clean up later
+            # if symbol_map_path:
+            #     try:
+            #         symbol_map_path.unlink()
+            #     except Exception:
+            #         pass
 
             if process.returncode != 0:
                 error_msg = stderr.decode() if stderr else stdout.decode()

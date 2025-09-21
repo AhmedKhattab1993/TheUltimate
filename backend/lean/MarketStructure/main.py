@@ -149,7 +149,12 @@ class MarketStructureAlgorithm(QCAlgorithm):
         try:
             candidate_paths = []
             if getattr(self, "symbol_mapping_file", None):
-                candidate_paths.append(self.symbol_mapping_file)
+                mapping_value = self.symbol_mapping_file
+                candidate_paths.append(mapping_value)
+                if mapping_value and not os.path.isabs(mapping_value):
+                    project_dir = os.path.dirname(__file__)
+                    candidate_paths.append(os.path.join(project_dir, mapping_value))
+                    candidate_paths.append(os.path.join(os.getcwd(), mapping_value))
 
             candidate_paths.extend([
                 "/data/symbol_mapping.json",
@@ -177,7 +182,17 @@ class MarketStructureAlgorithm(QCAlgorithm):
         # Load symbol mapping
         self.symbol_mapping = self._load_symbol_mapping()
         
-        if self.use_screener_results and self.screener_results_file:
+        symbols_param = self.get_parameter("symbols", "")
+        manual_symbols: list[str] = []
+        if symbols_param:
+            for token in str(symbols_param).split(","):
+                symbol_value = token.strip().upper()
+                if symbol_value:
+                    manual_symbols.append(symbol_value)
+
+        if manual_symbols:
+            symbols = manual_symbols
+        elif self.use_screener_results and self.screener_results_file:
             # Load symbols from screener results
             # self._log_debug(f"[SETUP] Loading symbols from screener file: {self.screener_results_file}")
             symbols = self._load_screener_symbols()
