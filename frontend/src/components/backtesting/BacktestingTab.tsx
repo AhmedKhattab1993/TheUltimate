@@ -178,8 +178,11 @@ export function BacktestingTab() {
 
     try {
       const strategy = strategies.find((s) => s.file_path === parameters.strategy)
+      const strategyId = strategy?.file_path ?? parameters.strategy ?? 'MarketStructure'
+      const strategyLabel = strategy?.name ?? strategyId
+      const parameterOverrides = normaliseParameters(parameters.strategyParameters)
       const payload = {
-        strategyName: strategy?.name ?? 'main',
+        strategyName: strategyId,
         startDate: format(parameters.startDate!, 'yyyy-MM-dd'),
         endDate: format(parameters.endDate!, 'yyyy-MM-dd'),
         initialCash: parameters.initialCash,
@@ -188,11 +191,13 @@ export function BacktestingTab() {
         lowerTimeframe: String(parameters.strategyParameters?.lower_timeframe ?? '5min'),
         symbols: parameters.useScreenerResults ? [] : parameters.symbols,
         useScreenerResults: parameters.useScreenerResults ?? false,
-        parameters: normaliseParameters(parameters.strategyParameters),
+        parameters: parameterOverrides,
       }
 
       const runInfo = await backtestApi.start(payload)
       const result = mapRunToResult(runInfo)
+      result.strategyName = strategyLabel
+      result.strategy_name = strategyLabel
       dispatch({ type: 'SET_RESULT', result })
       dispatch({
         type: 'SET_LAST_RUN_DETAILS',
@@ -207,7 +212,10 @@ export function BacktestingTab() {
       setTimeout(async () => {
         try {
           const refreshed = await backtestApi.getRun(runInfo.backtestId)
-          dispatch({ type: 'SET_RESULT', result: mapRunToResult(refreshed) })
+          const refreshedResult = mapRunToResult(refreshed)
+          refreshedResult.strategyName = strategyLabel
+          refreshedResult.strategy_name = strategyLabel
+          dispatch({ type: 'SET_RESULT', result: refreshedResult })
           dispatch({ type: 'COMPLETE_BACKTESTS' })
           loadHistoricalResults()
         } catch (pollError) {

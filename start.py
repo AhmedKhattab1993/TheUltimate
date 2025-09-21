@@ -54,12 +54,17 @@ def start_service(name: str, config: Dict[str, Path | List[str]]) -> int:
 
     log_path = config["log"]
     log_file = open(log_path, "ab", buffering=0)
+    env = os.environ.copy()
+    if name == "backend":
+        env.setdefault("UVICORN_RELOAD", "false")
+
     process = subprocess.Popen(
         config["cmd"],
         cwd=config["cwd"],
         stdout=log_file,
         stderr=subprocess.STDOUT,
         start_new_session=True,
+        env=env,
     )
 
     pid_file.write_text(str(process.pid))

@@ -38,8 +38,7 @@ export function ResultsTab() {
       {/* Show Combined Results directly without tabs */}
       <CombinedResultsView />
 
-      {/* Hidden Tabs - kept for future reference */}
-      <div style={{ display: 'none' }}>
+      <div>
         <Tabs
           value={state.activeTab}
           onValueChange={(value) => dispatch({ type: 'SET_ACTIVE_TAB', tab: value as 'screener' | 'backtest' | 'combined' })}
