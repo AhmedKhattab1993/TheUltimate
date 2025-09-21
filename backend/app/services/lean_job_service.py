@@ -6,12 +6,13 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from decimal import Decimal, InvalidOperation
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID, uuid4
+from collections import defaultdict
 
 from ..models.backtest import (
     BacktestProgress,
@@ -29,6 +30,7 @@ from .lean_runner import LeanRunner
 from .backtest_repository import backtest_repository
 from .run_storage import DatabaseRunStorage
 from .data_ingestion_runner import DataIngestionRunner
+from .screener_repository import screener_repository
 
 logger = logging.getLogger(__name__)
 
@@ -314,78 +316,170 @@ class LeanJobService:
             ordered.append(upper)
         return ordered
 
-    def _build_backtest_job_config(self, request: BacktestRequest) -> Optional[Dict[str, Any]]:
-        if request.use_screener_results:
-            symbols: List[str] = []
-        else:
-            symbols = self._normalise_symbols(request.symbols or [])
-            if not symbols:
-                symbols = [self._default_symbol()]
+    @staticmethod
+    def _generate_trading_days(start: date, end: date) -> List[date]:
+        days: List[date] = []
+        current = start
+        while current <= end:
+            if current.weekday() < 5:
+                days.append(current)
+            current += timedelta(days=1)
+        return days
 
-        parameter_sweeps: List[Dict[str, Any]] = []
-        symbol_map_payload: Optional[Dict[str, str]] = None
+    @staticmethod
+    def _make_parameter_sweeps(symbols: List[str]) -> List[Dict[str, Any]]:
+        if not symbols:
+            return [{"symbol_slot": 0}]
+        return [{"symbol_slot": index} for index in range(len(symbols))]
 
-        if symbols:
-            symbol_map_payload = {str(index): symbol for index, symbol in enumerate(symbols)}
-            parameter_sweeps = [{"symbol_slot": index} for index in range(len(symbols))]
-        else:
-            parameter_sweeps = [{"symbol_slot": 0}]
+    def _build_symbol_slot_optimize_params(self, parameter_sweeps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if not parameter_sweeps:
+            return [
+                {
+                    "name": "symbol_slot",
+                    "min": self._decimal_to_str(Decimal(0)),
+                    "max": self._decimal_to_str(Decimal(0)),
+                    "step": self._decimal_to_str(Decimal("1")),
+                }
+            ]
 
-        grid_definition = self._build_grid_definition(request, parameter_sweeps)
+        slot_values: List[Decimal] = []
+        for sweep in parameter_sweeps:
+            try:
+                slot_value = self._coerce_decimal(sweep.get("symbol_slot", 0))
+            except ValueError:
+                slot_value = Decimal(0)
+            slot_values.append(slot_value)
 
-        if symbol_map_payload:
-            for index, combo in enumerate(grid_definition["combos"]):
-                symbol = symbol_map_payload.get(str(index))
-                if not symbol:
-                    continue
-                combo["label"] = symbol
-                combo["display"] = symbol
+        min_slot = min(slot_values)
+        max_slot = max(slot_values)
 
-        optimize_parameters: List[Dict[str, Any]] = []
-        min_slot = 0
-        max_slot = max(parameter_sweeps[0].get("symbol_slot", 0), parameter_sweeps[-1].get("symbol_slot", 0))
-        if parameter_sweeps:
-            slot_values = [sweep.get("symbol_slot", 0) for sweep in parameter_sweeps]
-            if slot_values:
-                min_slot = min(slot_values)
-                max_slot = max(slot_values)
-        optimize_parameters.append(
+        return [
             {
                 "name": "symbol_slot",
-                "min": self._decimal_to_str(Decimal(min_slot)),
-                "max": self._decimal_to_str(Decimal(max_slot)),
+                "min": self._decimal_to_str(min_slot),
+                "max": self._decimal_to_str(max_slot),
                 "step": self._decimal_to_str(Decimal("1")),
             }
-        )
+        ]
 
-        optimize_config: Dict[str, Any] = {
-            "target_metric": "SharpeRatio",
-            "target_direction": "maximize",
-            "parameters": optimize_parameters,
+    def _build_manual_daily_runs(self, request: BacktestRequest) -> Tuple[List[Dict[str, Any]], List[str]]:
+        days = self._generate_trading_days(request.start_date, request.end_date)
+        symbols = self._normalise_symbols(request.symbols or [])
+        if not symbols:
+            symbols = [self._default_symbol()]
+
+        targets: List[str] = list(symbols)
+        daily_runs: List[Dict[str, Any]] = []
+        for trading_day in days:
+            parameter_sweeps = self._make_parameter_sweeps(symbols)
+            symbol_map = {str(index): symbol for index, symbol in enumerate(symbols)}
+            day_targets = [f"{trading_day.isoformat()}:{symbol}" for symbol in symbols]
+            symbols_snapshot = list(symbols)
+            daily_runs.append(
+                {
+                    "date": trading_day.isoformat(),
+                    "symbols": symbols_snapshot,
+                    "parameter_sweeps": parameter_sweeps,
+                    "symbol_map": symbol_map,
+                    "targets": day_targets,
+                }
+            )
+        return daily_runs, targets
+
+    async def _build_screener_daily_runs(self, request: BacktestRequest) -> Tuple[List[Dict[str, Any]], List[str]]:
+        total, runs = await screener_repository.list_runs(limit=1)
+        if total == 0 or not runs:
+            raise ValueError("No screener runs available for backtesting")
+
+        run_detail = await screener_repository.get_run(runs[0].id)
+        if not run_detail or not run_detail.results:
+            raise ValueError("Latest screener run does not contain any symbols")
+
+        start = request.start_date
+        end = request.end_date
+
+        symbols_by_day: Dict[date, List[str]] = defaultdict(list)
+        for entry in run_detail.results:
+            symbol = entry.symbol.upper()
+            metrics = entry.metrics or {}
+            qualifying_dates = metrics.get("qualifying_dates") or []
+            if isinstance(qualifying_dates, str):
+                qualifying_dates = [qualifying_dates]
+            for date_str in qualifying_dates:
+                try:
+                    parsed = date.fromisoformat(str(date_str)[:10])
+                except ValueError:
+                    continue
+                if parsed < start or parsed > end:
+                    continue
+                if parsed.weekday() >= 5:
+                    continue
+                current_symbols = symbols_by_day[parsed]
+                if symbol not in current_symbols:
+                    current_symbols.append(symbol)
+
+        if not symbols_by_day:
+            # Fallback: use data_date from metrics if qualifying dates missing
+            for entry in run_detail.results:
+                symbol = entry.symbol.upper()
+                metrics = entry.metrics or {}
+                data_date = metrics.get("data_date") or metrics.get("date")
+                if not data_date:
+                    continue
+                try:
+                    parsed = date.fromisoformat(str(data_date)[:10])
+                except ValueError:
+                    continue
+                if parsed < start or parsed > end or parsed.weekday() >= 5:
+                    continue
+                current_symbols = symbols_by_day[parsed]
+                if symbol not in current_symbols:
+                    current_symbols.append(symbol)
+
+        if not symbols_by_day:
+            raise ValueError("Screener run does not cover the selected date range")
+
+        daily_runs: List[Dict[str, Any]] = []
+        targets_set: List[str] = []
+        sorted_days = sorted(symbols_by_day.keys())
+
+        shared_payload = {
+            "run_id": str(run_detail.id),
+            "timestamp": run_detail.created_at.isoformat(),
+            "filters": run_detail.filters,
+            "metadata": run_detail.metadata,
         }
 
-        job_config: Dict[str, Any] = {
-            "optimize": optimize_config,
-            "grid": grid_definition,
-            "targets": [combo["label"] for combo in grid_definition["combos"]],
-        }
+        for trading_day in sorted_days:
+            symbols = self._normalise_symbols(symbols_by_day[trading_day])
+            if not symbols:
+                continue
+            parameter_sweeps = self._make_parameter_sweeps(symbols)
+            symbol_map = {str(index): symbol for index, symbol in enumerate(symbols)}
+            day_targets = [f"{trading_day.isoformat()}:{symbol}" for symbol in symbols]
+            daily_runs.append(
+                {
+                    "date": trading_day.isoformat(),
+                    "symbols": symbols,
+                    "parameter_sweeps": parameter_sweeps,
+                    "symbol_map": symbol_map,
+                    "screener_payload": {
+                        **shared_payload,
+                        "date": trading_day.isoformat(),
+                        "symbols": symbols,
+                    },
+                    "parameter_overrides": {
+                        "screener_target_date": trading_day.isoformat(),
+                    },
+                    "targets": day_targets,
+                }
+            )
+            for symbol in symbols:
+                if symbol not in targets_set:
+                    targets_set.append(symbol)
 
-        if symbol_map_payload:
-            job_config["symbol_map"] = {
-                "index_to_symbol": symbol_map_payload,
-                "total_symbols": len(symbol_map_payload),
-            }
-            job_config["symbol_slots"] = symbol_map_payload
-
-        defaults = grid_definition.get("defaults", {})
-        if "symbol_slot" not in defaults:
-            defaults["symbol_slot"] = 0
-            grid_definition["defaults"] = defaults
-
-        request.parameters = request.parameters or {}
-        request.parameters.setdefault("symbol_slot", defaults["symbol_slot"])
-
-        return job_config
+        return daily_runs, targets_set
 
     # ------------------------------------------------------------------
     # Public API
@@ -405,7 +499,18 @@ class LeanJobService:
             strategy_registry.merge_request_with_defaults(request)
 
         if job_type is JobType.BACKTEST and job_config is None:
-            job_config = self._build_backtest_job_config(request)
+            if request.start_date > request.end_date:
+                raise ValueError("start_date must be on or before end_date")
+
+            if request.use_screener_results:
+                daily_runs, targets = await self._build_screener_daily_runs(request)
+            else:
+                daily_runs, targets = self._build_manual_daily_runs(request)
+
+            job_config = {
+                "daily_runs": daily_runs,
+                "targets": targets,
+            }
 
         job_id = str(uuid4())
         job = LeanJob(
@@ -682,8 +787,18 @@ class LeanJobService:
         except Exception:  # pragma: no cover - defensive
             logger.debug("Failed to persist grid targets for %s", job_id, exc_info=True)
 
-    async def _run_grid_job(self, job: LeanJob, project_name: str) -> Dict[str, Any]:
-        grid_config = (job.job_config or {}).get("grid") or {}
+    async def _run_single_grid_run(
+        self,
+        job: LeanJob,
+        project_name: str,
+        request: BacktestRequest,
+        job_config: Dict[str, Any],
+        *,
+        day_label: Optional[str] = None,
+        day_index: int = 1,
+        total_days: int = 1,
+    ) -> Dict[str, Any]:
+        grid_config = (job_config or {}).get("grid") or {}
         parameter_names: List[str] = list(grid_config.get("parameter_names") or [])
         combos: List[Dict[str, Any]] = list(grid_config.get("combos") or [])
         defaults: Dict[str, Any] = dict(grid_config.get("defaults") or {})
@@ -691,7 +806,7 @@ class LeanJobService:
 
         combos_map = {combo.get("key"): combo for combo in combos if combo.get("key")}
 
-        symbol_slots_lookup = (job.job_config or {}).get("symbol_slots") or {}
+        symbol_slots_lookup = (job_config or {}).get("symbol_slots") or {}
 
         progress_state = {
             "seen": set(),
@@ -716,7 +831,10 @@ class LeanJobService:
             key = self._make_combo_key(parameter_names, numeric_map)
             combo = combos_map.get(key)
 
-            label = combo.get("label") if combo else f"auto-{len(progress_state['seen']) + 1:04d}"
+            base_label = combo.get("label") if combo else f"auto-{len(progress_state['seen']) + 1:04d}"
+            label = base_label
+            if day_label:
+                label = f"{day_label}:{base_label}"
             parameters_to_store = dict(combo.get("parameters", {})) if combo else {
                 name: parameters.get(name, defaults.get(name))
                 for name in parameter_names
@@ -750,6 +868,10 @@ class LeanJobService:
                 job.metadata["grid_progress"]["completed"] = progress_state["completed"]
                 job.metadata["grid_progress"]["total"] = progress_state["total"]
                 job.metadata["grid_progress"]["last_label"] = label
+                job.metadata["grid_progress"]["day_index"] = day_index
+                job.metadata["grid_progress"]["total_days"] = total_days
+                if day_label:
+                    job.metadata["grid_progress"]["day"] = day_label
 
                 result_path = payload.get("result_path")
                 if result_path:
@@ -761,9 +883,9 @@ class LeanJobService:
 
         result = await self._runner.run_grid(
             job_id=job.job_id,
-            request=job.request,
+            request=request,
             project_name=project_name,
-            job_config=job.job_config,
+            job_config=job_config,
             on_result=handle_result,
         )
 
@@ -777,6 +899,99 @@ class LeanJobService:
         )
 
         return result
+
+    async def _run_grid_job(self, job: LeanJob, project_name: str) -> Dict[str, Any]:
+        job_config = job.job_config or {}
+        daily_runs = list(job_config.get("daily_runs") or [])
+
+        if daily_runs:
+            combined_result: Dict[str, Any] = {"daily_results": []}
+            total_days = len(daily_runs)
+            accumulated_execution_ms = 0.0
+            last_result_path: Optional[str] = None
+
+            for index, daily in enumerate(daily_runs, start=1):
+                day_str = daily.get("date")
+                try:
+                    day_date = date.fromisoformat(day_str) if day_str else job.request.start_date
+                except ValueError:
+                    day_date = job.request.start_date
+
+                request_copy = job.request.model_copy(deep=True)
+                request_copy.start_date = day_date
+                request_copy.end_date = day_date
+                request_copy.symbols = list(daily.get("symbols") or [])
+
+                if daily.get("parameter_overrides"):
+                    overrides = dict(request_copy.parameters or {})
+                    overrides.update(daily["parameter_overrides"])
+                    request_copy.parameters = overrides
+
+                parameter_sweeps = list(daily.get("parameter_sweeps") or self._make_parameter_sweeps(request_copy.symbols or []))
+                grid_definition = self._build_grid_definition(request_copy, parameter_sweeps)
+                optimize_parameters = self._build_symbol_slot_optimize_params(parameter_sweeps)
+                symbol_map = daily.get("symbol_map") or {str(index): symbol for index, symbol in enumerate(request_copy.symbols or [])}
+
+                day_job_config: Dict[str, Any] = {
+                    "grid": grid_definition,
+                    "symbol_slots": symbol_map,
+                    "targets": daily.get("targets"),
+                    "optimize": {
+                        "target_metric": "SharpeRatio",
+                        "target_direction": "maximize",
+                        "parameters": optimize_parameters,
+                    },
+                }
+
+                if daily.get("screener_payload"):
+                    payload = dict(daily["screener_payload"])
+                    payload.setdefault("symbols", request_copy.symbols)
+                    payload.setdefault("date", day_str)
+                    day_job_config["screener_payload"] = payload
+
+                day_result = await self._run_single_grid_run(
+                    job,
+                    project_name,
+                    request_copy,
+                    day_job_config,
+                    day_label=day_str,
+                    day_index=index,
+                    total_days=total_days,
+                )
+
+                combined_result["daily_results"].append({
+                    "date": day_str,
+                    "result": day_result,
+                })
+
+                execution_ms = day_result.get("execution_time_ms")
+                if isinstance(execution_ms, (int, float)):
+                    accumulated_execution_ms += float(execution_ms)
+
+                result_payload = day_result.get("result")
+                if isinstance(result_payload, dict):
+                    combined_result["result"] = result_payload
+                    if result_payload.get("result_path"):
+                        last_result_path = result_payload["result_path"]
+                elif isinstance(day_result.get("statistics"), dict):
+                    combined_result["result"] = day_result
+
+                if day_result.get("result_path"):
+                    last_result_path = day_result["result_path"]
+
+            if accumulated_execution_ms:
+                combined_result["execution_time_ms"] = accumulated_execution_ms
+            if last_result_path:
+                combined_result["result_path"] = last_result_path
+
+            return combined_result
+
+        return await self._run_single_grid_run(
+            job,
+            project_name,
+            job.request,
+            job_config,
+        )
 
     async def _persist_grid_result(
         self,

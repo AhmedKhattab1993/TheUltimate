@@ -47,29 +47,49 @@ class LeanRunner:
         """Run a Lean optimization for grid sweeps while streaming intermediate results."""
 
         try:
+            screener_payload = (job_config or {}).get("screener_payload")
             if request.use_screener_results:
                 strategy_path = self.lean_project_path / "flexible_main.py"
                 if not strategy_path.exists():
                     raise Exception("Flexible strategy not found for screener results")
-                _, runs = await screener_repository.list_runs(limit=1)
-                if not runs:
-                    raise Exception("No screener runs available for Lean optimization")
 
-                run_detail = await screener_repository.get_run(runs[0].id)
-                if not run_detail or not run_detail.results:
-                    raise Exception("Latest screener run does not contain any symbols")
+                if screener_payload:
+                    export_symbols = list(screener_payload.get("symbols") or [])
+                    export_payload = {
+                        "timestamp": screener_payload.get("timestamp") or datetime.now().isoformat(),
+                        "symbols": export_symbols,
+                        "filters": screener_payload.get("filters") or {},
+                        "metadata": screener_payload.get("metadata") or {},
+                        "count": len(export_symbols),
+                    }
+                    if screener_payload.get("date"):
+                        export_payload.setdefault("metadata", {})
+                        export_payload["metadata"]["target_date"] = screener_payload["date"]
+                else:
+                    _, runs = await screener_repository.list_runs(limit=1)
+                    if not runs:
+                        raise Exception("No screener runs available for Lean optimization")
 
-                export_payload = {
-                    "timestamp": run_detail.created_at.isoformat(),
-                    "symbols": [result.symbol for result in run_detail.results],
-                    "filters": run_detail.filters,
-                    "metadata": run_detail.metadata,
-                    "count": len(run_detail.results),
-                }
+                    run_detail = await screener_repository.get_run(runs[0].id)
+                    if not run_detail or not run_detail.results:
+                        raise Exception("Latest screener run does not contain any symbols")
+
+                    export_symbols = [result.symbol for result in run_detail.results]
+                    export_payload = {
+                        "timestamp": run_detail.created_at.isoformat(),
+                        "symbols": export_symbols,
+                        "filters": run_detail.filters,
+                        "metadata": run_detail.metadata,
+                        "count": len(export_symbols),
+                    }
+
+                if not export_symbols:
+                    raise Exception("Screener payload does not contain any symbols")
 
                 results_dir = self.lean_project_path.parent / "screener_results"
                 results_dir.mkdir(parents=True, exist_ok=True)
-                screener_file = results_dir / f"screener_results_{run_detail.id}.json"
+                file_suffix = screener_payload.get("run_id") if screener_payload else datetime.now().strftime("%s")
+                screener_file = results_dir / f"screener_results_{file_suffix}.json"
                 screener_file.write_text(json.dumps(export_payload, indent=2))
 
                 request.parameters["screener_results_file"] = str(screener_file)
