@@ -112,6 +112,12 @@ export function BacktestingTab() {
   const { state, dispatch } = useBacktestContext()
   const { dispatch: resultsDispatch } = useResultsContext()
   const { parameters, isRunning, error, strategies } = state
+  const selectedStrategy = parameters.strategy
+    ? strategies.find((s) => s.file_path === parameters.strategy)
+    : undefined
+  const showMarketStructureForm =
+    selectedStrategy?.file_path === 'MarketStructure' ||
+    selectedStrategy?.name === 'Market Structure'
 
   const loadStrategies = useCallback(async () => {
     try {
@@ -241,7 +247,7 @@ export function BacktestingTab() {
       <StrategySelector />
       <BacktestForm />
 
-      {parameters.strategy && strategies.find((s) => s.file_path === parameters.strategy)?.name === 'MarketStructure' && (
+      {showMarketStructureForm && (
         <MarketStructureForm
           parameters={parameters.strategyParameters || {}}
           onParameterChange={(field, value) => {

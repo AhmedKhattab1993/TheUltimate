@@ -11,13 +11,12 @@ interface MarketStructureFormProps {
 }
 
 export function MarketStructureForm({ parameters, onParameterChange }: MarketStructureFormProps) {
-  const timeframeOptions = [
+  const lowerTimeframeOptions = [
     { value: '1min', label: '1 Minute' },
     { value: '5min', label: '5 Minutes' },
     { value: '15min', label: '15 Minutes' },
     { value: '30min', label: '30 Minutes' },
-    { value: '1hour', label: '1 Hour' },
-    { value: 'daily', label: 'Daily' }
+    { value: '1hour', label: '1 Hour' }
   ]
 
   return (
@@ -37,7 +36,7 @@ export function MarketStructureForm({ parameters, onParameterChange }: MarketStr
         </Alert>
 
         {/* Timeframe Settings */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4">
           <div className="space-y-2">
             <Label htmlFor="lower-timeframe">Lower Timeframe</Label>
             <Select
@@ -48,7 +47,7 @@ export function MarketStructureForm({ parameters, onParameterChange }: MarketStr
                 <SelectValue placeholder="Select timeframe" />
               </SelectTrigger>
               <SelectContent>
-                {timeframeOptions.slice(0, 5).map((option) => (
+                {lowerTimeframeOptions.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
                     {option.label}
                   </SelectItem>
@@ -57,28 +56,6 @@ export function MarketStructureForm({ parameters, onParameterChange }: MarketStr
             </Select>
             <p className="text-xs text-muted-foreground">
               Primary timeframe for pivot detection
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="higher-timeframe">Higher Timeframe</Label>
-            <Select
-              value={parameters.higher_timeframe || '1hour'}
-              onValueChange={(value) => onParameterChange('higher_timeframe', value)}
-            >
-              <SelectTrigger id="higher-timeframe">
-                <SelectValue placeholder="Select timeframe" />
-              </SelectTrigger>
-              <SelectContent>
-                {timeframeOptions.slice(2).map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              Higher timeframe for trend context
             </p>
           </div>
         </div>
