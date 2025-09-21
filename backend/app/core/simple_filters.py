@@ -178,27 +178,22 @@ class PriceVsMAFilter(EnhancedBaseFilter):
         # Don't enforce strict validation - work with the data we have
         self._validate_data(data, min_length=1)
         
-        # If we don't have enough data for the MA, return empty result
-        if len(data) < self.period:
-            return FilterResult(
-                symbol=symbol,
-                qualifying_mask=np.zeros(len(data), dtype=bool),
-                dates=data['date'],
-                metrics={'error': f'Insufficient data for {self.period}-day MA'}
-            )
-        
         opens = data['open'].astype(np.float64)
         closes = data['close'].astype(np.float64)
         dates = data['date']
         
         # Calculate MA from previous closes (excluding current day)
-        # For each day, we calculate MA from the previous N closes
+        # Uses as much history as is available, up to the desired period.
         ma_values = np.full_like(closes, np.nan)
-        
-        # We need at least 'period' previous days to calculate MA
-        for i in range(self.period, len(closes)):
-            # Calculate MA from previous closes (not including current day)
-            ma_values[i] = np.mean(closes[i-self.period:i])
+        window_lengths = np.zeros(len(closes), dtype=np.int32)
+
+        for i in range(1, len(closes)):
+            window_start = max(0, i - self.period)
+            window = closes[window_start:i]
+            if window.size == 0:
+                continue
+            ma_values[i] = float(np.mean(window))
+            window_lengths[i] = window.size
         
         ratios = np.full_like(opens, np.nan)
         valid_ma_mask = (~np.isnan(ma_values)) & (ma_values != 0)
@@ -212,6 +207,7 @@ class PriceVsMAFilter(EnhancedBaseFilter):
 
         if len(valid_mas) > 0:
             distance_from_ma = ((opens[~np.isnan(ma_values)] - valid_mas) / valid_mas) * 100
+            valid_lengths = window_lengths[window_lengths > 0]
             metrics = {
                 f'ma_{self.period}_mean': float(np.mean(valid_mas)),
                 f'distance_from_ma_{self.period}_mean': float(np.mean(distance_from_ma)),
@@ -219,7 +215,9 @@ class PriceVsMAFilter(EnhancedBaseFilter):
                 'open_over_ma_mean': float(np.mean(valid_ratios)) if len(valid_ratios) > 0 else 0.0,
                 'open_over_ma_std': float(np.std(valid_ratios)) if len(valid_ratios) > 0 else 0.0,
                 'qualifying_days': int(np.sum(qualifying_mask)),
-                'total_days_with_ma': int(len(valid_mas))
+                'total_days_with_ma': int(len(valid_mas)),
+                'ma_effective_window_min': int(valid_lengths.min()) if len(valid_lengths) > 0 else 0,
+                'ma_effective_window_max': int(valid_lengths.max()) if len(valid_lengths) > 0 else 0,
             }
         else:
             metrics = {
@@ -229,7 +227,9 @@ class PriceVsMAFilter(EnhancedBaseFilter):
                 'open_over_ma_mean': 0.0,
                 'open_over_ma_std': 0.0,
                 'qualifying_days': 0,
-                'total_days_with_ma': 0
+                'total_days_with_ma': 0,
+                'ma_effective_window_min': 0,
+                'ma_effective_window_max': 0,
             }
         
         return FilterResult(

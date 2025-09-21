@@ -247,9 +247,17 @@ async def _process_single_day(
             
             # Get the qualifying dates where all filters passed
             qualifying_dates_array = combined_result.qualifying_dates
-            
-            # Check if the trading date is in the qualifying dates
-            if trading_date in qualifying_dates_array:
+
+            # Normalize numpy datetimes to date resolution before comparison
+            if qualifying_dates_array.size:
+                qualifying_matches = np.isin(
+                    qualifying_dates_array.astype('datetime64[D]'),
+                    np.datetime64(trading_date)
+                )
+            else:
+                qualifying_matches = np.array([], dtype=bool)
+
+            if qualifying_matches.any():
                 total_qualifying += 1
                 
                 # Get metrics for this symbol on this date

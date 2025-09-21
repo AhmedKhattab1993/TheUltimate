@@ -157,6 +157,36 @@ class SimpleFilters(BaseModel):
         None, description="Filter by relative volume ratio"
     )
 
+    @field_validator("price_vs_ma", mode="before")
+    @classmethod
+    def _coerce_price_vs_ma(
+        cls, value: Optional[Any]
+    ) -> Optional[List[PriceVsMAParams]]:
+        if value in (None, [], {}):
+            return None
+        if isinstance(value, list):
+            return value
+        return [value]
+
+    @field_validator("rsi", mode="before")
+    @classmethod
+    def _coerce_rsi(
+        cls, value: Optional[Any]
+    ) -> Optional[List[RSIParams]]:
+        if value in (None, [], {}):
+            return None
+        if isinstance(value, list):
+            return value
+        return [value]
+
+    @model_validator(mode="after")
+    def _normalize_lists(self) -> "SimpleFilters":  # noqa: N805
+        if self.price_vs_ma and len(self.price_vs_ma) == 0:
+            self.price_vs_ma = None
+        if self.rsi and len(self.rsi) == 0:
+            self.rsi = None
+        return self
+
 
 class RegistryFilterState(BaseModel):
     """Generic filter payload sent from the frontend registry."""
@@ -184,37 +214,6 @@ class RegistryScreenRequest(BaseModel):
             filters=filters,
             enable_db_prefiltering=self.enable_db_prefiltering,
         )
-
-    @field_validator('price_vs_ma', mode='before')
-    @classmethod
-    def _coerce_price_vs_ma(
-        cls, value: Optional[Any], info: FieldValidationInfo
-    ) -> Optional[List[PriceVsMAParams]]:
-        if value in (None, [], {}):
-            return None
-        if isinstance(value, list):
-            return value
-        return [value]
-
-    @field_validator('rsi', mode='before')
-    @classmethod
-    def _coerce_rsi(
-        cls, value: Optional[Any], info: FieldValidationInfo
-    ) -> Optional[List[RSIParams]]:
-        if value in (None, [], {}):
-            return None
-        if isinstance(value, list):
-            return value
-        return [value]
-
-    @model_validator(mode='after')
-    def _normalize_lists(self) -> 'SimpleFilters':  # noqa: N805
-        if self.price_vs_ma and len(self.price_vs_ma) == 0:
-            self.price_vs_ma = None
-        if self.rsi and len(self.rsi) == 0:
-            self.rsi = None
-        return self
-
 
 class SimpleScreenRequest(BaseModel):
     """Simplified screening request with 8 basic filters."""

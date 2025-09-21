@@ -541,7 +541,7 @@ const simpleFiltersToStateMap = (filters: SimpleFilters): FilterStateMap => {
   }
 
   const priceRange = filters.simple_price_range
-  add('simple_price_range', priceRange ? {
+  add('priceRange', priceRange ? {
     min_price: priceRange.min_price,
     max_price: priceRange.max_price,
     step: priceRange.step,
@@ -551,7 +551,7 @@ const simpleFiltersToStateMap = (filters: SimpleFilters): FilterStateMap => {
   if (priceVsMa) {
     const maList = Array.isArray(priceVsMa) ? priceVsMa : [priceVsMa]
     const primary = maList[0]
-    add('price_vs_ma', {
+    add('priceVsMA', {
       ma_period: primary?.ma_period,
       min_ratio: primary?.min_ratio,
       max_ratio: primary?.max_ratio,
@@ -564,7 +564,7 @@ const simpleFiltersToStateMap = (filters: SimpleFilters): FilterStateMap => {
       })),
     })
   } else {
-    add('price_vs_ma')
+    add('priceVsMA')
   }
 
   const rsi = filters.rsi
@@ -596,14 +596,14 @@ const simpleFiltersToStateMap = (filters: SimpleFilters): FilterStateMap => {
   } : undefined)
 
   const prevDay = filters.prev_day_dollar_volume
-  add('prev_day_dollar_volume', prevDay ? {
+  add('prevDayDollarVolume', prevDay ? {
     min_dollar_volume: prevDay.min_dollar_volume,
     max_dollar_volume: prevDay.max_dollar_volume,
     step_dollar_volume: prevDay.step_dollar_volume,
   } : undefined)
 
   const relVolume = filters.relative_volume
-  add('relative_volume', relVolume ? {
+  add('relativeVolume', relVolume ? {
     recent_days: relVolume.recent_days,
     lookback_days: relVolume.lookback_days,
     min_ratio: relVolume.min_ratio,

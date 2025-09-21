@@ -36,11 +36,12 @@ if __name__ == "__main__":
     print("📚 API Docs:     http://localhost:8000/docs")
     print("="*50 + "\n")
     
-    # Run with reload in development
+    reload_flag = os.getenv("UVICORN_RELOAD", "true").lower() in {"1", "true", "yes", "on"}
+
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True,
+        reload=reload_flag,
         log_level="info"
     )
