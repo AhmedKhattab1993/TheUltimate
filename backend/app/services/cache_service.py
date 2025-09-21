@@ -186,12 +186,14 @@ class CacheService:
                 "period": request.price_vs_ma_period,
                 "min_ratio": self._convert_decimal_to_float(request.price_vs_ma_min_ratio),
                 "max_ratio": self._convert_decimal_to_float(request.price_vs_ma_max_ratio),
+                "setups": request.price_vs_ma_setups,
             },
             "rsi": {
                 "enabled": request.rsi_enabled,
                 "period": request.rsi_period,
                 "min_value": self._convert_decimal_to_float(request.rsi_min_value),
                 "max_value": self._convert_decimal_to_float(request.rsi_max_value),
+                "setups": request.rsi_setups,
             },
             "gap": {
                 "enabled": request.gap_enabled,
@@ -229,7 +231,11 @@ class CacheService:
     ) -> CachedScreenerResult:
         filters = run.filters or {}
         price_vs_ma = filters.get("price_vs_ma", {})
+        ma_setups = price_vs_ma.get("setups") or []
         rsi = filters.get("rsi", {})
+        rsi_setups = rsi.get("setups") or []
+        first_ma = (ma_setups[0] if ma_setups else price_vs_ma) or {}
+        first_rsi = (rsi_setups[0] if rsi_setups else rsi) or {}
         gap = filters.get("gap", {})
         prev_day = filters.get("prev_day_dollar_volume", {})
         rel_vol = filters.get("relative_volume", {})
@@ -247,13 +253,13 @@ class CacheService:
             filter_min_price=self._convert_float_to_decimal(filters.get("min_price")),
             filter_max_price=self._convert_float_to_decimal(filters.get("max_price")),
             filter_price_vs_ma_enabled=bool(price_vs_ma.get("enabled")),
-            filter_price_vs_ma_period=price_vs_ma.get("period"),
-            filter_price_vs_ma_min_ratio=self._convert_float_to_decimal(price_vs_ma.get("min_ratio")),
-            filter_price_vs_ma_max_ratio=self._convert_float_to_decimal(price_vs_ma.get("max_ratio")),
+            filter_price_vs_ma_period=first_ma.get("period"),
+            filter_price_vs_ma_min_ratio=self._convert_float_to_decimal(first_ma.get("min_ratio")),
+            filter_price_vs_ma_max_ratio=self._convert_float_to_decimal(first_ma.get("max_ratio")),
             filter_rsi_enabled=bool(rsi.get("enabled")),
-            filter_rsi_period=rsi.get("period"),
-            filter_rsi_min_value=self._convert_float_to_decimal(rsi.get("min_value")),
-            filter_rsi_max_value=self._convert_float_to_decimal(rsi.get("max_value")),
+            filter_rsi_period=first_rsi.get("period"),
+            filter_rsi_min_value=self._convert_float_to_decimal(first_rsi.get("min_value")),
+            filter_rsi_max_value=self._convert_float_to_decimal(first_rsi.get("max_value")),
             filter_gap_enabled=bool(gap.get("enabled")),
             filter_gap_min_percent=self._convert_float_to_decimal(gap.get("min_percent")),
             filter_gap_max_percent=self._convert_float_to_decimal(gap.get("max_percent")),
@@ -716,10 +722,24 @@ class CacheService:
             price_vs_ma_period=20 if price_vs_ma_enabled else None,
             price_vs_ma_min_ratio=price_vs_ma_min_ratio,
             price_vs_ma_max_ratio=None,
+            price_vs_ma_setups=[
+                {
+                    'period': 20,
+                    'min_ratio': float(price_vs_ma_min_ratio) if price_vs_ma_min_ratio is not None else None,
+                    'max_ratio': None,
+                }
+            ] if price_vs_ma_enabled else [],
             rsi_enabled=filters.get('rsi_enabled', False),
             rsi_period=filters.get('rsi_period'),
             rsi_min_value=rsi_min_value,
             rsi_max_value=rsi_max_value,
+            rsi_setups=[
+                {
+                    'period': filters.get('rsi_period'),
+                    'min_value': float(rsi_min_value) if rsi_min_value is not None else None,
+                    'max_value': float(rsi_max_value) if rsi_max_value is not None else None,
+                }
+            ] if filters.get('rsi_period') else [],
             gap_enabled=gap_value is not None or filters.get('gap_enabled', False),
             gap_min_percent=gap_value,
             gap_max_percent=None,
@@ -796,10 +816,24 @@ class CacheService:
             price_vs_ma_period=20 if price_vs_ma_enabled else None,
             price_vs_ma_min_ratio=price_vs_ma_min_ratio,
             price_vs_ma_max_ratio=None,
+            price_vs_ma_setups=[
+                {
+                    'period': 20,
+                    'min_ratio': float(price_vs_ma_min_ratio) if price_vs_ma_min_ratio is not None else None,
+                    'max_ratio': None,
+                }
+            ] if price_vs_ma_enabled else [],
             rsi_enabled=filters.get('rsi_enabled', False),
             rsi_period=filters.get('rsi_period'),
             rsi_min_value=rsi_min_value,
             rsi_max_value=rsi_max_value,
+            rsi_setups=[
+                {
+                    'period': filters.get('rsi_period'),
+                    'min_value': float(rsi_min_value) if rsi_min_value is not None else None,
+                    'max_value': float(rsi_max_value) if rsi_max_value is not None else None,
+                }
+            ] if filters.get('rsi_period') else [],
             gap_enabled=gap_value is not None or filters.get('gap_enabled', False),
             gap_min_percent=gap_value,
             gap_max_percent=None,

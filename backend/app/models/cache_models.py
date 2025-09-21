@@ -9,7 +9,7 @@ import hashlib
 import json
 from datetime import datetime, date
 from decimal import Decimal
-from typing import List, Optional
+from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
@@ -31,12 +31,14 @@ class CachedScreenerRequest(BaseModel):
     price_vs_ma_period: Optional[int] = None
     price_vs_ma_min_ratio: Optional[Decimal] = None
     price_vs_ma_max_ratio: Optional[Decimal] = None
-    
+    price_vs_ma_setups: List[Dict[str, Optional[float | int]]] = Field(default_factory=list)
+
     # RSI filter
     rsi_enabled: bool = False
     rsi_period: Optional[int] = None
     rsi_min_value: Optional[Decimal] = None
     rsi_max_value: Optional[Decimal] = None
+    rsi_setups: List[Dict[str, Optional[float | int]]] = Field(default_factory=list)
     
     # Gap filter (enhanced with direction)
     gap_enabled: bool = False
@@ -80,12 +82,14 @@ class CachedScreenerRequest(BaseModel):
                     'period': self.price_vs_ma_period,
                     'min_ratio': float(self.price_vs_ma_min_ratio) if self.price_vs_ma_min_ratio is not None else None,
                     'max_ratio': float(self.price_vs_ma_max_ratio) if self.price_vs_ma_max_ratio is not None else None,
+                    'setups': self.price_vs_ma_setups,
                 },
                 'rsi': {
                     'enabled': self.rsi_enabled,
                     'period': self.rsi_period,
                     'min_value': float(self.rsi_min_value) if self.rsi_min_value is not None else None,
                     'max_value': float(self.rsi_max_value) if self.rsi_max_value is not None else None,
+                    'setups': self.rsi_setups,
                 },
                 'gap': {
                     'enabled': self.gap_enabled,

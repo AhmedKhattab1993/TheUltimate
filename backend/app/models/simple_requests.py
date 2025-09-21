@@ -141,9 +141,12 @@ class RelativeVolumeParams(BaseModel):
 
 class SimpleFilters(BaseModel):
     """Container for the 8 simple filters."""
+
     price_range: Optional[SimplePriceRangeParams] = Field(None, description="Filter by OPEN price range")
-    price_vs_ma: Optional[PriceVsMAParams] = Field(None, description="Filter by price vs moving average")
-    rsi: Optional[RSIParams] = Field(None, description="Filter by RSI conditions")
+    price_vs_ma: Optional[List[PriceVsMAParams]] = Field(
+        None, description="Filter by price vs moving average"
+    )
+    rsi: Optional[List[RSIParams]] = Field(None, description="Filter by RSI conditions")
     min_avg_volume: Optional[MinAverageVolumeParams] = Field(None, description="Filter by minimum average volume")
     min_avg_dollar_volume: Optional[MinAverageDollarVolumeParams] = Field(None, description="Filter by minimum average dollar volume")
     gap: Optional[GapParams] = Field(None, description="Filter by gap between open and previous close")
@@ -181,6 +184,36 @@ class RegistryScreenRequest(BaseModel):
             filters=filters,
             enable_db_prefiltering=self.enable_db_prefiltering,
         )
+
+    @field_validator('price_vs_ma', mode='before')
+    @classmethod
+    def _coerce_price_vs_ma(
+        cls, value: Optional[Any], info: FieldValidationInfo
+    ) -> Optional[List[PriceVsMAParams]]:
+        if value in (None, [], {}):
+            return None
+        if isinstance(value, list):
+            return value
+        return [value]
+
+    @field_validator('rsi', mode='before')
+    @classmethod
+    def _coerce_rsi(
+        cls, value: Optional[Any], info: FieldValidationInfo
+    ) -> Optional[List[RSIParams]]:
+        if value in (None, [], {}):
+            return None
+        if isinstance(value, list):
+            return value
+        return [value]
+
+    @model_validator(mode='after')
+    def _normalize_lists(self) -> 'SimpleFilters':  # noqa: N805
+        if self.price_vs_ma and len(self.price_vs_ma) == 0:
+            self.price_vs_ma = None
+        if self.rsi and len(self.rsi) == 0:
+            self.rsi = None
+        return self
 
 
 class SimpleScreenRequest(BaseModel):

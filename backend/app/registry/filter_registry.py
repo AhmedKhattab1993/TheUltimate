@@ -127,40 +127,57 @@ class FilterRegistry:
         return SimplePriceRangeParams(open_price=NumericRange(**range_kwargs))
 
     @staticmethod
-    def _build_price_vs_ma(values: Dict[str, object]) -> PriceVsMAParams:
-        period = int(values.get("ma_period", 50))
-        min_ratio = _maybe_float(values.get("min_ratio"))
-        max_ratio = _maybe_float(values.get("max_ratio"))
-        step_ratio = _maybe_float(values.get("step_ratio"))
+    def _build_price_vs_ma(values: Dict[str, object]) -> List[PriceVsMAParams]:
+        setups = values.get("setups")
 
-        range_kwargs: Dict[str, float] = {}
-        if min_ratio is not None:
-            range_kwargs["min"] = min_ratio
-        if max_ratio is not None:
-            range_kwargs["max"] = max_ratio
-        if step_ratio is not None:
-            range_kwargs["step"] = step_ratio
+        def _build_single(entry: Dict[str, object]) -> PriceVsMAParams:
+            period = int(entry.get("ma_period", 50))
+            min_ratio = _maybe_float(entry.get("min_ratio"))
+            max_ratio = _maybe_float(entry.get("max_ratio"))
+            step_ratio = _maybe_float(entry.get("step_ratio"))
 
-        ratio_range = NumericRange(**range_kwargs) if range_kwargs else NumericRange(min=1.0)
-        return PriceVsMAParams(ma_period=period, open_over_ma=ratio_range)
+            range_kwargs: Dict[str, float] = {}
+            if min_ratio is not None:
+                range_kwargs["min"] = min_ratio
+            if max_ratio is not None:
+                range_kwargs["max"] = max_ratio
+            if step_ratio is not None:
+                range_kwargs["step"] = step_ratio
+
+            ratio_range = NumericRange(**range_kwargs) if range_kwargs else NumericRange(min=1.0)
+            return PriceVsMAParams(ma_period=period, open_over_ma=ratio_range)
+
+        if isinstance(setups, list) and setups:
+            return [_build_single(entry if isinstance(entry, dict) else {}) for entry in setups]
+
+        # Fallback to legacy single entry handling
+        return [_build_single(values)]
 
     @staticmethod
-    def _build_rsi(values: Dict[str, object]) -> RSIParams:
-        period = int(values.get("rsi_period", 14))
-        min_value = _maybe_float(values.get("min_value"))
-        max_value = _maybe_float(values.get("max_value"))
-        step_value = _maybe_float(values.get("step_value"))
+    def _build_rsi(values: Dict[str, object]) -> List[RSIParams]:
+        presets = values.get("periods")
 
-        range_kwargs: Dict[str, float] = {}
-        if min_value is not None:
-            range_kwargs["min"] = min_value
-        if max_value is not None:
-            range_kwargs["max"] = max_value
-        if step_value is not None:
-            range_kwargs["step"] = step_value
+        def _build_single(entry: Dict[str, object]) -> RSIParams:
+            period = int(entry.get("rsi_period", 14))
+            min_value = _maybe_float(entry.get("min_value"))
+            max_value = _maybe_float(entry.get("max_value"))
+            step_value = _maybe_float(entry.get("step_value"))
 
-        rsi_range = NumericRange(**range_kwargs) if range_kwargs else NumericRange(max=30.0)
-        return RSIParams(rsi_period=period, rsi_value=rsi_range)
+            range_kwargs: Dict[str, float] = {}
+            if min_value is not None:
+                range_kwargs["min"] = min_value
+            if max_value is not None:
+                range_kwargs["max"] = max_value
+            if step_value is not None:
+                range_kwargs["step"] = step_value
+
+            rsi_range = NumericRange(**range_kwargs) if range_kwargs else NumericRange(max=30.0)
+            return RSIParams(rsi_period=period, rsi_value=rsi_range)
+
+        if isinstance(presets, list) and presets:
+            return [_build_single(entry if isinstance(entry, dict) else {}) for entry in presets]
+
+        return [_build_single(values)]
 
     @staticmethod
     def _build_gap(values: Dict[str, object]) -> GapParams:

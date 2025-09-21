@@ -548,20 +548,44 @@ const simpleFiltersToStateMap = (filters: SimpleFilters): FilterStateMap => {
   } : undefined)
 
   const priceVsMa = filters.price_vs_ma
-  add('price_vs_ma', priceVsMa ? {
-    ma_period: priceVsMa.ma_period,
-    min_ratio: priceVsMa.min_ratio,
-    max_ratio: priceVsMa.max_ratio,
-    step_ratio: priceVsMa.step_ratio,
-  } : undefined)
+  if (priceVsMa) {
+    const maList = Array.isArray(priceVsMa) ? priceVsMa : [priceVsMa]
+    const primary = maList[0]
+    add('price_vs_ma', {
+      ma_period: primary?.ma_period,
+      min_ratio: primary?.min_ratio,
+      max_ratio: primary?.max_ratio,
+      step_ratio: primary?.step_ratio,
+      setups: maList.map((entry) => ({
+        ma_period: entry.ma_period,
+        min_ratio: entry.min_ratio,
+        max_ratio: entry.max_ratio,
+        step_ratio: entry.step_ratio,
+      })),
+    })
+  } else {
+    add('price_vs_ma')
+  }
 
   const rsi = filters.rsi
-  add('rsi', rsi ? {
-    rsi_period: rsi.rsi_period,
-    min_value: rsi.min_value,
-    max_value: rsi.max_value,
-    step_value: rsi.step_value,
-  } : undefined)
+  if (rsi) {
+    const rsiList = Array.isArray(rsi) ? rsi : [rsi]
+    const primary = rsiList[0]
+    add('rsi', {
+      rsi_period: primary?.rsi_period,
+      min_value: primary?.min_value,
+      max_value: primary?.max_value,
+      step_value: primary?.step_value,
+      periods: rsiList.map((entry) => ({
+        rsi_period: entry.rsi_period,
+        min_value: entry.min_value,
+        max_value: entry.max_value,
+        step_value: entry.step_value,
+      })),
+    })
+  } else {
+    add('rsi')
+  }
 
   const gap = filters.gap
   add('gap', gap ? {

@@ -38,7 +38,7 @@ export interface FilterDefinition {
 
 export interface FilterState {
   enabled: boolean
-  values: Record<string, string | number | boolean>
+  values: Record<string, unknown>
 }
 
 export type FilterStateMap = Record<string, FilterState>

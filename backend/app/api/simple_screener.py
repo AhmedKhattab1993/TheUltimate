@@ -18,6 +18,8 @@ from ..models.simple_requests import (
     SimpleScreenRequest,
     SimpleScreenResponse,
     SimpleScreenResult,
+    PriceVsMAParams,
+    RSIParams,
 )
 from ..core.simple_filters import (
     SimplePriceRangeFilter,
@@ -271,6 +273,28 @@ async def _process_single_day(
     if symbol_results:
         try:
             # Create cache request model based on enabled filters
+            ma_configs = list(request_filters.price_vs_ma or [])
+            rsi_configs = list(request_filters.rsi or [])
+
+            def _ma_entry(cfg: PriceVsMAParams) -> Dict[str, Optional[float | int]]:
+                ratio = cfg.open_over_ma or None
+                return {
+                    'period': cfg.ma_period,
+                    'min_ratio': float(ratio.min) if ratio and ratio.min is not None else None,
+                    'max_ratio': float(ratio.max) if ratio and ratio.max is not None else None,
+                }
+
+            def _rsi_entry(cfg: RSIParams) -> Dict[str, Optional[float | int]]:
+                rsi_range = cfg.rsi_value or None
+                return {
+                    'period': cfg.rsi_period,
+                    'min_value': float(rsi_range.min) if rsi_range and rsi_range.min is not None else None,
+                    'max_value': float(rsi_range.max) if rsi_range and rsi_range.max is not None else None,
+                }
+
+            first_ma = ma_configs[0] if ma_configs else None
+            first_rsi = rsi_configs[0] if rsi_configs else None
+
             cache_request = CachedScreenerRequest(
                 start_date=trading_date,
                 end_date=trading_date,
@@ -285,30 +309,32 @@ async def _process_single_day(
                     if request_filters.price_range and request_filters.price_range.open_price
                     else None
                 ),
-                price_vs_ma_enabled=request_filters.price_vs_ma is not None,
-                price_vs_ma_period=request_filters.price_vs_ma.ma_period if request_filters.price_vs_ma else None,
+                price_vs_ma_enabled=bool(ma_configs),
+                price_vs_ma_period=first_ma.ma_period if first_ma else None,
                 price_vs_ma_min_ratio=(
-                    request_filters.price_vs_ma.open_over_ma.min
-                    if request_filters.price_vs_ma and request_filters.price_vs_ma.open_over_ma
+                    first_ma.open_over_ma.min
+                    if first_ma and first_ma.open_over_ma and first_ma.open_over_ma.min is not None
                     else None
                 ),
                 price_vs_ma_max_ratio=(
-                    request_filters.price_vs_ma.open_over_ma.max
-                    if request_filters.price_vs_ma and request_filters.price_vs_ma.open_over_ma
+                    first_ma.open_over_ma.max
+                    if first_ma and first_ma.open_over_ma and first_ma.open_over_ma.max is not None
                     else None
                 ),
-                rsi_enabled=request_filters.rsi is not None,
-                rsi_period=request_filters.rsi.rsi_period if request_filters.rsi else None,
+                price_vs_ma_setups=[_ma_entry(cfg) for cfg in ma_configs],
+                rsi_enabled=bool(rsi_configs),
+                rsi_period=first_rsi.rsi_period if first_rsi else None,
                 rsi_min_value=(
-                    request_filters.rsi.rsi_value.min
-                    if request_filters.rsi and request_filters.rsi.rsi_value
+                    first_rsi.rsi_value.min
+                    if first_rsi and first_rsi.rsi_value and first_rsi.rsi_value.min is not None
                     else None
                 ),
                 rsi_max_value=(
-                    request_filters.rsi.rsi_value.max
-                    if request_filters.rsi and request_filters.rsi.rsi_value
+                    first_rsi.rsi_value.max
+                    if first_rsi and first_rsi.rsi_value and first_rsi.rsi_value.max is not None
                     else None
                 ),
+                rsi_setups=[_rsi_entry(cfg) for cfg in rsi_configs],
                 gap_enabled=request_filters.gap is not None,
                 gap_min_percent=(
                     request_filters.gap.gap_percent.min
@@ -368,28 +394,28 @@ async def _process_single_day(
                         if request_filters.price_range and request_filters.price_range.open_price
                         else None
                     ),
-                    filter_price_vs_ma_enabled=request_filters.price_vs_ma is not None,
-                    filter_price_vs_ma_period=request_filters.price_vs_ma.ma_period if request_filters.price_vs_ma else None,
+                    filter_price_vs_ma_enabled=bool(ma_configs),
+                    filter_price_vs_ma_period=first_ma.ma_period if first_ma else None,
                     filter_price_vs_ma_min_ratio=(
-                        request_filters.price_vs_ma.open_over_ma.min
-                        if request_filters.price_vs_ma and request_filters.price_vs_ma.open_over_ma
+                        first_ma.open_over_ma.min
+                        if first_ma and first_ma.open_over_ma and first_ma.open_over_ma.min is not None
                         else None
                     ),
                     filter_price_vs_ma_max_ratio=(
-                        request_filters.price_vs_ma.open_over_ma.max
-                        if request_filters.price_vs_ma and request_filters.price_vs_ma.open_over_ma
+                        first_ma.open_over_ma.max
+                        if first_ma and first_ma.open_over_ma and first_ma.open_over_ma.max is not None
                         else None
                     ),
-                    filter_rsi_enabled=request_filters.rsi is not None,
-                    filter_rsi_period=request_filters.rsi.rsi_period if request_filters.rsi else None,
+                    filter_rsi_enabled=bool(rsi_configs),
+                    filter_rsi_period=first_rsi.rsi_period if first_rsi else None,
                     filter_rsi_min_value=(
-                        request_filters.rsi.rsi_value.min
-                        if request_filters.rsi and request_filters.rsi.rsi_value
+                        first_rsi.rsi_value.min
+                        if first_rsi and first_rsi.rsi_value and first_rsi.rsi_value.min is not None
                         else None
                     ),
                     filter_rsi_max_value=(
-                        request_filters.rsi.rsi_value.max
-                        if request_filters.rsi and request_filters.rsi.rsi_value
+                        first_rsi.rsi_value.max
+                        if first_rsi and first_rsi.rsi_value and first_rsi.rsi_value.max is not None
                         else None
                     ),
                     filter_gap_enabled=request_filters.gap is not None,
@@ -555,16 +581,20 @@ async def simple_screen_stocks(
         ))
 
     if request.filters.price_vs_ma:
-        filters.append(PriceVsMAFilter(
-            period=request.filters.price_vs_ma.ma_period,
-            ratio_range=request.filters.price_vs_ma.open_over_ma
-        ))
+        for index, ma_params in enumerate(request.filters.price_vs_ma):
+            filters.append(PriceVsMAFilter(
+                period=ma_params.ma_period,
+                ratio_range=ma_params.open_over_ma,
+                name=f"PriceVsMAFilter_{ma_params.ma_period}_{index + 1}"
+            ))
 
     if request.filters.rsi:
-        filters.append(RSIFilter(
-            period=request.filters.rsi.rsi_period,
-            rsi_range=request.filters.rsi.rsi_value
-        ))
+        for index, rsi_params in enumerate(request.filters.rsi):
+            filters.append(RSIFilter(
+                period=rsi_params.rsi_period,
+                rsi_range=rsi_params.rsi_value,
+                name=f"RSIFilter_{rsi_params.rsi_period}_{index + 1}"
+            ))
 
     if request.filters.min_avg_volume:
         filters.append(MinAverageVolumeFilter(

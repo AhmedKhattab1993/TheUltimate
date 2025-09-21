@@ -35,27 +35,53 @@ def create_filter_description(filters: dict) -> str:
 
     price_vs_ma = filters.get("price_vs_ma") or {}
     if price_vs_ma.get("enabled"):
-        period = price_vs_ma.get("period", 20)
-        min_ratio = price_vs_ma.get("min_ratio")
-        max_ratio = price_vs_ma.get("max_ratio")
-        if min_ratio is not None and max_ratio is not None:
-            descriptions.append(f"Open/MA{period} ∈ [{min_ratio}, {max_ratio}]")
-        elif min_ratio is not None:
-            descriptions.append(f"Open/MA{period} ≥ {min_ratio}")
-        elif max_ratio is not None:
-            descriptions.append(f"Open/MA{period} ≤ {max_ratio}")
+        setups = price_vs_ma.get("setups") or []
+        if setups:
+            for entry in setups:
+                period = entry.get("period", 20)
+                min_ratio = entry.get("min_ratio")
+                max_ratio = entry.get("max_ratio")
+                if min_ratio is not None and max_ratio is not None:
+                    descriptions.append(f"Open/MA{period} ∈ [{min_ratio}, {max_ratio}]")
+                elif min_ratio is not None:
+                    descriptions.append(f"Open/MA{period} ≥ {min_ratio}")
+                elif max_ratio is not None:
+                    descriptions.append(f"Open/MA{period} ≤ {max_ratio}")
+        else:
+            period = price_vs_ma.get("period", 20)
+            min_ratio = price_vs_ma.get("min_ratio")
+            max_ratio = price_vs_ma.get("max_ratio")
+            if min_ratio is not None and max_ratio is not None:
+                descriptions.append(f"Open/MA{period} ∈ [{min_ratio}, {max_ratio}]")
+            elif min_ratio is not None:
+                descriptions.append(f"Open/MA{period} ≥ {min_ratio}")
+            elif max_ratio is not None:
+                descriptions.append(f"Open/MA{period} ≤ {max_ratio}")
 
     rsi = filters.get("rsi") or {}
     if rsi.get("enabled"):
-        period = rsi.get("period", 14)
-        min_value = rsi.get("min_value")
-        max_value = rsi.get("max_value")
-        if min_value is not None and max_value is not None:
-            descriptions.append(f"RSI{period} ∈ [{min_value}, {max_value}]")
-        elif min_value is not None:
-            descriptions.append(f"RSI{period} ≥ {min_value}")
-        elif max_value is not None:
-            descriptions.append(f"RSI{period} ≤ {max_value}")
+        periods = rsi.get("setups") or rsi.get("periods") or []
+        if isinstance(periods, list) and periods:
+            for entry in periods:
+                period = entry.get("period", entry.get("rsi_period", 14))
+                min_value = entry.get("min_value")
+                max_value = entry.get("max_value")
+                if min_value is not None and max_value is not None:
+                    descriptions.append(f"RSI{period} ∈ [{min_value}, {max_value}]")
+                elif min_value is not None:
+                    descriptions.append(f"RSI{period} ≥ {min_value}")
+                elif max_value is not None:
+                    descriptions.append(f"RSI{period} ≤ {max_value}")
+        else:
+            period = rsi.get("period", 14)
+            min_value = rsi.get("min_value")
+            max_value = rsi.get("max_value")
+            if min_value is not None and max_value is not None:
+                descriptions.append(f"RSI{period} ∈ [{min_value}, {max_value}]")
+            elif min_value is not None:
+                descriptions.append(f"RSI{period} ≥ {min_value}")
+            elif max_value is not None:
+                descriptions.append(f"RSI{period} ≤ {max_value}")
 
     gap = filters.get("gap") or {}
     if gap.get("enabled"):
