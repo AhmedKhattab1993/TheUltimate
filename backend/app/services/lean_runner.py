@@ -18,9 +18,6 @@ import fcntl
 import time
 
 from ..models.backtest import BacktestRequest
-from .screener_repository import screener_repository
-
-
 logger = logging.getLogger(__name__)
 
 
@@ -53,38 +50,26 @@ class LeanRunner:
                 if not strategy_path.exists():
                     raise Exception("Flexible strategy not found for screener results")
 
-                if screener_payload:
-                    export_symbols = list(screener_payload.get("symbols") or [])
-                    export_payload = {
-                        "timestamp": screener_payload.get("timestamp") or datetime.now().isoformat(),
-                        "symbols": export_symbols,
-                        "filters": screener_payload.get("filters") or {},
-                        "metadata": screener_payload.get("metadata") or {},
-                        "count": len(export_symbols),
-                    }
-                    if screener_payload.get("date"):
-                        export_payload.setdefault("metadata", {})
-                        export_payload["metadata"]["target_date"] = screener_payload["date"]
-                else:
-                    _, runs = await screener_repository.list_runs(limit=1)
-                    if not runs:
-                        raise Exception("No screener runs available for Lean optimization")
+                if not screener_payload:
+                    raise Exception("Screener payload missing for Lean backtest")
 
-                    run_detail = await screener_repository.get_run(runs[0].id)
-                    if not run_detail or not run_detail.results:
-                        raise Exception("Latest screener run does not contain any symbols")
-
-                    export_symbols = [result.symbol for result in run_detail.results]
-                    export_payload = {
-                        "timestamp": run_detail.created_at.isoformat(),
-                        "symbols": export_symbols,
-                        "filters": run_detail.filters,
-                        "metadata": run_detail.metadata,
-                        "count": len(export_symbols),
-                    }
-
+                export_symbols = list(screener_payload.get("symbols") or [])
                 if not export_symbols:
                     raise Exception("Screener payload does not contain any symbols")
+
+                export_payload = {
+                    "timestamp": screener_payload.get("timestamp") or datetime.now().isoformat(),
+                    "symbols": export_symbols,
+                    "filters": screener_payload.get("filters") or {},
+                    "metadata": screener_payload.get("metadata") or {},
+                    "count": len(export_symbols),
+                }
+                if screener_payload.get("date"):
+                    export_payload.setdefault("metadata", {})
+                    export_payload["metadata"]["target_date"] = screener_payload["date"]
+                if screener_payload.get("run_id"):
+                    export_payload.setdefault("metadata", {})
+                    export_payload["metadata"]["run_id"] = screener_payload["run_id"]
 
                 results_dir = self.lean_project_path.parent / "screener_results"
                 results_dir.mkdir(parents=True, exist_ok=True)
